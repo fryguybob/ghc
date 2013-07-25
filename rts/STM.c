@@ -94,6 +94,9 @@
 
 #include <stdio.h>
 
+#include "rtm-goto.h"
+#include "immintrin.h"
+
 #define TRUE 1
 #define FALSE 0
 
@@ -230,24 +233,46 @@ static void unlock_inv(StgAtomicInvariant *inv STG_UNUSED) {
 #undef IF_STM_CG_LOCK
 #define IF_STM_CG_LOCK(__X)  do { __X } while (0)
 static const StgBool config_use_read_phase = FALSE;
-static volatile StgTRecHeader *smp_locked = NULL;
+static volatile int smp_locked = 0;
 
-static void lock_stm(StgTRecHeader *trec) {
-  while (cas(&smp_locked, NULL, trec) != NULL) { }
+#define RETRY_COUNT 1
+
+static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
+  int i;
+  for (i = 0; i < RETRY_COUNT; i++)
+  {
+    XBEGIN(fail);
+    if (smp_locked == 0)
+      return;
+    XEND();
+    XFAIL(fail);
+  }
+
+  while (__sync_lock_test_and_set(&smp_locked, 1))
+  {
+    while (smp_locked != 0)
+      _mm_pause();
+  }
   TRACE("%p : lock_stm()", trec);
 }
 
 static void unlock_stm(StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : unlock_stm()", trec);
-  ASSERT (smp_locked == trec);
-  smp_locked = 0;
+
+  if (smp_locked == 0)
+  {
+    XEND();
+  }
+  else
+  {
+    __sync_lock_release(&smp_locked);
+  }
 }
 
 static StgClosure *lock_tvar(StgTRecHeader *trec STG_UNUSED, 
                              StgTVar *s STG_UNUSED) {
   StgClosure *result;
   TRACE("%p : lock_tvar(%p)", trec, s);
-  ASSERT (smp_locked == trec);
   result = s -> current_value;
   return result;
 }
@@ -257,7 +282,6 @@ static void *unlock_tvar(StgTRecHeader *trec STG_UNUSED,
                          StgClosure *c,
                          StgBool force_update) {
   TRACE("%p : unlock_tvar(%p, %p)", trec, s, c);
-  ASSERT (smp_locked == trec);
   if (force_update) {
     s -> current_value = c;
   }
@@ -268,7 +292,6 @@ static StgBool cond_lock_tvar(StgTRecHeader *trec STG_UNUSED,
                                StgClosure *expected) {
   StgClosure *result;
   TRACE("%p : cond_lock_tvar(%p, %p)", trec, s, expected);
-  ASSERT (smp_locked == trec);
   result = s -> current_value;
   TRACE("%p : %d", result ? "success" : "failure");
   return (result == expected);
