@@ -415,6 +415,30 @@ struct StgTRecHeader_ {
   TRecState                  state;
 };
 
+
+typedef struct {
+  StgTVar                   *tvar;
+} HTRecEntry;
+
+/* Size this so that an StgTRecChunk and an StgHTRecChunk take up
+ * the same space 
+ */
+#define HTREC_CHUNK_NUM_ENTRIES (sizeof(TRecEntry)*TREC_CHUNK_NUM_ENTRIES/sizeof(HTRecEntry))
+
+typedef struct stgHTRecChunk_ {
+  StgHeader                  header;
+  struct StgHTRecChunk_     *prev_chunk;
+  StgWord                    next_entry_idx;
+  HTRecEntry                 entries[HTREC_CHUNK_NUM_ENTRIES];
+} StgHTRecChunk;
+
+typedef struct StgHTRecHeader_ {
+  StgHeader                  header;
+  struct StgHTRecHeader_    *enclosing_trec;
+  StgHTRecChunk             *current_chunk;
+} StgHTRecHeader;
+
+
 typedef struct {
   StgHeader   header;
   StgClosure *code;
