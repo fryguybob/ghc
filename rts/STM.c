@@ -498,6 +498,7 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
   return result;  
 }
 
+#if defined(THREADED_RTS)
 static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
   StgHTRecHeader *result;
   result = (StgHTRecHeader *) allocate(cap, sizeofW(StgHTRecHeader));
@@ -507,7 +508,10 @@ static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
   result -> enclosing_trec = (StgHTRecHeader*)NO_TREC;
 
   return result;  
-}/*......................................................................*/
+}
+#endif
+
+/*......................................................................*/
 
 // Allocation / deallocation functions that retain per-capability lists
 // of closures that can be re-used
@@ -718,7 +722,8 @@ static TRecEntry *get_new_entry(Capability *cap,
 }
 
 /*......................................................................*/
- 
+
+#if defined(THREADED_RTS)
 static HTRecEntry *get_new_hentry(Capability *cap,
                                  StgHTRecHeader *t) {
   HTRecEntry *result;
@@ -745,6 +750,7 @@ static HTRecEntry *get_new_hentry(Capability *cap,
 
   return result;
 }
+#endif
 
 /*......................................................................*/
 
@@ -1044,6 +1050,13 @@ static void getToken(Capability *cap STG_UNUSED) {
 StgTRecHeader *stmStartTransaction(Capability *cap,
                                    StgTRecHeader *outer) {
 #if defined(THREADED_RTS)
+  if (XTEST()) {
+    // For the simple version abort when nesting.  More
+    // complicated versions can use STM inside a hardware
+    // transaction.
+    XABORT(ABORT_FALLBACK);
+  }
+
   int i, s;
   for (i = 0; i < RETRY_COUNT; i++) {
     XBEGIN(fail);

@@ -425,7 +425,7 @@ typedef struct {
  */
 #define HTREC_CHUNK_NUM_ENTRIES (sizeof(TRecEntry)*TREC_CHUNK_NUM_ENTRIES/sizeof(HTRecEntry))
 
-typedef struct stgHTRecChunk_ {
+typedef struct StgHTRecChunk_ {
   StgHeader                  header;
   struct StgHTRecChunk_     *prev_chunk;
   StgWord                    next_entry_idx;
