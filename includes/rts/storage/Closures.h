@@ -436,6 +436,8 @@ typedef struct StgHTRecHeader_ {
   StgHeader                  header;
   struct StgHTRecHeader_    *enclosing_trec;
   StgHTRecChunk             *current_chunk;
+  StgInvariantCheckQueue    *invariants_to_check;
+  TRecState                  state;
 } StgHTRecHeader;
 
 

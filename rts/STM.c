@@ -144,7 +144,7 @@ static int shake(void) {
 // Helper macros for iterating over entries within a transaction
 // record
 
-#define _FOR_EACH_ENTRY(_t,_x,CODE,HEADER,CHUNK,ENTRY,END_LIST) do {            \
+#define _FOR_EACH_ENTRY(_t,_x,CODE,HEADER,CHUNK,ENTRY,END_LIST,SIZE) do {       \
   HEADER *__t = (_t);                                                           \
   CHUNK *__c = __t -> current_chunk;                                            \
   StgWord __limit = __c -> next_entry_idx;                                      \
@@ -156,7 +156,7 @@ static int shake(void) {
       do { CODE } while (0);                                                    \
     }                                                                           \
     __c = __c -> prev_chunk;                                                    \
-    __limit = TREC_CHUNK_NUM_ENTRIES;                                           \
+    __limit = SIZE;                                                             \
   }                                                                             \
  exit_for_each:                                                                 \
   if (FALSE) goto exit_for_each;                                                \
@@ -166,10 +166,10 @@ static int shake(void) {
 
 #define FOR_EACH_ENTRY(_t,_x,CODE)                                              \
   _FOR_EACH_ENTRY(_t,_x,CODE,StgTRecHeader,StgTRecChunk,TRecEntry               \
-                 ,END_STM_CHUNK_LIST)
+                 ,END_STM_CHUNK_LIST,TREC_CHUNK_NUM_ENTRIES)
 #define FOR_EACH_HENTRY(_t,_x,CODE)                                             \
   _FOR_EACH_ENTRY(_t,_x,CODE,StgHTRecHeader,StgHTRecChunk,HTRecEntry            \
-                 ,END_HTM_CHUNK_LIST)
+                 ,END_HTM_CHUNK_LIST,HTREC_CHUNK_NUM_ENTRIES)
 
 /*......................................................................*/
 
@@ -473,9 +473,11 @@ static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
   return result;
 }
 
+#if defined(THREADED_RTS)
 static StgHTRecChunk *new_stg_htrec_chunk(Capability *cap) {
   return (StgHTRecChunk*)new_stg_trec_chunk(cap);
 }
+#endif
 
 static StgTRecHeader *new_stg_trec_header(Capability *cap,
                                           StgTRecHeader *enclosing_trec) {
@@ -506,8 +508,10 @@ static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
 
   result -> current_chunk = new_stg_htrec_chunk(cap);
   result -> enclosing_trec = (StgHTRecHeader*)NO_TREC;
+  result -> invariants_to_check = END_INVARIANT_CHECK_QUEUE;
+  result -> state = TREC_ACTIVE;
 
-  return result;  
+  return result;
 }
 #endif
 
@@ -1089,16 +1093,18 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 void stmAbortTransaction(Capability *cap,
                          StgTRecHeader *trec) {
   StgTRecHeader *et;
-  TRACE("%p : stmAbortTransaction", trec);
-  ASSERT (trec != NO_TREC);
-  ASSERT ((trec -> state == TREC_ACTIVE) || 
-          (trec -> state == TREC_WAITING) ||
-          (trec -> state == TREC_CONDEMNED));
+
 #if defined(THREADED_RTS)
   if (XTEST()) {
     XABORT(ABORT_FALLBACK);
   }
 #endif
+
+  TRACE("%p : stmAbortTransaction", trec);
+  ASSERT (trec != NO_TREC);
+  ASSERT ((trec -> state == TREC_ACTIVE) || 
+          (trec -> state == TREC_WAITING) ||
+          (trec -> state == TREC_CONDEMNED));
 
   lock_stm(trec);
 
@@ -1185,7 +1191,10 @@ StgBool stmValidateNestOfTransactions(StgTRecHeader *trec) {
 
 #if defined(THREADED_RTS)
   if (XTEST()) {
-    return TRUE;
+    // This is called from either an exception or a long running transaction.
+    // TODO: The long running transaction might be ok, but is likely to abort
+    // before rescheduled. 
+    XABORT(ABORT_FALLBACK);
   }
 #endif
 
@@ -1325,10 +1334,6 @@ void stmAddInvariantToCheck(Capability *cap,
 			    StgClosure *code) {
   StgAtomicInvariant *invariant;
   StgInvariantCheckQueue *q;
-  TRACE("%p : stmAddInvariantToCheck closure=%p", trec, code);
-  ASSERT(trec != NO_TREC);
-  ASSERT(trec -> state == TREC_ACTIVE ||
-	 trec -> state == TREC_CONDEMNED);
 
 #if defined(THREADED_RTS)
   if (XTEST()) {
@@ -1336,6 +1341,11 @@ void stmAddInvariantToCheck(Capability *cap,
     XABORT(ABORT_FALLBACK);
   }
 #endif
+
+  TRACE("%p : stmAddInvariantToCheck closure=%p", trec, code);
+  ASSERT(trec != NO_TREC);
+  ASSERT(trec -> state == TREC_ACTIVE ||
+	 trec -> state == TREC_CONDEMNED);
 
   // 1. Allocate an StgAtomicInvariant, set last_execution to NO_TREC
   //    to signal that this is a new invariant in the current atomic block
