@@ -1311,7 +1311,7 @@ findModule mod_name maybe_pkg = withSession $ \hsc_env -> do
       res <- findImportedModule hsc_env mod_name maybe_pkg
       case res of
         Found _ m -> return m
-        err       -> noModError dflags noSrcSpan mod_name err
+        err       -> throwOneError $ noModError dflags noSrcSpan mod_name err
     _otherwise -> do
       home <- lookupLoadedHomeModule mod_name
       case home of
@@ -1321,7 +1321,7 @@ findModule mod_name maybe_pkg = withSession $ \hsc_env -> do
            case res of
              Found loc m | modulePackageId m /= this_pkg -> return m
                          | otherwise -> modNotLoadedError dflags m loc
-             err -> noModError dflags noSrcSpan mod_name err
+             err -> throwOneError $ noModError dflags noSrcSpan mod_name err
 
 modNotLoadedError :: DynFlags -> Module -> ModLocation -> IO a
 modNotLoadedError dflags m loc = throwGhcExceptionIO $ CmdLineError $ showSDoc dflags $
@@ -1346,7 +1346,7 @@ lookupModule mod_name Nothing = withSession $ \hsc_env -> do
       res <- findExposedPackageModule hsc_env mod_name Nothing
       case res of
         Found _ m -> return m
-        err       -> noModError (hsc_dflags hsc_env) noSrcSpan mod_name err
+        err       -> throwOneError $ noModError (hsc_dflags hsc_env) noSrcSpan mod_name err
 
 lookupLoadedHomeModule :: GhcMonad m => ModuleName -> m (Maybe Module)
 lookupLoadedHomeModule mod_name = withSession $ \hsc_env ->
