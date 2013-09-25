@@ -1749,6 +1749,12 @@ StgBool stmReWait(Capability *cap, StgTSO *tso) {
   int result;
   StgTRecHeader *trec = tso->trec;
 
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    XABORT(ABORT_FALLBACK);
+  }
+#endif
+
   TRACE("%p : stmReWait", trec);
   ASSERT (trec != NO_TREC);
   ASSERT (trec -> enclosing_trec == NO_TREC);
