@@ -313,6 +313,9 @@ data Instr
     -- SSE4.2
     | POPCNT      Size Operand Reg -- src, dst
 
+    -- TSX
+    | XTEST       Reg           -- dst
+
 data Operand
         = OpReg  Reg            -- register
         | OpImm  Imm            -- immediate value
@@ -407,6 +410,8 @@ x86_regUsageOfInstr instr
     DELTA   _           -> noUsage
 
     POPCNT _ src dst -> mkRU (use_R src []) [dst]
+
+    XTEST dst           -> mkRU [] [dst]
 
     _other              -> panic "regUsage: unrecognised instr"
 
@@ -546,6 +551,8 @@ x86_patchRegsOfInstr instr env
     CLTD _              -> instr
 
     POPCNT sz src dst -> POPCNT sz (patchOp src) (env dst)
+
+    XTEST dst           -> XTEST (env dst)
 
     _other              -> panic "patchRegs: unrecognised instr"
 

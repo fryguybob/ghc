@@ -735,7 +735,8 @@ callishMachOps = listToUFM $
         ( "write_barrier", MO_WriteBarrier ),
         ( "memcpy", MO_Memcpy ),
         ( "memset", MO_Memset ),
-        ( "memmove", MO_Memmove )
+        ( "memmove", MO_Memmove ),
+        ( "xtest", MO_XTest )
         -- ToDo: the rest, maybe
     ]
 

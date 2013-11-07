@@ -421,6 +421,8 @@ emitPrimOp [res] PopCnt32Op [w] live = emitPopCntCall res w W32 live
 emitPrimOp [res] PopCnt64Op [w] live = emitPopCntCall res w W64 live
 emitPrimOp [res] PopCntOp [w] live = emitPopCntCall res w wordWidth live
 
+emitPrimOp [res] XTestOp [_] live = emitXTestCall res live
+
 -- The rest just translate straightforwardly
 emitPrimOp [res] op [arg] _
    | nopOp op
@@ -1142,4 +1144,15 @@ emitPopCntCall res x width live = do
         [(CmmHinted x NoHint)]
         (Just vols)
         NoC_SRT -- No SRT b/c we do PlayRisky
+        CmmMayReturn
+
+emitXTestCall :: LocalReg -> StgLiveVars -> Code
+emitXTestCall res live = do
+    vols <- getVolatileRegs live
+    emitForeignCall' PlayRisky
+        [CmmHinted res NoHint]
+        (CmmPrim (MO_XTest) Nothing)
+        []
+        (Just vols)
+        NoC_SRT
         CmmMayReturn

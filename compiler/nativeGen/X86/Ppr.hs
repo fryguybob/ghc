@@ -637,6 +637,15 @@ pprInstr platform (FETCHPC reg)
 
 
 -- -----------------------------------------------------------------------------
+-- TSX
+pprInstr platform (XTEST reg) 
+    = vcat [ hcat [ ptext (sLit "xor\t"), pprReg platform II64 reg, ptext (sLit ","), pprReg platform II64 reg ],
+             ptext (sLit "xtest"),
+             hcat [ ptext (sLit "setnz\t"),
+                    pprReg platform II8 reg ]
+           ]
+
+-- -----------------------------------------------------------------------------
 -- i386 floating-point
 
 -- Simulating a flat register set on the x86 FP stack is tricky.

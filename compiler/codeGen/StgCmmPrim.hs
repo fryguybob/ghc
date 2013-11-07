@@ -496,6 +496,9 @@ emitPrimOp [res] PopCnt32Op [w] = emitPopCntCall res w W32
 emitPrimOp [res] PopCnt64Op [w] = emitPopCntCall res w W64
 emitPrimOp [res] PopCntOp [w] = emitPopCntCall res w wordWidth
 
+-- TSX
+emitPrimOp [res] XTestOp [_] = emitXTestCall res
+
 -- The rest just translate straightforwardly
 emitPrimOp [res] op [arg]
    | nopOp op
@@ -1184,3 +1187,10 @@ emitPopCntCall res x width = do
         [ res ]
         (MO_PopCnt width)
         [ x ]
+
+emitXTestCall :: LocalReg -> FCode ()
+emitXTestCall res = do
+    emitPrimCall
+        [ res ]
+        (MO_XTest)
+        [ ]

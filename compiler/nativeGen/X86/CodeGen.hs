@@ -1616,6 +1616,9 @@ genCCall is32Bit (CmmPrim (MO_PopCnt width) _) dest_regs@[CmmHinted dst _]
     size = intSize width
     lbl = mkCmmCodeLabel primPackageId (fsLit (popCntLabel width))
 
+genCCall _ (CmmPrim MO_XTest _) dest_regs@[CmmHinted dst _] _ 
+    = return $ unitOL (XTEST (getRegisterReg False (CmmLocal dst)))
+
 genCCall is32Bit target dest_regs args
  | is32Bit   = genCCall32 target dest_regs args
  | otherwise = genCCall64 target dest_regs args
@@ -2236,6 +2239,7 @@ outOfLineCmmOp mop res args
               MO_Memmove   -> fsLit "memmove"
 
               MO_PopCnt _  -> fsLit "popcnt"
+              MO_XTest     -> fsLit "xtest"
 
               MO_S_QuotRem {}  -> unsupported
               MO_U_QuotRem {}  -> unsupported

@@ -1117,8 +1117,7 @@ stg_newTVarzh
   RET_P(tv);
 }
 
-
-stg_readTVarzh
+stg_readTVarSTMzh
 {
   W_ trec;
   W_ tvar;
@@ -1126,12 +1125,28 @@ stg_readTVarzh
 
   /* Args: R1 = TVar closure */
 
-  MAYBE_GC (R1_PTR, stg_readTVarzh); // Call to stmReadTVar may allocate
+  MAYBE_GC (R1_PTR, stg_readTVarSTMzh); // Call to stmReadTVar may allocate
   trec = StgTSO_trec(CurrentTSO);
   tvar = R1;
   ("ptr" result) = foreign "C" stmReadTVar(MyCapability() "ptr", trec "ptr", tvar "ptr") [];
 
   RET_P(result);
+}
+
+stg_readTVarzh
+{
+  W_ result;
+  W_ test;
+
+  (test) = prim %xtest() [];
+  
+  if (test != 0) {
+    result = StgTVar_current_value(R1);
+
+    RET_P(result);
+  } else {
+    jump stg_readTVarSTMzh;
+  }
 }
 
 stg_readTVarIOzh

@@ -340,6 +340,13 @@ primop   PopCntOp   "popCnt#"   Monadic   Word# -> Word#
     {Count the number of set bits in a word.}
 
 ------------------------------------------------------------------------
+section "TSX" 
+	{Support for Transactional Synchronization Extensions.}
+------------------------------------------------------------------------
+
+primop   XTestOp  "xTest#"   GenPrimOp  () -> Word#
+
+------------------------------------------------------------------------
 section "Narrowings" 
 	{Explicit narrowing of native-sized ints or words.}
 ------------------------------------------------------------------------
@@ -1604,6 +1611,14 @@ primop	NewTVarOp "newTVar#" GenPrimOp
    has_side_effects = True
 
 primop	ReadTVarOp "readTVar#" GenPrimOp
+       TVar# s a
+    -> State# s -> (# State# s, a #)
+   {Read contents of {\tt TVar\#}.  Result is not yet evaluated.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	ReadTVarSTMOp "readTVarSTM#" GenPrimOp
        TVar# s a
     -> State# s -> (# State# s, a #)
    {Read contents of {\tt TVar\#}.  Result is not yet evaluated.}
