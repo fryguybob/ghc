@@ -248,7 +248,7 @@ static volatile int smp_locked = 0;
 
 // Abort reason codes:
 #define ABORT_FALLBACK  1
-
+#define ABORT_RESTART   2
 #define RETRY_COUNT 1
 
 static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
@@ -1482,6 +1482,10 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
 #if defined(THREADED_RTS)
   if (XTEST()) {
+    if (smp_locked != 0) {
+        // We cannot commit in the middle of a STM transaction's commit.
+        XABORT(ABORT_RESTART);
+    }
     return htmCommitTransaction(cap, trec);
   }
 #endif
