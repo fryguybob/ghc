@@ -1053,6 +1053,7 @@ static void getToken(Capability *cap STG_UNUSED) {
 
 StgTRecHeader *stmStartTransaction(Capability *cap,
                                    StgTRecHeader *outer) {
+  StgTRecHeader *t;
 #if defined(THREADED_RTS)
   if (XTEST()) {
     // For the simple version abort when nesting.  More
@@ -1062,13 +1063,14 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
   }
 
   int i, s;
+  t = alloc_stg_htrec_header(cap);
   for (i = 0; i < RETRY_COUNT; i++) {
     XBEGIN(fail);
     if (smp_locked != 0) {
         // Make sure that no STM transaction is committing while we run.
         XABORT(ABORT_RESTART);
     }
-    return (StgTRecHeader*)alloc_stg_htrec_header(cap);
+    return t;
    
     int status;
     XFAIL_STATUS(fail, status);
@@ -1087,13 +1089,13 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
   }
 #endif
 
-  StgTRecHeader *t;
   TRACE("%p : stmStartTransaction with %d tokens", 
         outer, 
         cap -> transaction_tokens);
 
   getToken(cap);
 
+  free_stg_trec_header(cap, t);
   t = alloc_stg_trec_header(cap, outer);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
