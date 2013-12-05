@@ -1077,6 +1077,13 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
       || s != XABORT_RETRY) {
         break;
     }
+    else
+    {
+        // Perhaps our failure was due to observing the lock from a commiting
+        // STM transaction.  Wait until we observe the lock free.  If we do not
+        // do this we risk all transactions falling back.
+        while (smp_locked != 0) ; // We should have some backoff here.
+    }
   }
 #endif
 
