@@ -1064,6 +1064,10 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
   int i, s;
   for (i = 0; i < RETRY_COUNT; i++) {
     XBEGIN(fail);
+    if (smp_locked != 0) {
+        // Make sure that no STM transaction is committing while we run.
+        XABORT(ABORT_RESTART);
+    }
     return (StgTRecHeader*)alloc_stg_htrec_header(cap);
    
     int status;
@@ -1482,10 +1486,6 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
 #if defined(THREADED_RTS)
   if (XTEST()) {
-    if (smp_locked != 0) {
-        // We cannot commit in the middle of a STM transaction's commit.
-        XABORT(ABORT_RESTART);
-    }
     return htmCommitTransaction(cap, trec);
   }
 #endif
