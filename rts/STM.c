@@ -249,7 +249,7 @@ static volatile int smp_locked = 0;
 // Abort reason codes:
 #define ABORT_FALLBACK  1
 #define ABORT_RESTART   2
-#define RETRY_COUNT 1
+#define RETRY_COUNT     5
 
 static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
   int i;
@@ -1095,7 +1095,9 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 
   getToken(cap);
 
-  free_stg_trec_header(cap, t);
+#if defined(THREADED_RTS)
+  free_stg_htrec_header(cap, t);
+#endif
   t = alloc_stg_trec_header(cap, outer);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
