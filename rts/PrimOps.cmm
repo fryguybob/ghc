@@ -1068,7 +1068,7 @@ retry_pop_stack:
   }
   ASSERT(outer == NO_TREC);
 
-  (r) = foreign "C" stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr") [];
+/*  (r) = foreign "C" stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr") [];
   if (r != 0) {
     // Transaction was valid: stmWait put us on the TVars' queues, we now block
     StgHeader_info(frame) = stg_atomically_waiting_frame_info;
@@ -1076,14 +1076,14 @@ retry_pop_stack:
     // Fix up the stack in the unregisterised case: the return convention is different.
     R3 = trec; // passing to stmWaitUnblock()
     jump stg_block_stmwait;
-  } else {
+  } else { */
     // Transaction was not valid: retry immediately
     ("ptr" trec) = foreign "C" stmStartTransaction(MyCapability() "ptr", outer "ptr") [];
     StgTSO_trec(CurrentTSO) = trec;
     R1 = StgAtomicallyFrame_code(frame);
     Sp = frame;
     jump stg_ap_v_fast;
-  }
+//  }
 }
 
 
@@ -1161,7 +1161,7 @@ again:
     RET_P(result);
 }
 
-stg_writeTVarzh
+stg_writeTVarSTMzh
 {
   W_ trec;
   W_ tvar;
@@ -1179,7 +1179,20 @@ stg_writeTVarzh
   jump %ENTRY_CODE(Sp(0));
 }
 
+stg_writeTVarzh
+{
+  W_ test;
 
+  (test) = prim %xtest() [];
+  
+  if (test != 0) {
+    StgTVar_current_value(R1) = R2;
+
+    jump %ENTRY_CODE(Sp(0));
+  } else {
+    jump stg_writeTVarSTMzh;
+  }
+}
 /* -----------------------------------------------------------------------------
  * MVar primitives
  *

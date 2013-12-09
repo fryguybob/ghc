@@ -1643,6 +1643,15 @@ primop	WriteTVarOp "writeTVar#" GenPrimOp
    out_of_line	    = True
    has_side_effects = True
 
+primop	WriteTVarSTMOp "writeTVarSTM#" GenPrimOp
+       TVar# s a
+    -> a
+    -> State# s -> State# s
+   {Write contents of {\tt TVar\#}.}
+   with
+   out_of_line	    = True
+   has_side_effects = True
+
 primop  SameTVarOp "sameTVar#" GenPrimOp
    TVar# s a -> TVar# s a -> Bool
 

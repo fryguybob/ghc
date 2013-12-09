@@ -1282,6 +1282,7 @@ typedef struct _RtsSymbolVal {
       SymI_HasProto(stg_waitReadzh)                     \
       SymI_HasProto(stg_waitWritezh)                    \
       SymI_HasProto(stg_writeTVarzh)                    \
+      SymI_HasProto(stg_writeTVarSTMzh)                 \
       SymI_HasProto(stg_yieldzh)                        \
       SymI_NeedsProto(stg_interp_constr_entry)          \
       SymI_HasProto(stg_arg_bitmaps)                    \
