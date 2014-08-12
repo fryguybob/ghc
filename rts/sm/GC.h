@@ -41,9 +41,7 @@ extern nat mutlist_MUTVARS, mutlist_MUTARRS, mutlist_MVARS, mutlist_OTHERS,
     mutlist_TVAR,
     mutlist_TVAR_WATCH_QUEUE,
     mutlist_TREC_CHUNK,
-    mutlist_TREC_HEADER,
-    mutlist_ATOMIC_INVARIANT,
-    mutlist_INVARIANT_CHECK_QUEUE;
+    mutlist_TREC_HEADER;
 #endif
 
 #if defined(PROF_SPIN) && defined(THREADED_RTS)

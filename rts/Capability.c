@@ -276,7 +276,6 @@ initCapability( Capability *cap, nat i )
     cap->weak_ptr_list_hd = NULL;
     cap->weak_ptr_list_tl = NULL;
     cap->free_tvar_watch_queues = END_STM_WATCH_QUEUE;
-    cap->free_invariant_check_queues = END_INVARIANT_CHECK_QUEUE;
     cap->free_trec_chunks = END_STM_CHUNK_LIST;
     cap->free_trec_headers = NO_TREC;
     cap->transaction_tokens = 0;

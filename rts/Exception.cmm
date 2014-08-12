@@ -480,10 +480,7 @@ retry_pop_stack:
       ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
       ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
 
-      if (outer != NO_TREC) {
-        ccall stmAbortTransaction(MyCapability() "ptr", outer "ptr");
-        ccall stmFreeAbortedTRec(MyCapability() "ptr", outer "ptr");
-      }
+      ASSERT(outer == NO_TREC);
 
       StgTSO_trec(CurrentTSO) = NO_TREC;
       if (r != 0) {
