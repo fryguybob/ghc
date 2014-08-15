@@ -896,6 +896,16 @@ pprInstr (XADD size src dst) = pprSizeOpOp (sLit "xadd") size src dst
 
 pprInstr (CMPXCHG size src dst) = pprSizeOpOp (sLit "cmpxchg") size src dst
 
+-- TSX
+
+pprInstr (XTEST dst)
+    = vcat [ hcat [ ptext (sLit "xor\t"), reg, ptext (sLit ","), reg ],
+             ptext (sLit "xtest"),
+             hcat [ ptext (sLit "setnz\t"), reg ]
+           ]
+  where
+    reg = pprReg II8 dst
+
 pprInstr _
         = panic "X86.Ppr.pprInstr: no match"
 

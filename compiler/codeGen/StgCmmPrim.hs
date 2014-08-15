@@ -599,6 +599,9 @@ emitPrimOp _      [res] PopCnt32Op [w] = emitPopCntCall res w W32
 emitPrimOp _      [res] PopCnt64Op [w] = emitPopCntCall res w W64
 emitPrimOp dflags [res] PopCntOp   [w] = emitPopCntCall res w (wordWidth dflags)
 
+-- Hardware Transactional Memory (Intel TSX)
+emitPrimOp _      [res] XTestOp    [_] = emitXTestCall res
+
 -- Unsigned int to floating point conversions
 emitPrimOp _      [res] Word2FloatOp  [w] = emitPrimCall [res]
                                             (MO_UF_Conv W32) [w]
@@ -2067,3 +2070,10 @@ emitPopCntCall res x width = do
         [ res ]
         (MO_PopCnt width)
         [ x ]
+
+emitXTestCall :: LocalReg -> FCode ()
+emitXTestCall res = do
+    emitPrimCall
+        [ res ]
+        MO_XTest
+        []

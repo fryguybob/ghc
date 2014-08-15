@@ -139,6 +139,7 @@ RTS_ENTRY(stg_atomically);
 RTS_ENTRY(stg_TVAR_WATCH_QUEUE);
 RTS_ENTRY(stg_TREC_CHUNK);
 RTS_ENTRY(stg_TREC_HEADER);
+RTS_ENTRY(stg_HTREC_HEADER);
 RTS_ENTRY(stg_END_STM_WATCH_QUEUE);
 RTS_ENTRY(stg_END_STM_CHUNK_LIST);
 RTS_ENTRY(stg_NO_TREC);
@@ -425,8 +426,10 @@ RTS_FUN_DECL(stg_catchSTMzh);
 RTS_FUN_DECL(stg_atomicallyzh);
 RTS_FUN_DECL(stg_newTVarzh);
 RTS_FUN_DECL(stg_readTVarzh);
+RTS_FUN_DECL(stg_readTVarSTMzh);
 RTS_FUN_DECL(stg_readTVarIOzh);
 RTS_FUN_DECL(stg_writeTVarzh);
+RTS_FUN_DECL(stg_writeTVarSTMzh);
 RTS_FUN_DECL(stg_checkzh);
 
 RTS_FUN_DECL(stg_unpackClosurezh);

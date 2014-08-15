@@ -556,6 +556,9 @@ data CallishMachOp
   | MO_AtomicRead Width
   | MO_AtomicWrite Width
   | MO_Cmpxchg Width
+
+  -- Hardware transactional Memory (Intel TSX).
+  | MO_XTest
   deriving (Eq, Show)
 
 -- | The operation to perform atomically.

@@ -974,7 +974,9 @@ callishMachOps = listToUFM $
         ("prefetch0",MO_Prefetch_Data 0),
         ("prefetch1",MO_Prefetch_Data 1),
         ("prefetch2",MO_Prefetch_Data 2),
-        ("prefetch3",MO_Prefetch_Data 3)
+        ("prefetch3",MO_Prefetch_Data 3),
+
+        ("xtest", MO_XTest )
 
         -- ToDo: the rest, maybe
         -- edit: which rest?

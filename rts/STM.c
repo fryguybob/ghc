@@ -95,6 +95,9 @@
 
 #include <stdio.h>
 
+#include "rtm-goto.h"
+#include "immintrin.h"
+
 #define TRUE 1
 #define FALSE 0
 
@@ -142,25 +145,32 @@ static int shake(void) {
 // Helper macros for iterating over entries within a transaction
 // record
 
-#define FOR_EACH_ENTRY(_t,_x,CODE) do {                                         \
-  StgTRecHeader *__t = (_t);                                                    \
-  StgTRecChunk *__c = __t -> current_chunk;                                     \
+#define _FOR_EACH_ENTRY(_t,_x,CODE,HEADER,CHUNK,ENTRY,END_LIST,SIZE) do {       \
+  HEADER *__t = (_t);                                                           \
+  CHUNK *__c = __t -> current_chunk;                                            \
   StgWord __limit = __c -> next_entry_idx;                                      \
   TRACE("%p : FOR_EACH_ENTRY, current_chunk=%p limit=%ld", __t, __c, __limit);  \
-  while (__c != END_STM_CHUNK_LIST) {                                           \
+  while (__c != END_LIST) {                                                     \
     StgWord __i;                                                                \
     for (__i = 0; __i < __limit; __i ++) {                                      \
-      TRecEntry *_x = &(__c -> entries[__i]);                                   \
+      ENTRY *_x = &(__c -> entries[__i]);                                       \
       do { CODE } while (0);                                                    \
     }                                                                           \
     __c = __c -> prev_chunk;                                                    \
-    __limit = TREC_CHUNK_NUM_ENTRIES;                                           \
+    __limit = SIZE;                                                             \
   }                                                                             \
  exit_for_each:                                                                 \
   if (FALSE) goto exit_for_each;                                                \
 } while (0)
 
 #define BREAK_FOR_EACH goto exit_for_each
+
+#define FOR_EACH_ENTRY(_t,_x,CODE)                                              \
+  _FOR_EACH_ENTRY(_t,_x,CODE,StgTRecHeader,StgTRecChunk,TRecEntry               \
+                 ,END_STM_CHUNK_LIST,TREC_CHUNK_NUM_ENTRIES)
+#define FOR_EACH_HENTRY(_t,_x,CODE)                                             \
+  _FOR_EACH_ENTRY(_t,_x,CODE,StgHTRecHeader,StgHTRecChunk,HTRecEntry            \
+                 ,END_HTM_CHUNK_LIST,HTREC_CHUNK_NUM_ENTRIES)
      
 /*......................................................................*/
 
@@ -224,35 +234,63 @@ static StgBool cond_lock_tvar(StgTRecHeader *trec STG_UNUSED,
 #undef IF_STM_CG_LOCK
 #define IF_STM_CG_LOCK(__X)  do { __X } while (0)
 static const StgBool config_use_read_phase = FALSE;
-static volatile StgTRecHeader *smp_locked = NULL;
+static volatile int smp_locked = 0;
 
-static void lock_stm(StgTRecHeader *trec) {
-  while (cas(&smp_locked, NULL, trec) != NULL) { }
+// In the simple scheme, encountering a retry will cause a fallback to STM.
+// We are not tracking the read set so we do not know what watch lists to
+// go on.
+
+// Abort reason codes:
+#define ABORT_FALLBACK  1
+#define ABORT_RESTART   2
+#define RETRY_COUNT     5
+
+static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
+  int i;
+  for (i = 0; i < RETRY_COUNT; i++)
+  {
+    XBEGIN(fail);
+    if (smp_locked == 0)
+      return;
+    XEND();
+    XFAIL(fail);
+  }
+
+  while (__sync_lock_test_and_set(&smp_locked, 1))
+  {
+    while (smp_locked != 0)
+      _mm_pause();
+  }
   TRACE("%p : lock_stm()", trec);
 }
 
 static void unlock_stm(StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : unlock_stm()", trec);
-  ASSERT (smp_locked == trec);
-  smp_locked = 0;
+
+  if (smp_locked == 0)
+  {
+    XEND();
+  }
+  else
+  {
+    __sync_lock_release(&smp_locked);
+  }
 }
 
 static StgClosure *lock_tvar(StgTRecHeader *trec STG_UNUSED, 
                              StgTVar *s STG_UNUSED) {
   StgClosure *result;
   TRACE("%p : lock_tvar(%p)", trec, s);
-  ASSERT (smp_locked == trec);
   result = s -> current_value;
   return result;
 }
 
-static void *unlock_tvar(Capability *cap,
-                         StgTRecHeader *trec STG_UNUSED,
-                         StgTVar *s,
-                         StgClosure *c,
-                         StgBool force_update) {
+static void unlock_tvar(Capability *cap,
+                        StgTRecHeader *trec STG_UNUSED,
+                        StgTVar *s STG_UNUSED,
+                        StgClosure *c,
+                        StgBool force_update) {
   TRACE("%p : unlock_tvar(%p, %p)", trec, s, c);
-  ASSERT (smp_locked == trec);
   if (force_update) {
     s -> current_value = c;
     dirty_TVAR(cap,s);
@@ -264,7 +302,6 @@ static StgBool cond_lock_tvar(StgTRecHeader *trec STG_UNUSED,
                                StgClosure *expected) {
   StgClosure *result;
   TRACE("%p : cond_lock_tvar(%p, %p)", trec, s, expected);
-  ASSERT (smp_locked == trec);
   result = s -> current_value;
   TRACE("%p : %d", result ? "success" : "failure");
   return (result == expected);
@@ -398,6 +435,12 @@ static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
   return result;
 }
 
+#if defined(THREADED_RTS)
+static StgHTRecChunk *new_stg_htrec_chunk(Capability *cap) {
+  return (StgHTRecChunk*)new_stg_trec_chunk(cap);
+}
+#endif
+
 static StgTRecHeader *new_stg_trec_header(Capability *cap,
                                           StgTRecHeader *enclosing_trec) {
   StgTRecHeader *result;
@@ -418,6 +461,19 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
   return result;  
 }
 
+#if defined(THREADED_RTS)
+static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
+  StgHTRecHeader *result;
+  result = (StgHTRecHeader *) allocate(cap, sizeofW(StgHTRecHeader));
+  SET_HDR (result, &stg_HTREC_HEADER_info, CCS_SYSTEM);
+
+  result -> current_chunk = new_stg_htrec_chunk(cap);
+  result -> enclosing_trec = (StgHTRecHeader*)NO_TREC;
+  result -> state = TREC_ACTIVE;
+
+  return result;
+}
+#endif
 /*......................................................................*/
 
 // Allocation / deallocation functions that retain per-capability lists
@@ -501,6 +557,17 @@ static void free_stg_trec_header(Capability *cap,
 #endif
 }
 
+#if defined(THREADED_RTS)
+static StgHTRecHeader *alloc_stg_htrec_header(Capability *cap) {
+  StgHTRecHeader *result = NULL;
+  result = new_stg_htrec_header(cap);
+  return result;
+}
+
+static void free_stg_htrec_header(Capability *cap STG_UNUSED,
+                                 StgHTRecHeader *trec STG_UNUSED) {
+}
+#endif
 /*......................................................................*/
 
 // Helper functions for managing waiting lists
@@ -603,6 +670,37 @@ static TRecEntry *get_new_entry(Capability *cap,
 
   return result;
 }
+
+/*......................................................................*/
+
+#if defined(THREADED_RTS)
+static HTRecEntry *get_new_hentry(Capability *cap,
+                                 StgHTRecHeader *t) {
+  HTRecEntry *result;
+  StgHTRecChunk *c;
+  int i;
+
+  c = t -> current_chunk;
+  i = c -> next_entry_idx;
+  ASSERT(c != END_HTM_CHUNK_LIST);
+
+  if (i < (int)HTREC_CHUNK_NUM_ENTRIES) {
+    // Continue to use current chunk
+    result = &(c -> entries[i]);
+    c -> next_entry_idx ++;
+  } else {
+    // Current chunk is full: allocate a fresh one
+    StgHTRecChunk *nc;
+    nc = (StgHTRecChunk*)alloc_stg_trec_chunk(cap);
+    nc -> prev_chunk = c;
+    nc -> next_entry_idx = 1;
+    t -> current_chunk = nc;
+    result = &(nc -> entries[0]);
+  }
+
+  return result;
+}
+#endif
 
 /*......................................................................*/
 
@@ -908,12 +1006,50 @@ static void getToken(Capability *cap STG_UNUSED) {
 StgTRecHeader *stmStartTransaction(Capability *cap,
                                    StgTRecHeader *outer) {
   StgTRecHeader *t;
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    // For the simple version abort when nesting.  More
+    // complicated versions can use STM inside a hardware
+    // transaction.
+    XABORT(ABORT_FALLBACK);
+  }
+
+  int i, s;
+  t = alloc_stg_htrec_header(cap);
+  for (i = 0; i < RETRY_COUNT; i++) {
+    XBEGIN(fail);
+    if (smp_locked != 0) {
+        // Make sure that no STM transaction is committing while we run.
+        XABORT(ABORT_RESTART);
+    }
+    return t;
+   
+    int status;
+    XFAIL_STATUS(fail, status);
+    s = status & 0xffffff;
+    if ((s == XABORT_EXPLICIT && XABORT_CODE(status) == ABORT_FALLBACK) 
+      || s != XABORT_RETRY) {
+        break;
+    }
+    else
+    {
+        // Perhaps our failure was due to observing the lock from a commiting
+        // STM transaction.  Wait until we observe the lock free.  If we do not
+        // do this we risk all transactions falling back.
+        while (smp_locked != 0) ; // We should have some backoff here.
+    }
+  }
+#endif
+
   TRACE("%p : stmStartTransaction with %d tokens", 
         outer, 
         cap -> transaction_tokens);
 
   getToken(cap);
 
+#if defined(THREADED_RTS)
+  free_stg_htrec_header(cap, t);
+#endif
   t = alloc_stg_trec_header(cap, outer);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
@@ -924,6 +1060,13 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 void stmAbortTransaction(Capability *cap,
                          StgTRecHeader *trec) {
   StgTRecHeader *et;
+
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    XABORT(ABORT_FALLBACK);
+  }
+#endif
+
   TRACE("%p : stmAbortTransaction", trec);
   ASSERT (trec != NO_TREC);
   ASSERT ((trec -> state == TREC_ACTIVE) || 
@@ -964,6 +1107,11 @@ void stmAbortTransaction(Capability *cap,
 
 void stmFreeAbortedTRec(Capability *cap,
 			StgTRecHeader *trec) {
+
+  // trec could be a trec header or an htrec header.
+  if (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) != &stg_TREC_HEADER_info)
+    return;
+
   TRACE("%p : stmFreeAbortedTRec", trec);
   ASSERT (trec != NO_TREC);
   ASSERT ((trec -> state == TREC_CONDEMNED) ||
@@ -978,6 +1126,12 @@ void stmFreeAbortedTRec(Capability *cap,
 
 void stmCondemnTransaction(Capability *cap,
                            StgTRecHeader *trec) {
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    XABORT(ABORT_FALLBACK);
+  }
+#endif
+
   TRACE("%p : stmCondemnTransaction", trec);
   ASSERT (trec != NO_TREC);
   ASSERT ((trec -> state == TREC_ACTIVE) || 
@@ -1001,6 +1155,15 @@ void stmCondemnTransaction(Capability *cap,
 StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
   StgTRecHeader *t;
   StgBool result;
+
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    // This is called from either an exception or a long running transaction.
+    // TODO: The long running transaction might be ok, but is likely to abort
+    // before rescheduled. 
+    XABORT(ABORT_FALLBACK);
+  }
+#endif
 
   TRACE("%p : stmValidateNestOfTransactions", trec);
   ASSERT(trec != NO_TREC);
@@ -1053,8 +1216,37 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
 
 /*......................................................................*/
 
+#if defined(THREADED_RTS)
+static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
+  XEND();
+
+  StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
+
+  lock_stm(trec);
+  FOR_EACH_HENTRY(htrec, e, {
+    StgTVar *s;
+    s = e -> tvar;
+    unpark_waiters_on(cap,s);
+  });
+  unlock_stm(trec);
+
+  free_stg_htrec_header(cap, htrec);
+
+  return TRUE;
+}
+#endif
+
+/*......................................................................*/
+
 StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   int result;
+
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    return htmCommitTransaction(cap, trec);
+  }
+#endif
+
   StgInt64 max_commits_at_start = max_commits;
 
   TRACE("%p : stmCommitTransaction()", trec);
@@ -1131,6 +1323,13 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
   StgTRecHeader *et;
   int result;
+
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    return TRUE;
+  }
+#endif
+
   ASSERT (trec != NO_TREC && trec -> enclosing_trec != NO_TREC);
   TRACE("%p : stmCommitNestedTransaction() into %p", trec, trec -> enclosing_trec);
   ASSERT ((trec -> state == TREC_ACTIVE) || (trec -> state == TREC_CONDEMNED));
@@ -1182,6 +1381,13 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
 
 StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
   int result;
+
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    XABORT(ABORT_FALLBACK);
+  }
+#endif
+
   TRACE("%p : stmWait(%p)", trec, tso);
   ASSERT (trec != NO_TREC);
   ASSERT (trec -> enclosing_trec == NO_TREC);
@@ -1230,6 +1436,13 @@ stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
 
 StgBool stmReWait(Capability *cap, StgTSO *tso) {
   int result;
+
+#if defined(THREADED_RTS)
+  if (XTEST()) {
+    XABORT(ABORT_FALLBACK);
+  }
+#endif
+
   StgTRecHeader *trec = tso->trec;
 
   TRACE("%p : stmReWait", trec);

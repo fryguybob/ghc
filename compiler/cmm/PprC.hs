@@ -758,6 +758,7 @@ pprCallishMachOp_for_C mop
         (MO_AtomicRead w)  -> ptext (sLit $ atomicReadLabel w)
         (MO_AtomicWrite w) -> ptext (sLit $ atomicWriteLabel w)
         (MO_UF_Conv w)  -> ptext (sLit $ word2FloatLabel w)
+        MO_XTest        -> ptext (sLit "xtest")
 
         MO_S_QuotRem  {} -> unsupported
         MO_U_QuotRem  {} -> unsupported

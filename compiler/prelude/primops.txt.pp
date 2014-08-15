@@ -390,6 +390,13 @@ primop   BSwapOp     "byteSwap#"     Monadic   Word# -> Word#
     {Swap bytes in a word.}
 
 ------------------------------------------------------------------------
+section "TSX"
+    {Support for Transactional Synchronization Extensions.}
+------------------------------------------------------------------------
+
+primop  XTestOp "xTest#"    GenPrimOp   () -> Word#
+
+------------------------------------------------------------------------
 section "Narrowings"
 	{Explicit narrowing of native-sized ints or words.}
 ------------------------------------------------------------------------
@@ -2001,6 +2008,14 @@ primop	ReadTVarOp "readTVar#" GenPrimOp
    out_of_line	= True
    has_side_effects = True
 
+primop ReadTVarSTMOp "readTVarSTM#" GenPrimOp
+       TVar# s a
+    -> State# s -> (# State# s, a #)
+   {Read contents of {\tt TVar\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
 primop ReadTVarIOOp "readTVarIO#" GenPrimOp
        TVar# s a
     -> State# s -> (# State# s, a #)
@@ -2016,6 +2031,15 @@ primop	WriteTVarOp "writeTVar#" GenPrimOp
    {Write contents of {\tt TVar\#}.}
    with
    out_of_line	    = True
+   has_side_effects = True
+
+primop WriteTVarSTMOp "writeTVarSTM#" GenPrimOp
+       TVar# s a
+    -> a
+    -> State# s -> State# s
+   {Write contents of {\tt TVar\#}.}
+   with
+   out_of_line     = True
    has_side_effects = True
 
 primop  SameTVarOp "sameTVar#" GenPrimOp

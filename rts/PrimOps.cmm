@@ -1138,6 +1138,7 @@ stg_catchRetryzh (P_ first_code, /* :: STM a */
         (first_code);
 }
 
+#define HTM_ACTIVE_RETRY
 
 stg_retryzh /* no arg list: explicit stack layout */
 {
@@ -1185,6 +1186,7 @@ retry_pop_stack:
     ASSERT(frame_type == ATOMICALLY_FRAME);
     ASSERT(outer == NO_TREC);
 
+#ifndef HTM_ACTIVE_RETRY
     (r) = ccall stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
     if (r != 0) {
         // Transaction was valid: stmWait put us on the TVars' queues, we now block
@@ -1193,13 +1195,16 @@ retry_pop_stack:
         R3 = trec; // passing to stmWaitUnblock()
         jump stg_block_stmwait [R3];
     } else {
+#endif
         // Transaction was not valid: retry immediately
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
         StgTSO_trec(CurrentTSO) = trec;
         Sp = frame;
         R1 = StgAtomicallyFrame_code(frame);
         jump stg_ap_v_fast [R1];
+#ifndef HTM_ACTIVE_RETRY
     }
+#endif
 }
 
 stg_checkzh (P_ closure /* STM a */)
@@ -1224,19 +1229,34 @@ stg_newTVarzh (P_ init)
     return (tv);
 }
 
-
-stg_readTVarzh (P_ tvar)
+stg_readTVarSTMzh (P_ tvar)
 {
     P_ trec;
     P_ result;
 
-    // Call to stmReadTVar may allocate
-    MAYBE_GC_P (stg_readTVarzh, tvar);
+    // Call to stmReadTVarSTM may allocate
+    MAYBE_GC_P (stg_readTVarSTMzh, tvar);
 
     trec = StgTSO_trec(CurrentTSO);
     ("ptr" result) = ccall stmReadTVar(MyCapability() "ptr", trec "ptr",
                                        tvar "ptr");
     return (result);
+}
+
+stg_readTVarzh (P_ tvar)
+{
+    P_ result;
+    W_ test;
+
+    (test) = prim %xtest();
+
+    if (test != 0) {
+        result = StgTVar_current_value(tvar);
+
+        return (result);
+    } else {
+        jump stg_readTVarSTMzh(tvar);
+    }
 }
 
 stg_readTVarIOzh ( P_ tvar /* :: TVar a */ )
@@ -1251,18 +1271,36 @@ again:
     return (result);
 }
 
-stg_writeTVarzh (P_ tvar,     /* :: TVar a */
-                 P_ new_value /* :: a      */)
+stg_writeTVarSTMzh (P_ tvar,     /* :: TVar a */
+                    P_ new_value /* :: a      */)
 {
     W_ trec;
 
-    // Call to stmWriteTVar may allocate
-    MAYBE_GC_PP (stg_writeTVarzh, tvar, new_value);
+    // Call to stmWriteTVarSTM may allocate
+    MAYBE_GC_PP (stg_writeTVarSTMzh, tvar, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTVar(MyCapability() "ptr", trec "ptr", tvar "ptr",
                        new_value "ptr");
     return ();
+}
+
+
+
+stg_writeTVarzh (P_ tvar,     /* :: TVar a */
+                 P_ new_value /* :: a      */)
+{
+    W_ test;
+
+    (test) = prim %xtest();
+
+    if (test != 0) {
+        StgTVar_current_value(tvar) = new_value;
+
+        return ();
+    } else {
+        jump stg_writeTVarSTMzh(tvar,new_value);
+    }
 }
 
 

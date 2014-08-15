@@ -34,8 +34,8 @@
 #define STM_H
 
 #ifdef THREADED_RTS
-//#define STM_CG_LOCK
-#define STM_FG_LOCKS
+#define STM_CG_LOCK
+//#define STM_FG_LOCKS
 #else
 #define STM_UNIPROC
 #endif
@@ -199,6 +199,7 @@ void stmWriteTVar(Capability *cap,
 
 #define END_STM_WATCH_QUEUE ((StgTVarWatchQueue *)(void *)&stg_END_STM_WATCH_QUEUE_closure)
 #define END_STM_CHUNK_LIST ((StgTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
+#define END_HTM_CHUNK_LIST ((StgHTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 
 #define NO_TREC ((StgTRecHeader *)(void *)&stg_NO_TREC_closure)
 

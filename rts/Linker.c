@@ -1203,6 +1203,7 @@ typedef struct _RtsSymbolVal {
       SymI_HasProto(stg_raisezh)                                        \
       SymI_HasProto(stg_raiseIOzh)                                      \
       SymI_HasProto(stg_readTVarzh)                                     \
+      SymI_HasProto(stg_readTVarSTMzh)                                  \
       SymI_HasProto(stg_readTVarIOzh)                                   \
       SymI_HasProto(resumeThread)                                       \
       SymI_HasProto(setNumCapabilities)                                 \
@@ -1376,6 +1377,7 @@ typedef struct _RtsSymbolVal {
       SymI_HasProto(stg_waitReadzh)                                     \
       SymI_HasProto(stg_waitWritezh)                                    \
       SymI_HasProto(stg_writeTVarzh)                                    \
+      SymI_HasProto(stg_writeTVarSTMzh)                                 \
       SymI_HasProto(stg_yieldzh)                                        \
       SymI_NeedsProto(stg_interp_constr_entry)                          \
       SymI_HasProto(stg_arg_bitmaps)                                    \
