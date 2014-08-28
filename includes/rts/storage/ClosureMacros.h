@@ -400,6 +400,8 @@ closure_sizeW_ (StgClosure *p, StgInfoTable *info)
 	return bco_sizeW((StgBCO *)p);
     case TREC_CHUNK:
         return sizeofW(StgTRecChunk);
+    case HTREC_CHUNK:
+        return sizeofW(StgHTRecChunk);
     default:
 	return sizeW_fromITBL(info);
     }

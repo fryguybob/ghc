@@ -606,6 +606,11 @@ push( StgClosure *c, retainer c_child_r, StgClosure **first_child )
 	se.info.next.step = 0;  // entry no.
 	break;
 
+    case HTREC_CHUNK:
+	*first_child = (StgClosure *)((StgHTRecChunk *)c)->prev_chunk;
+	se.info.next.step = 0;  // entry no.
+	break;
+
 	// cannot appear
     case PAP:
     case AP:
@@ -852,6 +857,24 @@ pop( StgClosure **c, StgClosure **cp, retainer *r )
 	    } else {
 		*c = entry->new_value;
 	    }
+	    *cp = se->c;
+	    *r = se->c_child_r;
+	    se->info.next.step++;
+	    return;
+	}
+
+	case HTREC_CHUNK: {
+	    // We have N entries, each of which contains one field that
+        // we want to follow.
+        HTRecEntry *entry;
+	    nat entry_no = se->info.next.step;
+	    if (entry_no == ((StgHTRecChunk *)se->c)->next_entry_idx) {
+		*c = NULL;
+		popOff();
+		return;
+	    }
+	    entry = &((StgHTRecChunk *)se->c)->entries[entry_no];
+		*c = (StgClosure *)entry->tvar;
 	    *cp = se->c;
 	    *r = se->c_child_r;
 	    se->info.next.step++;

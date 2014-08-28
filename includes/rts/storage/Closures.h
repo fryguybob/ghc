@@ -368,7 +368,7 @@ typedef struct {
 /* Size this so that an StgTRecChunk and an StgHTRecChunk take up
  * the same space
  */
-#define HTREC_CHUNK_NUM_ENTRIES (sizeof(TRecEntry)*TREC_CHUNK_NUM_ENTRIES/sizeof(HTRecEntry))
+#define HTREC_CHUNK_NUM_ENTRIES 32
 
 typedef struct StgHTRecChunk_ {
   StgHeader                  header;

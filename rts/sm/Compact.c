@@ -531,6 +531,18 @@ update_fwd_large( bdescr *bd )
 	continue;
     }
 
+    case HTREC_CHUNK:
+    {
+        StgWord i;
+        StgHTRecChunk *tc = (StgHTRecChunk *)p;
+	HTRecEntry *e = &(tc -> entries[0]);
+	thread_(&tc->prev_chunk);
+	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+	  thread_(&e->tvar);
+	}
+	continue;
+    }
+
     default:
       barf("update_fwd_large: unknown/strange object  %d", (int)(info->type));
     }
@@ -726,6 +738,18 @@ thread_obj (StgInfoTable *info, StgPtr p)
 	  thread(&e->new_value);
 	}
 	return p + sizeofW(StgTRecChunk);
+    }
+
+    case HTREC_CHUNK:
+    {
+        StgWord i;
+        StgHTRecChunk *tc = (StgHTRecChunk *)p;
+	HTRecEntry *e = &(tc -> entries[0]);
+	thread_(&tc->prev_chunk);
+	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+	  thread_(&e->tvar);
+	}
+	return p + sizeofW(StgHTRecChunk);
     }
 
     default:

@@ -437,7 +437,12 @@ static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
 
 #if defined(THREADED_RTS)
 static StgHTRecChunk *new_stg_htrec_chunk(Capability *cap) {
-  return (StgHTRecChunk*)new_stg_trec_chunk(cap);
+  StgHTRecChunk *result;
+  result = (StgHTRecChunk *)allocate(cap, sizeofW(StgHTRecChunk));
+  SET_HDR (result, &stg_HTREC_CHUNK_info, CCS_SYSTEM);
+  result -> prev_chunk = END_HTM_CHUNK_LIST;
+  result -> next_entry_idx = 0;
+  return result;
 }
 #endif
 
@@ -512,6 +517,14 @@ static StgTRecChunk *alloc_stg_trec_chunk(Capability *cap) {
   }
   return result;
 }
+
+#if defined(THREADED_RTS)
+static StgTRecChunk *alloc_stg_htrec_chunk(Capability *cap) {
+  StgTRecChunk *result = NULL;
+  result = new_stg_htrec_chunk(cap);
+  return result;
+}
+#endif
 
 static void free_stg_trec_chunk(Capability *cap, 
                                 StgTRecChunk *c) {
@@ -691,7 +704,7 @@ static HTRecEntry *get_new_hentry(Capability *cap,
   } else {
     // Current chunk is full: allocate a fresh one
     StgHTRecChunk *nc;
-    nc = (StgHTRecChunk*)alloc_stg_trec_chunk(cap);
+    nc = alloc_stg_htrec_chunk(cap);
     nc -> prev_chunk = c;
     nc -> next_entry_idx = 1;
     t -> current_chunk = nc;

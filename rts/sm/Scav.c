@@ -765,6 +765,22 @@ scavenge_block (bdescr *bd)
 	break;
       }
 
+    case HTREC_CHUNK:
+      {
+	StgWord i;
+	StgHTRecChunk *tc = ((StgHTRecChunk *) p);
+	HTRecEntry *e = &(tc -> entries[0]);
+	gct->eager_promotion = rtsFalse;
+	evacuate((StgClosure **)&tc->prev_chunk);
+	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+	  evacuate((StgClosure **)&e->tvar);
+	}
+	gct->eager_promotion = saved_eager_promotion;
+	gct->failed_to_evac = rtsTrue; // mutable
+	p += sizeofW(StgHTRecChunk);
+	break;
+      }
+
     default:
 	barf("scavenge: unimplemented/strange closure type %d @ %p", 
 	     info->type, p);
@@ -1160,6 +1176,21 @@ scavenge_mark_stack(void)
 	      evacuate((StgClosure **)&e->tvar);
 	      evacuate((StgClosure **)&e->expected_value);
 	      evacuate((StgClosure **)&e->new_value);
+	    }
+	    gct->eager_promotion = saved_eager_promotion;
+	    gct->failed_to_evac = rtsTrue; // mutable
+	    break;
+	  }
+
+	case HTREC_CHUNK:
+	  {
+	    StgWord i;
+	    StgHTRecChunk *tc = ((StgHTRecChunk *) p);
+	    HTRecEntry *e = &(tc -> entries[0]);
+	    gct->eager_promotion = rtsFalse;
+	    evacuate((StgClosure **)&tc->prev_chunk);
+	    for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+	      evacuate((StgClosure **)&e->tvar);
 	    }
 	    gct->eager_promotion = saved_eager_promotion;
 	    gct->failed_to_evac = rtsTrue; // mutable
@@ -1565,6 +1596,8 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
             case TVAR:
                 mutlist_TVAR++; break;
             case TREC_CHUNK:
+                mutlist_TREC_CHUNK++; break;
+            case HTREC_CHUNK:
                 mutlist_TREC_CHUNK++; break;
             case MUT_PRIM:
                 if (((StgClosure*)p)->header.info == &stg_TVAR_WATCH_QUEUE_info)
