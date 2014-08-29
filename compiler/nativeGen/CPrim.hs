@@ -7,6 +7,7 @@ module CPrim
     , popCntLabel
     , bSwapLabel
     , word2FloatLabel
+    , xtestLabel
     ) where
 
 import CmmType
@@ -79,3 +80,7 @@ atomicWriteLabel w = "hs_atomicwrite" ++ pprWidth w
     pprWidth W32 = "32"
     pprWidth W64 = "64"
     pprWidth w   = pprPanic "atomicWriteLabel: Unsupported word width " (ppr w)
+
+xtestLabel :: String
+xtestLabel = "hs_xtest"
+

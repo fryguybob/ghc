@@ -1763,8 +1763,10 @@ genCCall dflags is32Bit (PrimTarget (MO_PopCnt width)) dest_regs@[dst]
     size = intSize width
     lbl = mkCmmCodeLabel primPackageKey (fsLit (popCntLabel width))
 
-genCCall dflags _ (PrimTarget MO_XTest) [dst] _
-    = return $ unitOL (XTEST (getRegisterReg (targetPlatform dflags) False (CmmLocal dst)))
+genCCall dflags is32Bit (PrimTarget MO_XTest) [dst] _
+    = return $ unitOL (XTEST size (getRegisterReg (targetPlatform dflags) False (CmmLocal dst)))
+  where
+    size = archWordSize is32Bit
 
 genCCall dflags is32Bit (PrimTarget (MO_UF_Conv width)) dest_regs args = do
     targetExpr <- cmmMakeDynamicReference dflags

@@ -333,7 +333,7 @@ data Instr
         | MFENCE
 
     -- TSX
-        | XTEST       Reg        -- dst
+        | XTEST       Size Reg   -- dst
 
 data PrefetchVariant = NTA | Lvl0 | Lvl1 | Lvl2
 
@@ -443,7 +443,7 @@ x86_regUsageOfInstr platform instr
     CMPXCHG _ src dst   -> usageRMM src dst (OpReg eax)
     MFENCE -> noUsage
 
-    XTEST dst           -> mkRU [] [dst]
+    XTEST _ dst         -> mkRU [] [dst]
 
     _other              -> panic "regUsage: unrecognised instr"
  where
@@ -615,7 +615,7 @@ x86_patchRegsOfInstr instr env
     CMPXCHG sz src dst  -> patch2 (CMPXCHG sz) src dst
     MFENCE              -> instr
 
-    XTEST dst           -> XTEST (env dst)
+    XTEST sz dst        -> XTEST sz (env dst)
 
     _other              -> panic "patchRegs: unrecognised instr"
 

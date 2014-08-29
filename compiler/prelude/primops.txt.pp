@@ -394,7 +394,7 @@ section "TSX"
     {Support for Transactional Synchronization Extensions.}
 ------------------------------------------------------------------------
 
-primop  XTestOp "xTest#"    GenPrimOp   () -> Word#
+primop  XTestOp   "xTest#"      GenPrimOp   () -> Word#
 
 ------------------------------------------------------------------------
 section "Narrowings"
