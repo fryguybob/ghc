@@ -428,6 +428,7 @@ scavenge_block (bdescr *bd)
     case TVAR:
     {
 	StgTVar *tvar = ((StgTVar *)p);
+    debugTrace(DEBUG_gc,"scavenging block TVAR %p value %p",p,tvar->current_value);
 	gct->eager_promotion = rtsFalse;
         evacuate((StgClosure **)&tvar->current_value);
         evacuate((StgClosure **)&tvar->first_watch_queue_entry);
@@ -770,6 +771,7 @@ scavenge_block (bdescr *bd)
 	StgWord i;
 	StgHTRecChunk *tc = ((StgHTRecChunk *) p);
 	HTRecEntry *e = &(tc -> entries[0]);
+    debugTrace(DEBUG_gc,"scavenging block HTRecChunk %p count %d",p,tc->next_entry_idx);
 	gct->eager_promotion = rtsFalse;
 	evacuate((StgClosure **)&tc->prev_chunk);
 	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
@@ -868,6 +870,7 @@ scavenge_mark_stack(void)
         case TVAR:
         {
             StgTVar *tvar = ((StgTVar *)p);
+            debugTrace(DEBUG_gc,"scavenging mark TVAR %p value %p",p,tvar->current_value);
             gct->eager_promotion = rtsFalse;
             evacuate((StgClosure **)&tvar->current_value);
             evacuate((StgClosure **)&tvar->first_watch_queue_entry);
@@ -1186,6 +1189,7 @@ scavenge_mark_stack(void)
 	  {
 	    StgWord i;
 	    StgHTRecChunk *tc = ((StgHTRecChunk *) p);
+        debugTrace(DEBUG_gc,"scavenging mark HTRecChunk %p count %d",p,tc->next_entry_idx);
 	    HTRecEntry *e = &(tc -> entries[0]);
 	    gct->eager_promotion = rtsFalse;
 	    evacuate((StgClosure **)&tc->prev_chunk);
@@ -1254,6 +1258,7 @@ scavenge_one(StgPtr p)
     case TVAR:
     {
 	StgTVar *tvar = ((StgTVar *)p);
+    debugTrace(DEBUG_gc,"scavenging one TVAR %p value %p",p,tvar->current_value);
 	gct->eager_promotion = rtsFalse;
         evacuate((StgClosure **)&tvar->current_value);
         evacuate((StgClosure **)&tvar->first_watch_queue_entry);
@@ -1507,6 +1512,22 @@ scavenge_one(StgPtr p)
 	  evacuate((StgClosure **)&e->tvar);
 	  evacuate((StgClosure **)&e->expected_value);
 	  evacuate((StgClosure **)&e->new_value);
+	}
+	gct->eager_promotion = saved_eager_promotion;
+	gct->failed_to_evac = rtsTrue; // mutable
+	break;
+      }
+
+    case HTREC_CHUNK:
+      {
+	StgWord i;
+	StgHTRecChunk *tc = ((StgHTRecChunk *) p);
+        debugTrace(DEBUG_gc,"scavenging one HTRecChunk %p count %d",p,tc->next_entry_idx);
+	HTRecEntry *e = &(tc -> entries[0]);
+	gct->eager_promotion = rtsFalse;
+	evacuate((StgClosure **)&tc->prev_chunk);
+	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+	  evacuate((StgClosure **)&e->tvar);
 	}
 	gct->eager_promotion = saved_eager_promotion;
 	gct->failed_to_evac = rtsTrue; // mutable

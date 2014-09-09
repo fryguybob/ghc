@@ -243,6 +243,7 @@ static volatile int smp_locked = 0;
 // Abort reason codes:
 #define ABORT_FALLBACK  1
 #define ABORT_RESTART   2
+#define ABORT_GC        3
 #define RETRY_COUNT     5
 
 static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
@@ -519,8 +520,8 @@ static StgTRecChunk *alloc_stg_trec_chunk(Capability *cap) {
 }
 
 #if defined(THREADED_RTS)
-static StgTRecChunk *alloc_stg_htrec_chunk(Capability *cap) {
-  StgTRecChunk *result = NULL;
+static StgHTRecChunk *alloc_stg_htrec_chunk(Capability *cap) {
+  StgHTRecChunk *result = NULL;
   result = new_stg_htrec_chunk(cap);
   return result;
 }
@@ -1018,7 +1019,15 @@ static void getToken(Capability *cap STG_UNUSED) {
 
 StgTRecHeader *stmStartTransaction(Capability *cap,
                                    StgTRecHeader *outer) {
-  StgTRecHeader *t;
+
+  // We will leave this function in two possible states:
+  //
+  // 1) Execution is in a hardware transaction and the return value is an
+  //    StgHTRecHeader*
+  //
+  // 2) Execution is in a software transaction and the return value is an
+  //    StgTRecHeader*
+  //
 #if defined(THREADED_RTS)
   if (XTEST()) {
     // For the simple version abort when nesting.  More
@@ -1026,31 +1035,40 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
     // transaction.
     XABORT(ABORT_FALLBACK);
   }
-
-  int i, s;
-  t = alloc_stg_htrec_header(cap);
-  for (i = 0; i < RETRY_COUNT; i++) {
-    XBEGIN(fail);
-    if (smp_locked != 0) {
-        // Make sure that no STM transaction is committing while we run.
-        XABORT(ABORT_RESTART);
+  else if (outer == NO_TREC)
+  {
+    // We check for an outer transaction to avoid starting an HTM transaction
+    // nested in an STM transaction.
+    int i, s;
+    StgHTRecHeader *th;
+    th = alloc_stg_htrec_header(cap);
+    TRACE("%p : stmStartTransaction()=%p XBEGIN", outer, th);
+    for (i = 0; i < RETRY_COUNT; i++) {
+      XBEGIN(fail);
+      if (smp_locked != 0) {
+          // Make sure that no STM transaction is committing while we run.
+          XABORT(ABORT_RESTART);
+      }
+      return (StgTRecHeader*)th;
+     
+      int status;
+      XFAIL_STATUS(fail, status);
+      s = status & 0xffffff;
+      TRACE("%p : XFAIL %x %x %d", outer, status, s, XABORT_CODE(status));
+      if ((s == XABORT_EXPLICIT && XABORT_CODE(status) == ABORT_FALLBACK) 
+        || s != XABORT_RETRY) {
+          break;
+      }
+      else
+      {
+          // Perhaps our failure was due to observing the lock from a commiting
+          // STM transaction.  Wait until we observe the lock free.  If we do not
+          // do this we risk all transactions falling back.
+          while (smp_locked != 0)
+              _mm_pause(); // We should have some backoff here.
+      }
     }
-    return t;
-   
-    int status;
-    XFAIL_STATUS(fail, status);
-    s = status & 0xffffff;
-    if ((s == XABORT_EXPLICIT && XABORT_CODE(status) == ABORT_FALLBACK) 
-      || s != XABORT_RETRY) {
-        break;
-    }
-    else
-    {
-        // Perhaps our failure was due to observing the lock from a commiting
-        // STM transaction.  Wait until we observe the lock free.  If we do not
-        // do this we risk all transactions falling back.
-        while (smp_locked != 0) ; // We should have some backoff here.
-    }
+    free_stg_htrec_header(cap, th);
   }
 #endif
 
@@ -1060,9 +1078,7 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 
   getToken(cap);
 
-#if defined(THREADED_RTS)
-  free_stg_htrec_header(cap, t);
-#endif
+  StgTRecHeader* t;
   t = alloc_stg_trec_header(cap, outer);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
@@ -1176,6 +1192,10 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
     // before rescheduled. 
     XABORT(ABORT_FALLBACK);
   }
+  else
+  {
+    ASSERT (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_TREC_HEADER_info);
+  }
 #endif
 
   TRACE("%p : stmValidateNestOfTransactions", trec);
@@ -1233,10 +1253,13 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
 static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   XEND();
 
+  ASSERT(GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_HTREC_HEADER_info);
+
   StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
 
   lock_stm(trec);
   FOR_EACH_HENTRY(htrec, e, {
+    ASSERT(0); // Unexpected right now.
     StgTVar *s;
     s = e -> tvar;
     unpark_waiters_on(cap,s);
