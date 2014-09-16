@@ -246,6 +246,8 @@ static volatile int smp_locked = 0;
 #define ABORT_GC        3
 #define RETRY_COUNT     5
 
+#define HTM_LATE_LOCK_SUBSCRIPTION
+
 static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
   int i;
   for (i = 0; i < RETRY_COUNT; i++)
@@ -1045,11 +1047,14 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
     TRACE("%p : stmStartTransaction()=%p XBEGIN", outer, th);
     for (i = 0; i < RETRY_COUNT; i++) {
       XBEGIN(fail);
+#ifndef HTM_LATE_LOCK_SUBSCRIPTION
       if (smp_locked != 0) {
+          // Early Lock subscription.
           // Make sure that no STM transaction is committing while we run.
           XABORT(ABORT_RESTART);
       }
-      return (StgTRecHeader*)th;
+#endif // !HTM_LATE_LOCK_SUBSCRIPTION
+return (StgTRecHeader*)th;
      
       int status;
       XFAIL_STATUS(fail, status);
@@ -1251,18 +1256,45 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
 
 #if defined(THREADED_RTS)
 static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
+
+#ifdef HTM_LATE_LOCK_SUBSCRIPTION
+  // At some point we need to make sure that the fallback lock is in our
+  // transaction's read set.  By reading it as late as possible we narrow
+  // the window of conflict and can allow a fully-software transaction to 
+  // commit while a hardware transaction runs up to this point.  The danger
+  // is that the hardware transaction may be exposed to inconsistent view
+  // of data.
+  //
+  // TODO: Prove that an inconsistent view of data in a hardware transaction
+  // cannot lead to execution of an XEND instruction.  This proof would also
+  // need to exclude the possiblity of execution of uninitalized data or jumping
+  // to arbitrary code.  I think we should be happy by only concerning ourselves
+  // with "safe" transactions.
+  if (smp_locked != 0)
+  {
+    // A software transaction is commiting or a hardware transaction is
+    // waking up waiters or performing the GC write barrier on the fully-
+    // software code path.
+    XABORT(XABORT_RETRY);
+  }
+#endif // HTM_LATE_LOCK_SUBSCRIPTION
+
+  // Commit the transaction.
   XEND();
 
   ASSERT(GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_HTREC_HEADER_info);
 
   StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
 
+  // TODO: There are some easy to detect cases where we can avoid taking this
+  // lock (even the elided version) such as when a transaction is read only.
   lock_stm(trec);
   FOR_EACH_HENTRY(htrec, e, {
-    ASSERT(0); // Unexpected right now.
     StgTVar *s;
     s = e -> tvar;
-    unpark_waiters_on(cap,s);
+    dirty_TVAR(cap,s); // GC write barrier
+
+    unpark_waiters_on(cap,s); // Wake up waiters.
   });
   unlock_stm(trec);
 
@@ -1574,6 +1606,17 @@ void stmWriteTVar(Capability *cap,
                   StgTRecHeader *trec,
 		  StgTVar *tvar, 
 		  StgClosure *new_value) {
+
+#if defined(THREADED_RTS)
+  // For debugging track the write set.
+  if (XTEST()) {
+    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
+    HTRecEntry* new_entry = get_new_hentry(cap, htrec);
+    new_entry -> tvar = tvar;
+    tvar -> current_value = new_value;
+    return;
+  }
+#endif
 
   StgTRecHeader *entry_in = NULL;
   TRecEntry *entry = NULL;

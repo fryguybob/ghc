@@ -1290,6 +1290,16 @@ stg_writeTVarSTMzh (P_ tvar,     /* :: TVar a */
 stg_writeTVarzh (P_ tvar,     /* :: TVar a */
                  P_ new_value /* :: a      */)
 {
+
+/* TODO: expand this quick implementation to record
+ *       the write set.
+ *
+ *       We have choices to make about allocation.  We
+ *       could allocate upfront with something that will
+ *       handle any transaction that HTM could fit, or
+ *       do some allocation as we go.  Not sure which
+ *       is better.
+ *
     W_ test;
 
     (test) = prim %xtest();
@@ -1297,10 +1307,18 @@ stg_writeTVarzh (P_ tvar,     /* :: TVar a */
     if (test != 0) {
         StgTVar_current_value(tvar) = new_value;
 
+        // TODO: Here we need the GC write barrier when
+        // we are not in gen 0 (transaction with long
+        // lived TVars).  We could also add all promoted 
+        // TVars as a new list of roots that we always
+        // follow at GC and avoid tracking the write set.
+
         return ();
     } else {
         jump stg_writeTVarSTMzh(tvar,new_value);
     }
+*/
+    jump stg_writeTVarSTMzh(tvar,new_value);
 }
 
 
