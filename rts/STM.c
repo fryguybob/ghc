@@ -1292,6 +1292,10 @@ static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   FOR_EACH_HENTRY(htrec, e, {
     StgTVar *s;
     s = e -> tvar;
+
+    // TODO: I think we can move this out of the stm lock.  The
+    // only thing we need to ensure is that it happens before GC
+    // happens.
     dirty_TVAR(cap,s); // GC write barrier
 
     unpark_waiters_on(cap,s); // Wake up waiters.
