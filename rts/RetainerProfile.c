@@ -606,8 +606,8 @@ push( StgClosure *c, retainer c_child_r, StgClosure **first_child )
 	se.info.next.step = 0;  // entry no.
 	break;
 
-    case HTREC_CHUNK:
-	*first_child = (StgClosure *)((StgHTRecChunk *)c)->prev_chunk;
+    case BLOOM_WAKEUP_CHUNK:
+	*first_child = (StgClosure *)((StgBloomWakeupChunk *)c)->prev_chunk;
 	se.info.next.step = 0;  // entry no.
 	break;
 
@@ -863,18 +863,18 @@ pop( StgClosure **c, StgClosure **cp, retainer *r )
 	    return;
 	}
 
-	case HTREC_CHUNK: {
+	case BLOOM_WAKEUP_CHUNK: {
 	    // We have N entries, each of which contains one field that
         // we want to follow.
-        HTRecEntry *entry;
+        BloomWakeupEntry *entry;
 	    nat entry_no = se->info.next.step;
-	    if (entry_no == ((StgHTRecChunk *)se->c)->next_entry_idx) {
+	    if (entry_no == ((StgBloomWakeupChunk *)se->c)->next_entry_idx) {
 		*c = NULL;
 		popOff();
 		return;
 	    }
-	    entry = &((StgHTRecChunk *)se->c)->entries[entry_no];
-		*c = (StgClosure *)entry->tvar;
+	    entry = &((StgBloomWakeupChunk *)se->c)->filters[entry_no];
+		*c = (StgClosure *)entry->tso;
 	    *cp = se->c;
 	    *r = se->c_child_r;
 	    se->info.next.step++;

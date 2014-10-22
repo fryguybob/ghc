@@ -531,14 +531,14 @@ update_fwd_large( bdescr *bd )
 	continue;
     }
 
-    case HTREC_CHUNK:
+    case BLOOM_WAKEUP_CHUNK:
     {
         StgWord i;
-        StgHTRecChunk *tc = (StgHTRecChunk *)p;
-	HTRecEntry *e = &(tc -> entries[0]);
+        StgBloomWakeupChunk *tc = (StgBloomWakeupChunk *)p;
+	BloomWakeupEntry *e = &(tc -> filters[0]);
 	thread_(&tc->prev_chunk);
 	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
-	  thread_(&e->tvar);
+	  thread_(&e->tso);
 	}
 	continue;
     }
@@ -740,16 +740,16 @@ thread_obj (StgInfoTable *info, StgPtr p)
 	return p + sizeofW(StgTRecChunk);
     }
 
-    case HTREC_CHUNK:
+    case BLOOM_WAKEUP_CHUNK:
     {
         StgWord i;
-        StgHTRecChunk *tc = (StgHTRecChunk *)p;
-	HTRecEntry *e = &(tc -> entries[0]);
+        StgBloomWakeupChunk *tc = (StgBloomWakeupChunk *)p;
+	BloomWakeupEntry *e = &(tc -> filters[0]);
 	thread_(&tc->prev_chunk);
 	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
-	  thread_(&e->tvar);
+	  thread_(&e->tso);
 	}
-	return p + sizeofW(StgHTRecChunk);
+	return p + sizeofW(StgBloomWakeupChunk);
     }
 
     default:

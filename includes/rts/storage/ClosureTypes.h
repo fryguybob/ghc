@@ -75,7 +75,7 @@
 #define TSO                     54
 #define STACK                   55
 #define TREC_CHUNK              56
-#define HTREC_CHUNK             57
+#define BLOOM_WAKEUP_CHUNK      57
 #define ATOMICALLY_FRAME        58
 #define CATCH_RETRY_FRAME       59
 #define CATCH_STM_FRAME         60

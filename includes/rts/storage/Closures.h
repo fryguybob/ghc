@@ -311,6 +311,7 @@ typedef struct {
  */
 
 typedef struct StgTRecHeader_ StgTRecHeader;
+typedef struct StgHTRecHeader_ StgHTRecHeader;
 
 typedef struct StgTVarWatchQueue_ {
   StgHeader                  header;
@@ -361,28 +362,31 @@ struct StgTRecHeader_ {
   TRecState                  state;
 };
 
-typedef struct {
-  StgTVar                   *tvar;
-} HTRecEntry;
-
-/* Size this so that an StgTRecChunk and an StgHTRecChunk take up
- * the same space
- */
-#define HTREC_CHUNK_NUM_ENTRIES 32
-
-typedef struct StgHTRecChunk_ {
-  StgHeader                  header;
-  struct StgHTRecChunk_     *prev_chunk;
-  StgWord                    next_entry_idx;
-  HTRecEntry                 entries[HTREC_CHUNK_NUM_ENTRIES];
-} StgHTRecChunk;
-
-typedef struct StgHTRecHeader_ {
+struct StgHTRecHeader_ {
   StgHeader                  header;
   struct StgHTRecHeader_    *enclosing_trec;
-  StgHTRecChunk             *current_chunk;
-  TRecState                  state;
-} StgHTRecHeader;
+  TRecState                  state; // TODO: do we need state? 
+  StgWord                    write_set;
+  StgWord                    read_set;
+};
+
+#define BLOOM_WAKEUP_CHUNK_NUM_ENTRIES 7  // TODO: Roundup to a multiple of cacheline size
+
+typedef StgWord StgBloom;
+
+typedef struct {
+    StgBloom     filter;
+    StgTSO      *tso;
+} BloomWakeupEntry;
+
+typedef struct StgBloomWakeupChunk_
+{
+    StgHeader                    header;
+    struct StgBloomWakeupChunk_ *prev_chunk;
+    StgWord                      next_entry_idx;
+    BloomWakeupEntry             filters[BLOOM_WAKEUP_CHUNK_NUM_ENTRIES];
+} StgBloomWakeupChunk;
+
 
 typedef struct {
   StgHeader   header;

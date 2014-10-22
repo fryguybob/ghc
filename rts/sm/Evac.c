@@ -757,8 +757,8 @@ loop:
       copy(p,info,q,sizeofW(StgTRecChunk),gen_no);
       return;
 
-  case HTREC_CHUNK:
-      copy(p,info,q,sizeofW(StgHTRecChunk),gen_no);
+  case BLOOM_WAKEUP_CHUNK:
+      copy(p,info,q,sizeofW(StgBloomWakeupChunk),gen_no);
       return;
 
   default:

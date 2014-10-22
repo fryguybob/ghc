@@ -159,6 +159,15 @@ StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec);
 
 void stmWaitUnlock(Capability *cap, StgTRecHeader *trec);
 
+#ifdef THREADED_RTS
+/*
+ * End a hardware transaction and add it's read set to the
+ * wakeup bloom filters.
+ */
+
+void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec);
+#endif
+
 /*
  * Test whether the current transaction context is valid and, if so,
  * leave the thread waiting and mark it as blocked again.  If the
@@ -199,7 +208,7 @@ void stmWriteTVar(Capability *cap,
 
 #define END_STM_WATCH_QUEUE ((StgTVarWatchQueue *)(void *)&stg_END_STM_WATCH_QUEUE_closure)
 #define END_STM_CHUNK_LIST ((StgTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
-#define END_HTM_CHUNK_LIST ((StgHTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
+#define END_BLOOM_WAKEUP_CHUNK_LIST ((StgBloomWakeupChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 
 #define NO_TREC ((StgTRecHeader *)(void *)&stg_NO_TREC_closure)
 

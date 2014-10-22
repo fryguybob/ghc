@@ -424,17 +424,17 @@ checkClosure( StgClosure* p )
         return sizeofW(StgTRecChunk);
       }
       
-     case HTREC_CHUNK:
+     case BLOOM_WAKEUP_CHUNK:
       {
         nat i;
-        StgHTRecChunk *tc = (StgHTRecChunk *)p;
+        StgBloomWakeupChunk *tc = (StgBloomWakeupChunk *)p;
         ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->prev_chunk));
         for (i = 0; i < tc -> next_entry_idx; i ++) {
-          ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->entries[i].tvar));
+          ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->filters[i].tso));
         }
-        return sizeofW(StgHTRecChunk);
+        return sizeofW(StgBloomWakeupChunk);
       }
-      
+
     default:
 	    barf("checkClosure (closure type %d)", info->type);
     }

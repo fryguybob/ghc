@@ -168,10 +168,6 @@ static int shake(void) {
 #define FOR_EACH_ENTRY(_t,_x,CODE)                                              \
   _FOR_EACH_ENTRY(_t,_x,CODE,StgTRecHeader,StgTRecChunk,TRecEntry               \
                  ,END_STM_CHUNK_LIST,TREC_CHUNK_NUM_ENTRIES)
-#define FOR_EACH_HENTRY(_t,_x,CODE)                                             \
-  _FOR_EACH_ENTRY(_t,_x,CODE,StgHTRecHeader,StgHTRecChunk,HTRecEntry            \
-                 ,END_HTM_CHUNK_LIST,HTREC_CHUNK_NUM_ENTRIES)
-     
 /*......................................................................*/
 
 // if REUSE_MEMORY is defined then attempt to re-use descriptors, log chunks,
@@ -438,17 +434,6 @@ static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
   return result;
 }
 
-#if defined(THREADED_RTS)
-static StgHTRecChunk *new_stg_htrec_chunk(Capability *cap) {
-  StgHTRecChunk *result;
-  result = (StgHTRecChunk *)allocate(cap, sizeofW(StgHTRecChunk));
-  SET_HDR (result, &stg_HTREC_CHUNK_info, CCS_SYSTEM);
-  result -> prev_chunk = END_HTM_CHUNK_LIST;
-  result -> next_entry_idx = 0;
-  return result;
-}
-#endif
-
 static StgTRecHeader *new_stg_trec_header(Capability *cap,
                                           StgTRecHeader *enclosing_trec) {
   StgTRecHeader *result;
@@ -475,9 +460,10 @@ static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
   result = (StgHTRecHeader *) allocate(cap, sizeofW(StgHTRecHeader));
   SET_HDR (result, &stg_HTREC_HEADER_info, CCS_SYSTEM);
 
-  result -> current_chunk = new_stg_htrec_chunk(cap);
   result -> enclosing_trec = (StgHTRecHeader*)NO_TREC;
   result -> state = TREC_ACTIVE;
+  result -> write_set = 0;
+  result -> read_set = 0;
 
   return result;
 }
@@ -520,14 +506,6 @@ static StgTRecChunk *alloc_stg_trec_chunk(Capability *cap) {
   }
   return result;
 }
-
-#if defined(THREADED_RTS)
-static StgHTRecChunk *alloc_stg_htrec_chunk(Capability *cap) {
-  StgHTRecChunk *result = NULL;
-  result = new_stg_htrec_chunk(cap);
-  return result;
-}
-#endif
 
 static void free_stg_trec_chunk(Capability *cap, 
                                 StgTRecChunk *c) {
@@ -688,36 +666,252 @@ static TRecEntry *get_new_entry(Capability *cap,
 }
 
 /*......................................................................*/
-
 #if defined(THREADED_RTS)
-static HTRecEntry *get_new_hentry(Capability *cap,
-                                 StgHTRecHeader *t) {
-  HTRecEntry *result;
-  StgHTRecChunk *c;
-  int i;
+// TODO: Lots of work needed here.  How to hash and which hash functions
+// should depend on the size of the filter etc.  Right now this is just
+// something to get stuff working.
 
-  c = t -> current_chunk;
-  i = c -> next_entry_idx;
-  ASSERT(c != END_HTM_CHUNK_LIST);
+#define HTM_RETRY_COMMIT_WITH_LOCK
 
-  if (i < (int)HTREC_CHUNK_NUM_ENTRIES) {
-    // Continue to use current chunk
-    result = &(c -> entries[i]);
-    c -> next_entry_idx ++;
-  } else {
-    // Current chunk is full: allocate a fresh one
-    StgHTRecChunk *nc;
-    nc = alloc_stg_htrec_chunk(cap);
-    nc -> prev_chunk = c;
-    nc -> next_entry_idx = 1;
-    t -> current_chunk = nc;
-    result = &(nc -> entries[0]);
+static volatile int smp_locked_bloom = 0;
+
+static void lock_bloom(void) {
+  while (__sync_lock_test_and_set(&smp_locked_bloom, 1))
+  {
+    while (smp_locked_bloom != 0)
+      _mm_pause();
   }
+}
 
-  return result;
+#ifdef HTM_RETRY_COMMIT_WITH_LOCK
+static void lock_bloom_in_htm(void) {
+  if (smp_locked_bloom != 0)
+  {
+    XABORT(ABORT_RESTART);
+  }
+  smp_locked_bloom = 1;
 }
 #endif
 
+static void lock_bloom_hle(void) {
+  int i;
+  for (i = 0; i < RETRY_COUNT; i++)
+  {
+    XBEGIN(fail);
+    if (smp_locked_bloom == 0)
+      return;
+    XEND();
+    XFAIL(fail);
+  }
+
+  lock_bloom();
+}
+
+static void unlock_bloom(void) {
+  __sync_lock_release(&smp_locked_bloom);
+}
+
+static void unlock_bloom_hle(void) {
+  if (smp_locked_bloom == 0)
+  {
+    XEND();
+  }
+  else
+  {
+    unlock_bloom();
+  }
+}
+
+#define BLOOM_BIT_COUNT     64 // TODO: Bold assumption.
+
+static StgWord hash1(StgWord w)
+{
+    return 1 << ((w >> 4) % BLOOM_BIT_COUNT);
+}
+
+static StgWord hash2(StgWord w)
+{
+    return 1 << (w & 0x3400);
+}
+
+static StgWord hash3(StgWord w)
+{
+    return 1 << (w & 0x340000);
+}
+
+
+// Bloom filters for wakeups
+static StgBloom BloomAddTVar(StgBloom filter, StgTVar *tvar)
+{
+    StgWord w = (StgWord)tvar;
+    return filter | hash1(w) | hash2(w) | hash3(w);
+}
+
+// TODO: this structure will be used to insert new
+// filters for blocked transactions when they commit in HTM on
+// `retry`.  When a transaction commits with writes, we will
+// wake up threads with transactions who's write-set matches
+// any filter.  We can't miss any wakeups!  So we have to be
+// on this structure when a transaction commits on `retry`.
+// But we don't want this structure to cause any unnecessary
+// conflicts that kill off a transaction.  Extra wakeups are
+// not a problem, but missing a wakeup is a problem.
+//
+// Another important question that must be answered is when
+// a filter can be removed from the queue.  Since we have lost
+// the actual read-set and we don't have a trec like in the case
+// of STM we can remove it as soon as any transaction could wake
+// it up.  It will run at some point in the future and if it fails
+// to get passed the `retry` will insert itself back on the queue
+// at the end.
+StgBloomWakeupChunk *smp_bloomWakeupList = END_BLOOM_WAKEUP_CHUNK_LIST;
+
+static StgBloomWakeupChunk *new_stg_bloom_wakeup_chunk(Capability *cap) {
+  StgBloomWakeupChunk *result;
+  result = (StgBloomWakeupChunk *)allocate(cap, sizeofW(StgBloomWakeupChunk));
+  SET_HDR (result, &stg_BLOOM_WAKEUP_CHUNK_info, CCS_SYSTEM);
+  result -> prev_chunk = END_BLOOM_WAKEUP_CHUNK_LIST;
+  result -> next_entry_idx = 0;
+  return result;
+}
+
+// We have a few schemes for getting read sets into the global
+// list of blocked threads. 
+//
+// 1) The first has the read-only transaction which blocks on a `retry` take
+//    the bloom lock before XEND.  We then have a committed transaction *and*
+//    hold the bloom lock.  We can then insert our filter and release the lock.
+//
+//    The risk is contention on the bloom lock might cause the `retry`
+//    transaction to fail to commit.  The portion of execution where we are
+//    waking up 
+//
+//    The benefit, we can offload the risk by having the bloom lock elided with
+//    a transaction for wakeups.  We won't actually take a lock for wakeup
+//    until we have several failures.  This means we avoid impeding the
+//    *user's* transactions by making the wakeup speculative while still
+//    closing the window for a write to commit before a `retry` transaction has
+//    had a chance to put itself on the watch queue.
+//
+// 2) The second option does the work of inserting inside the transaction.  The
+//    risk is we may kill the `retry` transaction with a conflict in the bloom data
+//    structure.
+//
+// 3) Ala RingSTM.  We can leave a gap where we are not on the global list of
+//    read-sets as long as we know what happens between when we commit and when
+//    we do get on the list.  Writers could then write their write-sets to a
+//    buffer with a marker indicating the current location of the last write.
+//    Inside the read-only transaction we read the marker and commit.  Then
+//    after adding the read-set, we look to see if the marker has moved.  If it
+//    has, we know exactly which write-sets to compare with.
+//
+//    It isn't clear how much this solves the contention problem as we still
+//    have to read this marker and do more work then if we just have the lock
+//    and add ourselves as in scheme (1).
+//
+static void bloom_insert(Capability *cap, StgBloom filter, StgTSO* tso)
+{
+    StgBloomWakeupChunk *q = smp_bloomWakeupList;
+    StgWord i;
+    if (q != END_BLOOM_WAKEUP_CHUNK_LIST)
+    {
+        i = q -> next_entry_idx;
+    }
+    else
+    {
+        i = BLOOM_WAKEUP_CHUNK_NUM_ENTRIES;
+    }
+
+    if (i >= BLOOM_WAKEUP_CHUNK_NUM_ENTRIES)
+    {
+        q = new_stg_bloom_wakeup_chunk(cap);
+        q -> prev_chunk = smp_bloomWakeupList;
+        smp_bloomWakeupList = q;
+    }
+
+    q -> filters[i].filter = filter;
+    q -> filters[i].tso = tso;
+    q -> next_entry_idx++;
+}
+
+static StgBool bloom_match(StgBloom a, StgBloom b)
+{
+    return (a | b) != 0;
+}
+
+// Wake up and remove any blocked transactions who's read sets
+// overlap with write sets.
+static void bloom_wakeup(Capability *cap, StgBloom filter)
+{
+    ASSERT(smp_bloomWakeupList != END_BLOOM_WAKEUP_CHUNK_LIST);
+
+    lock_bloom_hle();
+
+    StgWord i;
+    StgBloomWakeupChunk *q, *prev;
+    q = smp_bloomWakeupList;
+    prev = NULL;
+
+
+    for (; q != NULL; prev = q, q = q -> prev_chunk)
+    {
+        StgBool dead = TRUE;
+
+        for (i = 0; i < q -> next_entry_idx; i++)
+        {
+            if (filter != 0)
+            {
+                // TODO: Here we are checking if the intersection of
+                // these two filters (read set and write set) is empty.
+                // This is an approximate check, but if it says "yes"
+                // it is empty, it is accurate.  If it says "no" it may
+                // still be empty.  This is ok for wakeup, but we could
+                // be more accurate if we had a filter for each write
+                // but this is exactly the whole write set.  We want to
+                // use constant space though.  Perhaps there is something
+                // better...
+                if (bloom_match(filter, q -> filters[i].filter))
+                {
+                    // wakeup.
+                    // TODO: HLE the TSO lock?  Make some simpler
+                    // way of doing the wakeup?  have a local queue for
+                    // waking up?
+                    unpark_tso(cap, q -> filters[i].tso);
+
+                    // mark for removal.
+                    q -> filters[i].filter = 0;
+                    q -> filters[i].tso = NULL;
+                }
+                else
+                {
+                    // the valid filter in the other branch of this
+                    // if was removed, so we do not want to count that
+                    // filter as keeping this chunk alive.
+                    dead = FALSE;
+                }
+            }
+        }
+
+        if (dead)
+        {
+            // The chunk we just finished processing has no valid
+            // entries in it.  We can unlink it.
+            if (prev == NULL)
+            {
+                smp_bloomWakeupList = q -> prev_chunk;
+            }
+            else
+            {
+                prev -> prev_chunk = q -> prev_chunk;
+            }
+        }
+    }
+
+    unlock_bloom_hle();
+}
+
+
+#endif
 /*......................................................................*/
 
 static void merge_update_into(Capability *cap,
@@ -933,7 +1127,7 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 // check_read_only : check that we've seen an atomic snapshot of the
 // non-updated TVars accessed by a trec.  This checks that the last TRec to
 // commit an update to the TVar is unchanged since the value was stashed in
-// validate_and_acquire_ownership.  If no udpate is seen to any TVar than
+// validate_and_acquire_ownership.  If no update is seen to any TVar than
 // all of them contained their expected values at the start of the call to
 // check_read_only.
 //
@@ -1032,6 +1226,8 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
   //
 #if defined(THREADED_RTS)
   if (XTEST()) {
+    // TODO: Nest HTM
+
     // For the simple version abort when nesting.  More
     // complicated versions can use STM inside a hardware
     // transaction.
@@ -1066,7 +1262,7 @@ return (StgTRecHeader*)th;
       }
       else
       {
-          // Perhaps our failure was due to observing the lock from a commiting
+          // Perhaps our failure was due to observing the lock from a committing
           // STM transaction.  Wait until we observe the lock free.  If we do not
           // do this we risk all transactions falling back.
           while (smp_locked != 0)
@@ -1272,7 +1468,7 @@ static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   // with "safe" transactions.
   if (smp_locked != 0)
   {
-    // A software transaction is commiting or a hardware transaction is
+    // A software transaction is committing or a hardware transaction is
     // waking up waiters or performing the GC write barrier on the fully-
     // software code path.
     XABORT(XABORT_RETRY);
@@ -1286,21 +1482,31 @@ static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
   StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
 
-  // TODO: There are some easy to detect cases where we can avoid taking this
-  // lock (even the elided version) such as when a transaction is read only.
-  lock_stm(trec);
-  FOR_EACH_HENTRY(htrec, e, {
-    StgTVar *s;
-    s = e -> tvar;
-
-    // TODO: I think we can move this out of the stm lock.  The
-    // only thing we need to ensure is that it happens before GC
-    // happens.
-    dirty_TVAR(cap,s); // GC write barrier
-
-    unpark_waiters_on(cap,s); // Wake up waiters.
-  });
-  unlock_stm(trec);
+  if (htrec -> write_set != 0)
+  { // Hardware transaction did some writes, we need to check for wake ups.
+    bloom_wakeup(cap, htrec -> write_set);
+    // TODO: GC write barrier (dirty_TVAR)!  Without it a long lived TVar can
+    // be promoted to a late generation and if it becomes the only reference to
+    // a value in a younger generation, that value could be collected out from
+    // under it.
+    //
+    // The problem is we want to avoid the memory overhead of recording the
+    // location of every write (we might just give up and do that though).  And
+    // we can't just do the GC barrier inside the transaction as it simply
+    // records the TVar, but on a list that could become a source of
+    // contention if it needs to allocate more room on the Capability.  We can
+    // gain some benefit if we do bother to record the write set by waking up
+    // per-write and having less falls positives in our bloom filter.
+    //
+    // Another tact we can take is to check writes to TVars and only record
+    // them if the value's generation differs.  I doubt the risk of further
+    // contention from the reads to figure this out would be worth it.
+    //
+    // This at least serves as a point of comparison for the best case if we
+    // did have some other method of handling the GC issue.
+    //
+    //
+  }
 
   free_stg_htrec_header(cap, htrec);
 
@@ -1450,6 +1656,29 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
 }
 
 /*......................................................................*/
+#if defined(THREADED_RTS)
+void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec) {
+
+  lock_bloom_in_htm(); // Take the bloom filter lock
+
+#ifdef HTM_LATE_LOCK_SUBSCRIPTION
+  if (smp_locked != 0)
+  {
+    XABORT(XABORT_RETRY);
+  }
+#endif // HTM_LATE_LOCK_SUBSCRIPTION
+  // Commit the read-only transaction.
+  XEND();
+
+  // We are now executing non-transactionally and have the bloom filter
+  // lock.
+  bloom_insert(cap, htrec -> read_set, tso);
+  park_tso(tso);
+  htrec -> state = TREC_WAITING;
+  
+  unlock_bloom();
+}
+#endif // THREADED_RTS
 
 StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
   int result;
@@ -1509,13 +1738,21 @@ stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
 StgBool stmReWait(Capability *cap, StgTSO *tso) {
   int result;
 
+  StgTRecHeader *trec = tso->trec;
+
 #if defined(THREADED_RTS)
   if (XTEST()) {
     XABORT(ABORT_FALLBACK);
   }
-#endif
 
-  StgTRecHeader *trec = tso->trec;
+  if (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_HTREC_HEADER_info)
+  {
+    TRACE("%p : stmReWait", trec);
+    TRACE("%p : validation failed (htm)", trec);
+    free_stg_htrec_header(cap, (StgHTRecHeader*)trec);
+    return 0;
+  }
+#endif
 
   TRACE("%p : stmReWait", trec);
   ASSERT (trec != NO_TREC);
@@ -1568,6 +1805,17 @@ static StgClosure *read_current_value(StgTRecHeader *trec STG_UNUSED, StgTVar *t
 StgClosure *stmReadTVar(Capability *cap,
                         StgTRecHeader *trec, 
 			StgTVar *tvar) {
+
+#if defined(THREADED_RTS)
+  // Record the write set for later wakeups.
+  if (XTEST()) {
+    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
+    htrec -> read_set = BloomAddTVar(htrec -> read_set, tvar);
+    return tvar -> current_value;
+  }
+#endif
+
+
   StgTRecHeader *entry_in = NULL;
   StgClosure *result = NULL;
   TRecEntry *entry = NULL;
@@ -1612,12 +1860,10 @@ void stmWriteTVar(Capability *cap,
 		  StgClosure *new_value) {
 
 #if defined(THREADED_RTS)
-  // For debugging track the write set.
+  // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    HTRecEntry* new_entry = get_new_hentry(cap, htrec);
-    new_entry -> tvar = tvar;
-    tvar -> current_value = new_value;
+    htrec -> write_set = BloomAddTVar(htrec -> write_set, tvar);
     return;
   }
 #endif

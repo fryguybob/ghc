@@ -37,6 +37,6 @@ StgFloat hs_word2float32(StgWord x);
 StgDouble hs_word2float64(StgWord x);
 
 /* libraries/ghc-prim/cbits/xtest.c */
-StgWord hs_xtest();
+StgWord hs_xtest(void);
 
 #endif /* PRIM_H */

@@ -457,6 +457,8 @@ wanteds = concat
 
           ,closureField C "StgTRecHeader" "enclosing_trec"
           ,closureField C "StgHTRecHeader" "enclosing_trec"
+          ,closureField C "StgHTRecHeader" "write_set"
+          ,closureField C "StgHTRecHeader" "read_set"
 
           ,closureSize  C "StgCatchSTMFrame"
           ,closureField C "StgCatchSTMFrame" "handler"

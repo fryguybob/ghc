@@ -80,7 +80,7 @@ processHeapClosureForDead( StgClosure *c )
     case PRIM:
     case MUT_PRIM:
     case TREC_CHUNK:
-    case HTREC_CHUNK:
+    case BLOOM_WAKEUP_CHUNK:
 	return size;
 
 	/*
