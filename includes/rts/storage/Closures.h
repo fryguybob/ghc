@@ -296,10 +296,6 @@ typedef struct {
  *  space for these data structures at the cost of more complexity in the
  *  implementation:
  *
- *   - In StgTVar, current_value and first_watch_queue_entry could be held in
- *     the same field: if any thread is waiting then its expected_value for
- *     the tvar is the current value.  
- *
  *   - In StgTRecHeader, it might be worthwhile having separate chunks
  *     of read-only and read-write locations.  This would save a
  *     new_value field in the read-only locations.
@@ -313,22 +309,13 @@ typedef struct {
 typedef struct StgTRecHeader_ StgTRecHeader;
 typedef struct StgHTRecHeader_ StgHTRecHeader;
 
-typedef struct StgTVarWatchQueue_ {
-  StgHeader                  header;
-  StgClosure                *closure; // StgTSO
-  struct StgTVarWatchQueue_ *next_queue_entry;
-  struct StgTVarWatchQueue_ *prev_queue_entry;
-} StgTVarWatchQueue;
-
 typedef struct {
   StgHeader                  header;
   StgClosure                *volatile current_value;
-  StgTVarWatchQueue         *volatile first_watch_queue_entry;
   StgInt                     volatile num_updates;
 } StgTVar;
 
 /* new_value == expected_value for read-only accesses */
-/* new_value is a StgTVarWatchQueue entry when trec in state TREC_WAITING */
 typedef struct {
   StgTVar                   *tvar;
   StgClosure                *expected_value;

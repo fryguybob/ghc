@@ -431,7 +431,6 @@ scavenge_block (bdescr *bd)
     debugTrace(DEBUG_gc,"scavenging block TVAR %p value %p",p,tvar->current_value);
 	gct->eager_promotion = rtsFalse;
         evacuate((StgClosure **)&tvar->current_value);
-        evacuate((StgClosure **)&tvar->first_watch_queue_entry);
 	gct->eager_promotion = saved_eager_promotion;
 
 	if (gct->failed_to_evac) {
@@ -774,7 +773,7 @@ scavenge_block (bdescr *bd)
     debugTrace(DEBUG_gc,"scavenging block BloomWakeupChunk %p count %d",p,tc->next_entry_idx);
 	gct->eager_promotion = rtsFalse;
 	evacuate((StgClosure **)&tc->prev_chunk);
-	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+	for (i = 0; i < tc -> next_entry_idx; i++, e++ ) {
 	  evacuate((StgClosure **)&e->tso);
 	}
 	gct->eager_promotion = saved_eager_promotion;
@@ -873,7 +872,6 @@ scavenge_mark_stack(void)
             debugTrace(DEBUG_gc,"scavenging mark TVAR %p value %p",p,tvar->current_value);
             gct->eager_promotion = rtsFalse;
             evacuate((StgClosure **)&tvar->current_value);
-            evacuate((StgClosure **)&tvar->first_watch_queue_entry);
             gct->eager_promotion = saved_eager_promotion;
 
             if (gct->failed_to_evac) {
@@ -1261,7 +1259,6 @@ scavenge_one(StgPtr p)
     debugTrace(DEBUG_gc,"scavenging one TVAR %p value %p",p,tvar->current_value);
 	gct->eager_promotion = rtsFalse;
         evacuate((StgClosure **)&tvar->current_value);
-        evacuate((StgClosure **)&tvar->first_watch_queue_entry);
 	gct->eager_promotion = saved_eager_promotion;
 
 	if (gct->failed_to_evac) {
@@ -1619,11 +1616,9 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
             case TREC_CHUNK:
                 mutlist_TREC_CHUNK++; break;
             case BLOOM_WAKEUP_CHUNK:
-                mutlist_TVAR_WATCH_QUEUE++; break; // TODO: new counter?
+                break; // TODO: new counter?
             case MUT_PRIM:
-                if (((StgClosure*)p)->header.info == &stg_TVAR_WATCH_QUEUE_info)
-                    mutlist_TVAR_WATCH_QUEUE++;
-                else if (((StgClosure*)p)->header.info == &stg_TREC_HEADER_info)
+                if (((StgClosure*)p)->header.info == &stg_TREC_HEADER_info)
                     mutlist_TREC_HEADER++;
                else
                     mutlist_OTHERS++;

@@ -1256,7 +1256,6 @@ stg_newTVarzh (P_ init)
     SET_HDR (tv, stg_TVAR_DIRTY_info, CCCS);
 
     StgTVar_current_value(tv) = init;
-    StgTVar_first_watch_queue_entry(tv) = stg_END_STM_WATCH_QUEUE_closure;
     StgTVar_num_updates(tv) = 0;
 
     return (tv);

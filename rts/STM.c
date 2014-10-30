@@ -74,13 +74,6 @@
  * (d) release the locks on the TVars, writing updates to them in the case of a 
  * commit, (e) unlock the STM.
  *
- * Queues of waiting threads hang off the first_watch_queue_entry
- * field of each TVar.  This may only be manipulated when holding that
- * TVar's lock.  In particular, when a thread is putting itself to
- * sleep, it mustn't release the TVar's lock until it has added itself
- * to the wait queue and marked its TSO as BlockedOnSTM -- this makes
- * sure that other threads will know to wake it.
- *
  * ---------------------------------------------------------------------------*/
 
 #include "PosixSource.h"
@@ -359,71 +352,8 @@ static StgBool cond_lock_tvar(StgTRecHeader *trec,
 #endif
 
 /*......................................................................*/
- 
-// Helper functions for thread blocking and unblocking
-
-static void park_tso(StgTSO *tso) {
-  ASSERT(tso -> why_blocked == NotBlocked);
-  tso -> why_blocked = BlockedOnSTM;
-  tso -> block_info.closure = (StgClosure *) END_TSO_QUEUE;
-  TRACE("park_tso on tso=%p", tso);
-}
-
-static void unpark_tso(Capability *cap, StgTSO *tso) {
-    // We will continue unparking threads while they remain on one of the wait
-    // queues: it's up to the thread itself to remove it from the wait queues
-    // if it decides to do so when it is scheduled.
-
-    // Unblocking a TSO from BlockedOnSTM is done under the TSO lock,
-    // to avoid multiple CPUs unblocking the same TSO, and also to
-    // synchronise with throwTo(). The first time the TSO is unblocked
-    // we mark this fact by setting block_info.closure == STM_AWOKEN.
-    // This way we can avoid sending further wakeup messages in the
-    // future.
-    lockTSO(tso);
-    if (tso->why_blocked == BlockedOnSTM &&
-        tso->block_info.closure == &stg_STM_AWOKEN_closure) {
-      TRACE("unpark_tso already woken up tso=%p", tso);
-    } else if (tso -> why_blocked == BlockedOnSTM) {
-      TRACE("unpark_tso on tso=%p", tso);
-      tso->block_info.closure = &stg_STM_AWOKEN_closure;
-      tryWakeupThread(cap,tso);
-    } else {
-      TRACE("spurious unpark_tso on tso=%p", tso);
-    }
-    unlockTSO(tso);
-}
-
-static void unpark_waiters_on(Capability *cap, StgTVar *s) {
-  StgTVarWatchQueue *q;
-  StgTVarWatchQueue *trail;
-  TRACE("unpark_waiters_on tvar=%p", s);
-  // unblock TSOs in reverse order, to be a bit fairer (#2319)
-  for (q = s -> first_watch_queue_entry, trail = q;
-       q != END_STM_WATCH_QUEUE;
-       q = q -> next_queue_entry) {
-    trail = q;
-  }
-  q = trail;
-  for (;
-       q != END_STM_WATCH_QUEUE; 
-       q = q -> prev_queue_entry) {
-      unpark_tso(cap, (StgTSO *)(q -> closure));
-  }
-}
-
-/*......................................................................*/
 
 // Helper functions for downstream allocation and initialization
-
-static StgTVarWatchQueue *new_stg_tvar_watch_queue(Capability *cap,
-						   StgClosure *closure) {
-  StgTVarWatchQueue *result;
-  result = (StgTVarWatchQueue *)allocate(cap, sizeofW(StgTVarWatchQueue));
-  SET_HDR (result, &stg_TVAR_WATCH_QUEUE_info, CCS_SYSTEM);
-  result -> closure = closure;
-  return result;
-}
 
 static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
   StgTRecChunk *result;
@@ -472,27 +402,6 @@ static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
 
 // Allocation / deallocation functions that retain per-capability lists
 // of closures that can be re-used
-
-static StgTVarWatchQueue *alloc_stg_tvar_watch_queue(Capability *cap,
-						     StgClosure *closure) {
-  StgTVarWatchQueue *result = NULL;
-  if (cap -> free_tvar_watch_queues == END_STM_WATCH_QUEUE) {
-    result = new_stg_tvar_watch_queue(cap, closure);
-  } else {
-    result = cap -> free_tvar_watch_queues;
-    result -> closure = closure;
-    cap -> free_tvar_watch_queues = result -> next_queue_entry;
-  }
-  return result;
-}
-
-static void free_stg_tvar_watch_queue(Capability *cap,
-				      StgTVarWatchQueue *wq) {
-#if defined(REUSE_MEMORY)
-  wq -> next_queue_entry = cap -> free_tvar_watch_queues;
-  cap -> free_tvar_watch_queues = wq;
-#endif
-}
 
 static StgTRecChunk *alloc_stg_trec_chunk(Capability *cap) {
   StgTRecChunk *result = NULL;
@@ -564,80 +473,6 @@ static void free_stg_htrec_header(Capability *cap STG_UNUSED,
 #endif
 /*......................................................................*/
 
-// Helper functions for managing waiting lists
-
-static void build_watch_queue_entries_for_trec(Capability *cap,
-					       StgTSO *tso, 
-					       StgTRecHeader *trec) {
-  ASSERT(trec != NO_TREC);
-  ASSERT(trec -> enclosing_trec == NO_TREC);
-  ASSERT(trec -> state == TREC_ACTIVE);
-
-  TRACE("%p : build_watch_queue_entries_for_trec()", trec);
-
-  FOR_EACH_ENTRY(trec, e, {
-    StgTVar *s;
-    StgTVarWatchQueue *q;
-    StgTVarWatchQueue *fq;
-    s = e -> tvar;
-    TRACE("%p : adding tso=%p to watch queue for tvar=%p", trec, tso, s);
-    ACQ_ASSERT(s -> current_value == (StgClosure *)trec);
-    NACQ_ASSERT(s -> current_value == e -> expected_value);
-    fq = s -> first_watch_queue_entry;
-    q = alloc_stg_tvar_watch_queue(cap, (StgClosure*) tso);
-    q -> next_queue_entry = fq;
-    q -> prev_queue_entry = END_STM_WATCH_QUEUE;
-    if (fq != END_STM_WATCH_QUEUE) {
-      fq -> prev_queue_entry = q;
-    }
-    s -> first_watch_queue_entry = q;
-    e -> new_value = (StgClosure *) q;
-    dirty_TVAR(cap,s); // we modified first_watch_queue_entry
-  });
-}
-
-static void remove_watch_queue_entries_for_trec(Capability *cap,
-						StgTRecHeader *trec) {
-  ASSERT(trec != NO_TREC);
-  ASSERT(trec -> enclosing_trec == NO_TREC);
-  ASSERT(trec -> state == TREC_WAITING ||
-         trec -> state == TREC_CONDEMNED);
-
-  TRACE("%p : remove_watch_queue_entries_for_trec()", trec);
-
-  FOR_EACH_ENTRY(trec, e, {
-    StgTVar *s;
-    StgTVarWatchQueue *pq;
-    StgTVarWatchQueue *nq;
-    StgTVarWatchQueue *q;
-    StgClosure *saw;
-    s = e -> tvar;
-    saw = lock_tvar(trec, s);
-    q = (StgTVarWatchQueue *) (e -> new_value);
-    TRACE("%p : removing tso=%p from watch queue for tvar=%p", 
-	  trec, 
-	  q -> closure, 
-	  s);
-    ACQ_ASSERT(s -> current_value == (StgClosure *)trec);
-    nq = q -> next_queue_entry;
-    pq = q -> prev_queue_entry;
-    if (nq != END_STM_WATCH_QUEUE) {
-      nq -> prev_queue_entry = pq;
-    }
-    if (pq != END_STM_WATCH_QUEUE) {
-      pq -> next_queue_entry = nq;
-    } else {
-      ASSERT (s -> first_watch_queue_entry == q);
-      s -> first_watch_queue_entry = nq;
-      dirty_TVAR(cap,s); // we modified first_watch_queue_entry
-    }
-    free_stg_tvar_watch_queue(cap, q);
-    unlock_tvar(cap, trec, s, saw, FALSE);
-  });
-}
- 
-/*......................................................................*/
- 
 static TRecEntry *get_new_entry(Capability *cap,
                                 StgTRecHeader *t) {
   TRecEntry *result;
@@ -721,6 +556,15 @@ static void unlock_bloom_hle(void) {
     unlock_bloom();
   }
 }
+#else // !THREADED_RTS
+
+static void lock_bloom(void) {
+}
+
+static void unlock_bloom(void) {
+}
+
+#endif // !THREADED_RTS
 
 #define BLOOM_BIT_COUNT     64 // TODO: Bold assumption.
 
@@ -741,7 +585,7 @@ static StgWord hash3(StgWord w)
 
 
 // Bloom filters for wakeups
-static StgBloom BloomAddTVar(StgBloom filter, StgTVar *tvar)
+static StgBloom bloom_add(StgBloom filter, StgTVar *tvar)
 {
     StgWord w = (StgWord)tvar;
     return filter | hash1(w) | hash2(w) | hash3(w);
@@ -824,11 +668,14 @@ static void bloom_insert(Capability *cap, StgBloom filter, StgTSO* tso)
 
     if (i >= BLOOM_WAKEUP_CHUNK_NUM_ENTRIES)
     {
+        i = 0;
+        TRACE("Adding new bloom wakeup chunk.");
         q = new_stg_bloom_wakeup_chunk(cap);
         q -> prev_chunk = smp_bloomWakeupList;
         smp_bloomWakeupList = q;
     }
 
+    TRACE("Inserting readset %p with TSO %p at index %d.", filter, tso, q -> next_entry_idx);
     q -> filters[i].filter = filter;
     q -> filters[i].tso = tso;
     q -> next_entry_idx++;
@@ -836,16 +683,19 @@ static void bloom_insert(Capability *cap, StgBloom filter, StgTSO* tso)
 
 static StgBool bloom_match(StgBloom a, StgBloom b)
 {
-    return (a | b) != 0;
+    return (a & b) != 0;
 }
+
+
+static void unpark_tso(Capability *cap, StgTSO *tso);
 
 // Wake up and remove any blocked transactions who's read sets
 // overlap with write sets.
 static void bloom_wakeup(Capability *cap, StgBloom filter)
 {
-    ASSERT(smp_bloomWakeupList != END_BLOOM_WAKEUP_CHUNK_LIST);
-
+#ifdef THREADED_RTS
     lock_bloom_hle();
+#endif
 
     StgWord i;
     StgBloomWakeupChunk *q, *prev;
@@ -853,7 +703,7 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
     prev = NULL;
 
 
-    for (; q != NULL; prev = q, q = q -> prev_chunk)
+    for (; q != END_BLOOM_WAKEUP_CHUNK_LIST; prev = q, q = q -> prev_chunk)
     {
         StgBool dead = TRUE;
 
@@ -907,11 +757,66 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
         }
     }
 
+#ifdef THREADED_RTS
     unlock_bloom_hle();
+#endif
+}
+
+static StgBloom bloom_readset(StgTRecHeader* trec)
+{
+    StgBloom filter = 0;
+
+    FOR_EACH_ENTRY(trec, e, {
+        filter = bloom_add(filter, e -> tvar);
+    });
+
+    return filter;
+}
+
+/*......................................................................*/
+ 
+// Helper functions for thread blocking and unblocking
+
+static void park_tso(StgTSO *tso) {
+  ASSERT(tso -> why_blocked == NotBlocked);
+  tso -> why_blocked = BlockedOnSTM;
+  tso -> block_info.closure = (StgClosure *) END_TSO_QUEUE;
+  TRACE("park_tso on tso=%p", tso);
+}
+
+static void unpark_tso(Capability *cap, StgTSO *tso) {
+    // We will continue unparking threads while they remain on one of the wait
+    // queues: it's up to the thread itself to remove it from the wait queues
+    // if it decides to do so when it is scheduled.
+
+    // Unblocking a TSO from BlockedOnSTM is done under the TSO lock,
+    // to avoid multiple CPUs unblocking the same TSO, and also to
+    // synchronise with throwTo(). The first time the TSO is unblocked
+    // we mark this fact by setting block_info.closure == STM_AWOKEN.
+    // This way we can avoid sending further wakeup messages in the
+    // future.
+    lockTSO(tso);
+    if (tso->why_blocked == BlockedOnSTM &&
+        tso->block_info.closure == &stg_STM_AWOKEN_closure) {
+      TRACE("unpark_tso already woken up tso=%p", tso);
+    } else if (tso -> why_blocked == BlockedOnSTM) {
+      TRACE("unpark_tso on tso=%p", tso);
+      tso->block_info.closure = &stg_STM_AWOKEN_closure;
+      tryWakeupThread(cap,tso);
+    } else {
+      TRACE("spurious unpark_tso on tso=%p", tso);
+    }
+    unlockTSO(tso);
+}
+
+static void unpark_waiters_on(Capability *cap, StgTVar *s) {
+    // We have a write, wake up any filters that include
+    // the TVar being written.
+    // TODO: Locking?
+    bloom_wakeup(cap, bloom_add(0, s));
 }
 
 
-#endif
 /*......................................................................*/
 
 static void merge_update_into(Capability *cap,
@@ -1168,7 +1073,6 @@ static StgBool check_read_only(StgTRecHeader *trec STG_UNUSED) {
 void stmPreGCHook (Capability *cap) {
   lock_stm(NO_TREC);
   TRACE("stmPreGCHook");
-  cap->free_tvar_watch_queues = END_STM_WATCH_QUEUE;
   cap->free_trec_chunks = END_STM_CHUNK_LIST;
   cap->free_trec_headers = NO_TREC;
   unlock_stm(NO_TREC);
@@ -1314,7 +1218,8 @@ void stmAbortTransaction(Capability *cap,
     if (trec -> state == TREC_WAITING) {
       ASSERT (trec -> enclosing_trec == NO_TREC);
       TRACE("%p : stmAbortTransaction aborting waiting transaction", trec);
-      remove_watch_queue_entries_for_trec(cap, trec);
+      // TODO: remove read_set from filters?  We used to remove entries
+      // in watch queues here.
     } 
 
   } else {
@@ -1372,7 +1277,8 @@ void stmCondemnTransaction(Capability *cap,
   if (trec -> state == TREC_WAITING) {
     ASSERT (trec -> enclosing_trec == NO_TREC);
     TRACE("%p : stmCondemnTransaction condemning waiting transaction", trec);
-    remove_watch_queue_entries_for_trec(cap, trec);
+    // TODO: Remove read_set from filters?  We used to remove watch queue entries
+    // here.
   } 
   trec -> state = TREC_CONDEMNED;
   unlock_stm(trec);
@@ -1670,6 +1576,10 @@ void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec) {
   // Commit the read-only transaction.
   XEND();
 
+  // TODO: We need to avoid this.  It is in place to prevent a wakeup of a TSO before
+  // it is actually sleeping properly.  Perhaps we could use a lock per entry to mark
+  // the TSO as ready to wake and any waker will spin on that before waking.
+  lock_stm(htrec);
   // We are now executing non-transactionally and have the bloom filter
   // lock.
   bloom_insert(cap, htrec -> read_set, tso);
@@ -1705,7 +1615,8 @@ StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
     // Put ourselves to sleep.  We retain locks on all the TVars involved
     // until we are sound asleep : (a) on the wait queues, (b) BlockedOnSTM
     // in the TSO, (c) TREC_WAITING in the Trec.  
-    build_watch_queue_entries_for_trec(cap, tso, trec);
+    bloom_insert(cap, bloom_readset(trec), tso);
+    
     park_tso(tso);
     trec -> state = TREC_WAITING;
 
@@ -1773,7 +1684,8 @@ StgBool stmReWait(Capability *cap, StgTSO *tso) {
     // The transcation has become invalid.  We can now remove it from the wait
     // queues.
     if (trec -> state != TREC_CONDEMNED) {
-      remove_watch_queue_entries_for_trec (cap, trec);
+      // TODO: remove read_set from filters?  We used to remove watch queue
+      // entries here.
     }
     free_stg_trec_header(cap, trec);
   }
@@ -1810,7 +1722,7 @@ StgClosure *stmReadTVar(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> read_set = BloomAddTVar(htrec -> read_set, tvar);
+    htrec -> read_set = bloom_add(htrec -> read_set, tvar);
     return tvar -> current_value;
   }
 #endif
@@ -1863,7 +1775,7 @@ void stmWriteTVar(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> write_set = BloomAddTVar(htrec -> write_set, tvar);
+    htrec -> write_set = bloom_add(htrec -> write_set, tvar);
     return;
   }
 #endif

@@ -206,7 +206,6 @@ void stmWriteTVar(Capability *cap,
 
 /* NULLs */
 
-#define END_STM_WATCH_QUEUE ((StgTVarWatchQueue *)(void *)&stg_END_STM_WATCH_QUEUE_closure)
 #define END_STM_CHUNK_LIST ((StgTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 #define END_BLOOM_WAKEUP_CHUNK_LIST ((StgBloomWakeupChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 

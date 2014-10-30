@@ -131,7 +131,6 @@ struct Capability_ {
     W_ total_allocated;
 
     // Per-capability STM-related data
-    StgTVarWatchQueue *free_tvar_watch_queues;
     StgTRecChunk *free_trec_chunks;
     StgTRecHeader *free_trec_headers;
     nat transaction_tokens;

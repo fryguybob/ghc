@@ -469,13 +469,8 @@ wanteds = concat
           ,closureField C "StgCatchRetryFrame" "first_code"
           ,closureField C "StgCatchRetryFrame" "alt_code"
 
-          ,closureField C "StgTVarWatchQueue" "closure"
-          ,closureField C "StgTVarWatchQueue" "next_queue_entry"
-          ,closureField C "StgTVarWatchQueue" "prev_queue_entry"
-
           ,closureSize  C "StgTVar"
           ,closureField C "StgTVar" "current_value"
-          ,closureField C "StgTVar" "first_watch_queue_entry"
           ,closureField C "StgTVar" "num_updates"
 
           ,closureSize  C "StgWeak"
