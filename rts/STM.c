@@ -1146,7 +1146,7 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
     th = alloc_stg_htrec_header(cap);
     TRACE("%p : stmStartTransaction()=%p XBEGIN", outer, th);
     for (i = 0; i < RETRY_COUNT; i++) {
-      XBEGIN(fail);
+      XBEGIN(fail); // Aborted transaction will go to the XFAIL_STATUS line below.
 #ifndef HTM_LATE_LOCK_SUBSCRIPTION
       if (smp_locked != 0) {
           // Early Lock subscription.
@@ -1154,7 +1154,7 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
           XABORT(ABORT_RESTART);
       }
 #endif // !HTM_LATE_LOCK_SUBSCRIPTION
-return (StgTRecHeader*)th;
+      return (StgTRecHeader*)th;
      
       int status;
       XFAIL_STATUS(fail, status);
@@ -1776,6 +1776,8 @@ void stmWriteTVar(Capability *cap,
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
     htrec -> write_set = bloom_add(htrec -> write_set, tvar);
+
+    dirty_TVAR(cap,tvar); // TODO: avoid this!
     return;
   }
 #endif
