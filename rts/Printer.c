@@ -348,7 +348,7 @@ printClosure( StgClosure *obj )
     case TVAR:
         {
           StgTVar* tv = (StgTVar*)obj;
-          debugBelch("TVAR(value=%p, num_updates=%" FMT_Word ")\n", tv->current_value, tv->num_updates);
+          debugBelch("TVAR(value=%p)\n", tv->current_value);
           break;
         }
 

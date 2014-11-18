@@ -568,26 +568,14 @@ static void unlock_bloom(void) {
 
 #define BLOOM_BIT_COUNT     64 // TODO: Bold assumption.
 
-static StgWord hash1(StgWord w)
-{
-    return 1 << ((w >> 4) % BLOOM_BIT_COUNT);
-}
-
-static StgWord hash2(StgWord w)
-{
-    return 1 << (w & 0x3400);
-}
-
-static StgWord hash3(StgWord w)
-{
-    return 1 << (w & 0x340000);
-}
-
+static StgWord hash1(StgWord w) { return 1 << ((w & 0x00003f0) >>  4); }
+static StgWord hash2(StgWord w) { return 1 << ((w & 0x003f000) >> 12); }
+static StgWord hash3(StgWord w) { return 1 << ((w & 0x3f00000) >> 20); }
 
 // Bloom filters for wakeups
 static StgBloom bloom_add(StgBloom filter, StgTVar *tvar)
 {
-    StgWord w = (StgWord)tvar;
+    StgWord w = tvar->hash_id;
     return filter | hash1(w) | hash2(w) | hash3(w);
 }
 
@@ -617,6 +605,11 @@ static StgBloomWakeupChunk *new_stg_bloom_wakeup_chunk(Capability *cap) {
   result -> prev_chunk = END_BLOOM_WAKEUP_CHUNK_LIST;
   result -> next_entry_idx = 0;
   return result;
+}
+
+void markWakeupSTM (evac_fn evac, void *user)
+{
+    evac(user, (StgClosure **)&smp_bloomWakeupList);
 }
 
 // We have a few schemes for getting read sets into the global
@@ -675,7 +668,7 @@ static void bloom_insert(Capability *cap, StgBloom filter, StgTSO* tso)
         smp_bloomWakeupList = q;
     }
 
-    TRACE("Inserting readset %p with TSO %p at index %d.", filter, tso, q -> next_entry_idx);
+    TRACE("Inserting readset %p with TSO %p at index %d.", filter, tso, i);
     q -> filters[i].filter = filter;
     q -> filters[i].tso = tso;
     q -> next_entry_idx++;
@@ -693,6 +686,9 @@ static void unpark_tso(Capability *cap, StgTSO *tso);
 // overlap with write sets.
 static void bloom_wakeup(Capability *cap, StgBloom filter)
 {
+    if (filter == 0)
+        return;
+
 #ifdef THREADED_RTS
     lock_bloom_hle();
 #endif
@@ -709,7 +705,7 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
 
         for (i = 0; i < q -> next_entry_idx; i++)
         {
-            if (filter != 0)
+            if (q -> filters[i].filter != 0)
             {
                 // TODO: Here we are checking if the intersection of
                 // these two filters (read set and write set) is empty.
@@ -795,7 +791,7 @@ static void unpark_tso(Capability *cap, StgTSO *tso) {
     // we mark this fact by setting block_info.closure == STM_AWOKEN.
     // This way we can avoid sending further wakeup messages in the
     // future.
-    lockTSO(tso);
+    lockTSO(tso); // TODO: HLE!
     if (tso->why_blocked == BlockedOnSTM &&
         tso->block_info.closure == &stg_STM_AWOKEN_closure) {
       TRACE("unpark_tso already woken up tso=%p", tso);
@@ -1009,14 +1005,6 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
             result = FALSE;
             BREAK_FOR_EACH;
           }
-          e -> num_updates = s -> num_updates;
-          if (s -> current_value != e -> expected_value) {
-            TRACE("%p : doesn't match (race)", trec);
-            result = FALSE;
-            BREAK_FOR_EACH;
-          } else {
-            TRACE("%p : need to check version %ld", trec, e -> num_updates);
-          }
         });
       }
     });
@@ -1049,13 +1037,13 @@ static StgBool check_read_only(StgTRecHeader *trec STG_UNUSED) {
       StgTVar *s;
       s = e -> tvar;
       if (entry_is_read_only(e)) {
-        TRACE("%p : check_read_only for TVar %p, saw %ld", trec, s, e -> num_updates);
+        TRACE("%p : check_read_only for TVar %p", trec, s);
         
         // Note we need both checks and in this order as the TVar could be
         // locked by another transaction that is committing but has not yet
-        // incremented `num_updates` (See #7815).
-        if (s -> current_value != e -> expected_value ||
-            s -> num_updates != e -> num_updates) {
+        // incremented `num_updates` (See #7815).  This means `num_updates`
+        // does not achieve the desired optimization, so we have removed it.
+        if (s -> current_value != e -> expected_value) {
           TRACE("%p : mismatch", trec);
           result = FALSE;
           BREAK_FOR_EACH;
@@ -1259,7 +1247,7 @@ void stmFreeAbortedTRec(Capability *cap,
 
 /*......................................................................*/
 
-void stmCondemnTransaction(Capability *cap,
+void stmCondemnTransaction(Capability *cap STG_UNUSED,
                            StgTRecHeader *trec) {
 #if defined(THREADED_RTS)
   if (XTEST()) {
@@ -1481,9 +1469,6 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           ACQ_ASSERT(tvar_is_locked(s, trec));
           TRACE("%p : writing %p to %p, waking waiters", trec, e -> new_value, s);
           unpark_waiters_on(cap,s);
-          IF_STM_FG_LOCKS({
-            s -> num_updates ++;
-          });
           unlock_tvar(cap, trec, s, e -> new_value, TRUE);
         } 
         ACQ_ASSERT(!tvar_is_locked(s, trec));
@@ -1579,7 +1564,7 @@ void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec) {
   // TODO: We need to avoid this.  It is in place to prevent a wakeup of a TSO before
   // it is actually sleeping properly.  Perhaps we could use a lock per entry to mark
   // the TSO as ready to wake and any waker will spin on that before waking.
-  lock_stm(htrec);
+  lock_stm((StgTRecHeader*)htrec);
   // We are now executing non-transactionally and have the bloom filter
   // lock.
   bloom_insert(cap, htrec -> read_set, tso);
@@ -1647,8 +1632,6 @@ stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
 /*......................................................................*/
 
 StgBool stmReWait(Capability *cap, StgTSO *tso) {
-  int result;
-
   StgTRecHeader *trec = tso->trec;
 
 #if defined(THREADED_RTS)
@@ -1658,41 +1641,22 @@ StgBool stmReWait(Capability *cap, StgTSO *tso) {
 
   if (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_HTREC_HEADER_info)
   {
-    TRACE("%p : stmReWait", trec);
-    TRACE("%p : validation failed (htm)", trec);
+    TRACE("%p : stmReWait (htm)", trec);
     free_stg_htrec_header(cap, (StgHTRecHeader*)trec);
     return 0;
   }
 #endif
 
-  TRACE("%p : stmReWait", trec);
+  TRACE("%p : stmReWait (stm)", trec);
   ASSERT (trec != NO_TREC);
   ASSERT (trec -> enclosing_trec == NO_TREC);
   ASSERT ((trec -> state == TREC_WAITING) || 
           (trec -> state == TREC_CONDEMNED));
+  
+  // We must wake up.  We have already been removed from the wakeup list.
 
-  lock_stm(trec);
-  result = validate_and_acquire_ownership(cap, trec, TRUE, TRUE);
-  TRACE("%p : validation %s", trec, result ? "succeeded" : "failed");
-  if (result) {
-    // The transaction remains valid -- do nothing because it is already on
-    // the wait queues
-    ASSERT (trec -> state == TREC_WAITING);
-    park_tso(tso);
-    revert_ownership(cap, trec, TRUE);
-  } else {
-    // The transcation has become invalid.  We can now remove it from the wait
-    // queues.
-    if (trec -> state != TREC_CONDEMNED) {
-      // TODO: remove read_set from filters?  We used to remove watch queue
-      // entries here.
-    }
-    free_stg_trec_header(cap, trec);
-  }
-  unlock_stm(trec);
-
-  TRACE("%p : stmReWait()=%d", trec, result);
-  return result;
+  free_stg_trec_header(cap, trec);
+  return 0;
 }
 
 /*......................................................................*/
@@ -1776,7 +1740,7 @@ void stmWriteTVar(Capability *cap,
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
     htrec -> write_set = bloom_add(htrec -> write_set, tvar);
-
+    tvar -> current_value = new_value;
     dirty_TVAR(cap,tvar); // TODO: avoid this!
     return;
   }

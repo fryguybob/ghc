@@ -1256,7 +1256,7 @@ stg_newTVarzh (P_ init)
     SET_HDR (tv, stg_TVAR_DIRTY_info, CCCS);
 
     StgTVar_current_value(tv) = init;
-    StgTVar_num_updates(tv) = 0;
+    StgTVar_hash_id(tv) = tv;
 
     return (tv);
 }
@@ -1277,6 +1277,7 @@ stg_readTVarSTMzh (P_ tvar)
 
 stg_readTVarzh (P_ tvar)
 {
+/* TODO: Expand this to record the read set.
     P_ result;
     W_ htm;
 
@@ -1289,6 +1290,8 @@ stg_readTVarzh (P_ tvar)
     } else {
         jump stg_readTVarSTMzh(tvar);
     }
+    */
+    jump stg_readTVarSTMzh(tvar);
 }
 
 stg_readTVarIOzh ( P_ tvar /* :: TVar a */ )

@@ -774,7 +774,9 @@ scavenge_block (bdescr *bd)
 	gct->eager_promotion = rtsFalse;
 	evacuate((StgClosure **)&tc->prev_chunk);
 	for (i = 0; i < tc -> next_entry_idx; i++, e++ ) {
-	  evacuate((StgClosure **)&e->tso);
+      if (e->filter != 0) {
+    	  evacuate((StgClosure **)&e->tso);
+      }
 	}
 	gct->eager_promotion = saved_eager_promotion;
 	gct->failed_to_evac = rtsTrue; // mutable
@@ -1191,9 +1193,11 @@ scavenge_mark_stack(void)
 	    BloomWakeupEntry *e = &(tc -> filters[0]);
 	    gct->eager_promotion = rtsFalse;
 	    evacuate((StgClosure **)&tc->prev_chunk);
-	    for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
-	      evacuate((StgClosure **)&e->tso);
-	    }
+        for (i = 0; i < tc -> next_entry_idx; i++, e++ ) {
+          if (e->filter != 0) {
+              evacuate((StgClosure **)&e->tso);
+          }
+        }
 	    gct->eager_promotion = saved_eager_promotion;
 	    gct->failed_to_evac = rtsTrue; // mutable
 	    break;
@@ -1523,10 +1527,12 @@ scavenge_one(StgPtr p)
 	BloomWakeupEntry *e = &(tc -> filters[0]);
 	gct->eager_promotion = rtsFalse;
 	evacuate((StgClosure **)&tc->prev_chunk);
-	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
-	  evacuate((StgClosure **)&e->tso);
+	for (i = 0; i < tc -> next_entry_idx; i++, e++ ) {
+      if (e->filter != 0) {
+    	  evacuate((StgClosure **)&e->tso);
+      }
 	}
-	gct->eager_promotion = saved_eager_promotion;
+    gct->eager_promotion = saved_eager_promotion;
 	gct->failed_to_evac = rtsTrue; // mutable
 	break;
       }
@@ -1616,7 +1622,7 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
             case TREC_CHUNK:
                 mutlist_TREC_CHUNK++; break;
             case BLOOM_WAKEUP_CHUNK:
-                break; // TODO: new counter?
+                mutlist_WAKEUP_CHUNK++; break;
             case MUT_PRIM:
                 if (((StgClosure*)p)->header.info == &stg_TREC_HEADER_info)
                     mutlist_TREC_HEADER++;

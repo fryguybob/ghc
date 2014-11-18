@@ -538,7 +538,8 @@ update_fwd_large( bdescr *bd )
 	BloomWakeupEntry *e = &(tc -> filters[0]);
 	thread_(&tc->prev_chunk);
 	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
-	  thread_(&e->tso);
+        if (e->filter != 0)
+    	  thread_(&e->tso);
 	}
 	continue;
     }
@@ -747,7 +748,8 @@ thread_obj (StgInfoTable *info, StgPtr p)
 	BloomWakeupEntry *e = &(tc -> filters[0]);
 	thread_(&tc->prev_chunk);
 	for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
-	  thread_(&e->tso);
+        if (e->filter != 0)
+    	  thread_(&e->tso);
 	}
 	return p + sizeofW(StgBloomWakeupChunk);
     }

@@ -312,7 +312,7 @@ typedef struct StgHTRecHeader_ StgHTRecHeader;
 typedef struct {
   StgHeader                  header;
   StgClosure                *volatile current_value;
-  StgInt                     volatile num_updates;
+  StgWord                    hash_id;
 } StgTVar;
 
 /* new_value == expected_value for read-only accesses */
@@ -320,9 +320,6 @@ typedef struct {
   StgTVar                   *tvar;
   StgClosure                *expected_value;
   StgClosure                *new_value; 
-#if defined(THREADED_RTS)
-  StgInt                     num_updates;
-#endif
 } TRecEntry;
 
 #define TREC_CHUNK_NUM_ENTRIES 16

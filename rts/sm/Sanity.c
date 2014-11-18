@@ -430,7 +430,7 @@ checkClosure( StgClosure* p )
         StgBloomWakeupChunk *tc = (StgBloomWakeupChunk *)p;
         ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->prev_chunk));
         for (i = 0; i < tc -> next_entry_idx; i ++) {
-          ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->filters[i].tso));
+          ASSERT(tc->filters[i].filter == 0 || LOOKS_LIKE_CLOSURE_PTR(tc->filters[i].tso));
         }
         return sizeofW(StgBloomWakeupChunk);
       }

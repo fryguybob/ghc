@@ -471,7 +471,7 @@ wanteds = concat
 
           ,closureSize  C "StgTVar"
           ,closureField C "StgTVar" "current_value"
-          ,closureField C "StgTVar" "num_updates"
+          ,closureField C "StgTVar" "hash_id"
 
           ,closureSize  C "StgWeak"
           ,closureField C "StgWeak" "link"

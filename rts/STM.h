@@ -202,6 +202,9 @@ void stmWriteTVar(Capability *cap,
                   StgTVar *tvar, 
                   StgClosure *new_value);
 
+
+void markWakeupSTM (evac_fn evac, void *user);
+
 /*----------------------------------------------------------------------*/
 
 /* NULLs */
