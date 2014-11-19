@@ -609,6 +609,7 @@ static StgBloomWakeupChunk *new_stg_bloom_wakeup_chunk(Capability *cap) {
 
 void markWakeupSTM (evac_fn evac, void *user)
 {
+    // Called durring GC so no locks are needed.
     evac(user, (StgClosure **)&smp_bloomWakeupList);
 }
 
@@ -1561,17 +1562,17 @@ void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec) {
   // Commit the read-only transaction.
   XEND();
 
-  // TODO: We need to avoid this.  It is in place to prevent a wakeup of a TSO before
-  // it is actually sleeping properly.  Perhaps we could use a lock per entry to mark
-  // the TSO as ready to wake and any waker will spin on that before waking.
-  lock_stm((StgTRecHeader*)htrec);
+  // TODO: Throw an exception if `read_set` is zero.
+
   // We are now executing non-transactionally and have the bloom filter
   // lock.
   bloom_insert(cap, htrec -> read_set, tso);
   park_tso(tso);
   htrec -> state = TREC_WAITING;
-  
-  unlock_bloom();
+
+  // We continue to hold the bloom lock until the thread can be woken.  We
+  // could have a "lock" (monotonic value) per tso entry and spin on that until
+  // it is ready when waking.
 }
 #endif // THREADED_RTS
 
@@ -1592,6 +1593,8 @@ StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
 
   lock_stm(trec);
   result = validate_and_acquire_ownership(cap, trec, TRUE, TRUE);
+  unlock_stm(trec);
+
   if (result) {
     // The transaction is valid so far so we can actually start waiting.
     // (Otherwise the transaction was not valid and the thread will have to
@@ -1600,21 +1603,22 @@ StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
     // Put ourselves to sleep.  We retain locks on all the TVars involved
     // until we are sound asleep : (a) on the wait queues, (b) BlockedOnSTM
     // in the TSO, (c) TREC_WAITING in the Trec.  
+#if defined(THREADED_RTS)    
+    lock_bloom_hle();
+#endif
     bloom_insert(cap, bloom_readset(trec), tso);
     
     park_tso(tso);
     trec -> state = TREC_WAITING;
 
-    // We haven't released ownership of the transaction yet.  The TSO
-    // has been put on the wait queue for the TVars it is waiting for,
-    // but we haven't yet tidied up the TSO's stack and made it safe
-    // to wake up the TSO.  Therefore, we must wait until the TSO is
-    // safe to wake up before we release ownership - when all is well,
-    // the runtime will call stmWaitUnlock() below, with the same
+    // We haven't released ownership of the bloom lock yet.  The TSO
+    // has been put on the wait bloom list, but we haven't yet tidied up the
+    // TSO's stack and made it safe to wake up the TSO.  Therefore, we must
+    // wait until the TSO is safe to wake up before we release ownership - when
+    // all is well, the runtime will call stmWaitUnlock() below, with the same
     // TRec.
 
   } else {
-    unlock_stm(trec);
     free_stg_trec_header(cap, trec);
   }
 
@@ -1626,7 +1630,11 @@ StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
 void
 stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
     revert_ownership(cap, trec, TRUE);
-    unlock_stm(trec);
+    // It is safe to unlock with the HLE version as long as every unlock is preceeded by
+    // a lock.  Otherwise this is just going to make bug finding harder... 
+#if defined(THREADED_RTS)
+    unlock_bloom_hle();
+#endif
 }
 
 /*......................................................................*/
