@@ -277,7 +277,6 @@ initCapability( Capability *cap, nat i )
     cap->weak_ptr_list_tl = NULL;
     cap->free_trec_chunks = END_STM_CHUNK_LIST;
     cap->free_trec_headers = NO_TREC;
-    cap->transaction_tokens = 0;
     cap->context_switch = 0;
     cap->pinned_object_block = NULL;
     cap->pinned_object_blocks = NULL;
@@ -294,6 +293,8 @@ initCapability( Capability *cap, nat i )
 #if defined(THREADED_RTS)
     traceSparkCounters(cap);
 #endif
+
+    initSTMStats(cap);
 }
 
 /* ---------------------------------------------------------------------------

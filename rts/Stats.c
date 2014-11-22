@@ -19,6 +19,10 @@
 #include "sm/GCThread.h"
 #include "sm/BlockAlloc.h"
 
+#if defined(THREADED_RTS)
+#include "immintrin.h"
+#endif
+
 #if USE_PAPI
 #include "Papi.h"
 #endif
@@ -72,6 +76,80 @@ static Time *GC_coll_max_pause = NULL;
 
 static void statsFlush( void );
 static void statsClose( void );
+
+/* -----------------------------------------------------------------------------
+   STM stats
+   ------------------------------------------------------------------------- */
+
+#if defined(THREADED_RTS)
+static volatile int smp_locked_stm_stats = 0;
+
+static void lock_stm_stats(void) {
+  while (__sync_lock_test_and_set(&smp_locked_stm_stats, 1))
+  {
+    while (smp_locked_stm_stats != 0)
+      _mm_pause();
+  }
+}
+
+static void unlock_stm_stats(void) {
+    __sync_lock_release(&smp_locked_stm_stats);
+}
+#else
+static void lock_stm_stats(void) {}
+static void unlock_stm_stats(void) {}
+#endif
+
+// protected by the stm_stats lock
+static stm_stats_node *smp_stm_stats = NULL;
+
+static void initSTMStatsValues(stm_stats* s)
+{
+    s->start = 0;
+    s->abort = 0;
+    s->retry = 0;
+    s->failed_wakeup = 0;
+}
+
+static void addSTMStats(stm_stats* acc, stm_stats* s)
+{
+    acc->start += s->start;
+    acc->abort += s->abort;
+    acc->retry += s->retry;
+    acc->failed_wakeup += s->failed_wakeup;
+}
+
+static void printSTMStats(stm_stats* s)
+{
+    debugBelch("start:         %d\n"
+               "abort:         %d\n"
+               "retry:         %d\n"
+               "failed-wakeup: %d\n",
+        s->start,
+        s->abort,
+        s->retry,
+        s->failed_wakeup);
+}
+
+void initSTMStats(Capability* cap)
+{
+    stm_stats_node* node = (stm_stats_node*)stgMallocBytes(
+        sizeof(stm_stats_node),"initSTMStats");
+
+    node->next = NULL;
+    node->cap_no = cap->no;
+
+    initSTMStatsValues(&node->stats);
+
+    cap->stm_stats = &node->stats;
+
+    lock_stm_stats();
+
+    node->next = smp_stm_stats;
+    smp_stm_stats = node;
+
+    unlock_stm_stats();
+}
 
 /* -----------------------------------------------------------------------------
    Current elapsed time
@@ -820,6 +898,38 @@ stat_exit (void)
     if (GC_coll_max_pause) {
       stgFree(GC_coll_max_pause);
       GC_coll_max_pause = NULL;
+    }
+
+    /* Output STM stats */
+    if (RtsFlags.ConcFlags.stmStats != 0)
+    {
+        stm_stats total;
+        initSTMStatsValues(&total);
+
+        lock_stm_stats();
+        stm_stats_node* node = smp_stm_stats;
+        smp_stm_stats = NULL;
+        int i;
+        for (i = 0; i < n_capabilities; i++) {
+          capabilities[i]->stm_stats = NULL;
+        }
+        unlock_stm_stats();
+
+        debugBelch("STM stats:\n----------\n");
+
+        while (node != NULL)
+        {
+            addSTMStats(&total, &node->stats);
+            debugBelch("\nCapability %d\n", node->cap_no);
+            printSTMStats(&node->stats);
+
+            stm_stats_node* prev = node;
+            node = node->next;
+            stgFree(prev);
+        }
+
+        debugBelch("\nTotal\n"); 
+        printSTMStats(&total);
     }
 }
 

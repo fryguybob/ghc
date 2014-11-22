@@ -456,6 +456,7 @@ wanteds = concat
           ,closureField C "StgAtomicallyFrame" "result"
 
           ,closureField C "StgTRecHeader" "enclosing_trec"
+          ,closureField C "StgTRecHeader" "retrying"
           ,closureField C "StgHTRecHeader" "enclosing_trec"
           ,closureField C "StgHTRecHeader" "write_set"
           ,closureField C "StgHTRecHeader" "read_set"

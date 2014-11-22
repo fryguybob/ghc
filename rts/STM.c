@@ -81,6 +81,7 @@
 
 #include "RtsUtils.h"
 #include "Schedule.h"
+#include "Stats.h"
 #include "STM.h"
 #include "Trace.h"
 #include "Threads.h"
@@ -375,6 +376,7 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
 
   if (enclosing_trec == NO_TREC) {
     result -> state = TREC_ACTIVE;
+    result -> retrying = 0;
   } else {
     ASSERT(enclosing_trec -> state == TREC_ACTIVE ||
            enclosing_trec -> state == TREC_CONDEMNED);
@@ -392,6 +394,7 @@ static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
 
   result -> enclosing_trec = (StgHTRecHeader*)NO_TREC;
   result -> state = TREC_ACTIVE;
+  result -> retrying = 0;
   result -> write_set = 0;
   result -> read_set = 0;
 
@@ -1069,41 +1072,6 @@ void stmPreGCHook (Capability *cap) {
 
 /************************************************************************/
 
-// check_read_only relies on version numbers held in TVars' "num_updates" 
-// fields not wrapping around while a transaction is committed.  The version
-// number is incremented each time an update is committed to the TVar
-// This is unlikely to wrap around when 32-bit integers are used for the counts, 
-// but to ensure correctness we maintain a shared count on the maximum
-// number of commit operations that may occur and check that this has 
-// not increased by more than 2^32 during a commit.
-
-#define TOKEN_BATCH_SIZE 1024
-
-static volatile StgInt64 max_commits = 0;
-
-#if defined(THREADED_RTS)
-static volatile StgWord token_locked = FALSE;
-
-static void getTokenBatch(Capability *cap) {
-  while (cas((void *)&token_locked, FALSE, TRUE) == TRUE) { /* nothing */ }
-  max_commits += TOKEN_BATCH_SIZE;
-  TRACE("%p : cap got token batch, max_commits=%" FMT_Int64, cap, max_commits);
-  cap -> transaction_tokens = TOKEN_BATCH_SIZE;
-  token_locked = FALSE;
-}
-
-static void getToken(Capability *cap) {
-  if (cap -> transaction_tokens == 0) {
-    getTokenBatch(cap);
-  }
-  cap -> transaction_tokens --;
-}
-#else
-static void getToken(Capability *cap STG_UNUSED) {
-  // Nothing
-}
-#endif
-
 /*......................................................................*/
 
 StgTRecHeader *stmStartTransaction(Capability *cap,
@@ -1133,6 +1101,9 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
     int i, s;
     StgHTRecHeader *th;
     th = alloc_stg_htrec_header(cap);
+
+    cap->stm_stats->start++;
+
     TRACE("%p : stmStartTransaction()=%p XBEGIN", outer, th);
     for (i = 0; i < RETRY_COUNT; i++) {
       XBEGIN(fail); // Aborted transaction will go to the XFAIL_STATUS line below.
@@ -1164,13 +1135,14 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
     }
     free_stg_htrec_header(cap, th);
   }
+#else
+  if (outer == NO_TREC)
+  {
+    cap->stm_stats->start++;
+  }
 #endif
 
-  TRACE("%p : stmStartTransaction with %d tokens", 
-        outer, 
-        cap -> transaction_tokens);
-
-  getToken(cap);
+  TRACE("%p : stmStartTransaction", outer);
 
   StgTRecHeader* t;
   t = alloc_stg_trec_header(cap, outer);
@@ -1203,6 +1175,8 @@ void stmAbortTransaction(Capability *cap,
     // We're a top-level transaction: remove any watch queue entries that
     // we may have.
     TRACE("%p : aborting top-level transaction", trec);
+
+    cap->stm_stats->abort++;
 
     if (trec -> state == TREC_WAITING) {
       ASSERT (trec -> enclosing_trec == NO_TREC);
@@ -1420,8 +1394,6 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   }
 #endif
 
-  StgInt64 max_commits_at_start = max_commits;
-
   TRACE("%p : stmCommitTransaction()", trec);
   ASSERT (trec != NO_TREC);
 
@@ -1440,18 +1412,9 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
     ASSERT (trec -> state == TREC_ACTIVE);
 
     if (config_use_read_phase) {
-      StgInt64 max_commits_at_end;
-      StgInt64 max_concurrent_commits;
       TRACE("%p : doing read check", trec);
       result = check_read_only(trec);
       TRACE("%p : read-check %s", trec, result ? "succeeded" : "failed");
-
-      max_commits_at_end = max_commits;
-      max_concurrent_commits = ((max_commits_at_end - max_commits_at_start) +
-                                (n_capabilities * TOKEN_BATCH_SIZE));
-      if (((max_concurrent_commits >> 32) > 0) || shake()) {
-        result = FALSE;
-      }
     }
     
     if (result) {
@@ -1635,6 +1598,11 @@ stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
 #if defined(THREADED_RTS)
     unlock_bloom_hle();
 #endif
+   
+    if (trec->retrying != 0)
+        cap->stm_stats->failed_wakeup++;
+
+    cap->stm_stats->retry++;
 }
 
 /*......................................................................*/
