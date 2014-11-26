@@ -373,7 +373,8 @@ struct StgTRecHeader_ {
   struct StgTRecHeader_     *enclosing_trec;
   StgTRecChunk              *current_chunk;
   StgInvariantCheckQueue    *invariants_to_check;
-  TRecState                  state;
+  StgHalfWord                state;
+  StgHalfWord                retrying;
 };
 
 typedef struct {

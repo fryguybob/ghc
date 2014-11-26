@@ -88,6 +88,7 @@
 
 #include "RtsUtils.h"
 #include "Schedule.h"
+#include "Stats.h"
 #include "STM.h"
 #include "Trace.h"
 #include "Threads.h"
@@ -462,6 +463,7 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
 
   if (enclosing_trec == NO_TREC) {
     result -> state = TREC_ACTIVE;
+    result -> retrying = 0;
   } else {
     ASSERT(enclosing_trec -> state == TREC_ACTIVE ||
            enclosing_trec -> state == TREC_CONDEMNED);
@@ -982,6 +984,10 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 
   getToken(cap);
 
+  if (outer == NO_TREC) {
+    cap->stm_stats->start++;
+  }
+
   t = alloc_stg_trec_header(cap, outer);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
@@ -1005,6 +1011,8 @@ void stmAbortTransaction(Capability *cap,
     // We're a top-level transaction: remove any watch queue entries that
     // we may have.
     TRACE("%p : aborting top-level transaction", trec);
+
+    cap->stm_stats->abort++;
 
     if (trec -> state == TREC_WAITING) {
       ASSERT (trec -> enclosing_trec == NO_TREC);
@@ -1561,6 +1569,11 @@ void
 stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
     revert_ownership(cap, trec, TRUE);
     unlock_stm(trec);
+
+    if (trec->retrying != 0)
+        cap->stm_stats->failed_wakeup++;
+
+    cap->stm_stats->retry++;
 }
 
 /*......................................................................*/

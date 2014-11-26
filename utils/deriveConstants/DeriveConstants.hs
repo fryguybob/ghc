@@ -463,6 +463,7 @@ wanteds = concat
           ,closureField C "StgAtomicInvariant" "code"
 
           ,closureField C "StgTRecHeader" "enclosing_trec"
+          ,closureField C "StgTRecHeader" "retrying"
 
           ,closureSize  C "StgCatchSTMFrame"
           ,closureField C "StgCatchSTMFrame" "handler"
