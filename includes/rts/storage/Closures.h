@@ -358,7 +358,8 @@ struct StgTRecHeader_ {
   StgHeader                  header;
   struct StgTRecHeader_     *enclosing_trec;
   StgTRecChunk              *current_chunk;
-  TRecState                  state;
+  StgHalfWord                state;
+  StgHalfWord                retrying;
 };
 
 typedef struct {

@@ -1000,6 +1000,7 @@ INFO_TABLE_RET(stg_atomically_waiting_frame, ATOMICALLY_FRAME,
     } else {
         /* Previous attempt is no longer valid: try again */
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", NO_TREC "ptr");
+        StgTRecHeader_retrying(trec) = 1;
         StgTSO_trec(CurrentTSO) = trec;
 
         // change the frame header to stg_atomically_frame_info

@@ -24,6 +24,7 @@
 #include "Sparks.h"
 #include "Trace.h"
 #include "sm/GC.h" // for gcWorkerThread()
+#include "Stats.h"
 #include "STM.h"
 #include "RtsUtils.h"
 
@@ -295,6 +296,8 @@ initCapability( Capability *cap, nat i )
 #if defined(THREADED_RTS)
     traceSparkCounters(cap);
 #endif
+
+    initSTMStats(cap);
 }
 
 /* ---------------------------------------------------------------------------

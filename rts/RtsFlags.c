@@ -194,6 +194,7 @@ void initRtsFlagsDefaults(void)
     RtsFlags.MiscFlags.tickInterval     = DEFAULT_TICK_INTERVAL;
 #endif
     RtsFlags.ConcFlags.ctxtSwitchTime   = USToTime(20000); // 20ms
+    RtsFlags.ConcFlags.stmStats         = rtsFalse;
 
     RtsFlags.MiscFlags.install_signal_handlers = rtsTrue;
     RtsFlags.MiscFlags.machineReadable = rtsFalse;
@@ -723,6 +724,10 @@ error = rtsTrue;
                       OPTION_SAFE;
                       printRtsInfo();
                       stg_exit(0);
+                  }
+                  else if (strequal("stm-stats", &rts_argv[arg][2])) {
+                      OPTION_SAFE;
+                      RtsFlags.ConcFlags.stmStats = rtsTrue;
                   }
                   else {
                       OPTION_SAFE;

@@ -138,6 +138,7 @@ struct TRACE_FLAGS {
 struct CONCURRENT_FLAGS {
     Time ctxtSwitchTime;         /* units: TIME_RESOLUTION */
     int ctxtSwitchTicks;         /* derived */
+    rtsBool stmStats;            /* show stm stats at end */
 };
 
 /*
