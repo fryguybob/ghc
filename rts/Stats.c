@@ -121,14 +121,16 @@ static void addSTMStats(stm_stats* acc, stm_stats* s)
 
 static void printSTMStats(stm_stats* s)
 {
-    debugBelch("start:         %d\n"
-               "abort:         %d\n"
-               "retry:         %d\n"
-               "failed-wakeup: %d\n",
-        s->start,
-        s->abort,
-        s->retry,
-        s->failed_wakeup);
+    char temp[BIG_STRING_LEN];
+
+    showStgWord64(s->start,         temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->abort,         temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->retry,         temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->failed_wakeup, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
 }
 
 void initSTMStats(Capability* cap)
@@ -915,21 +917,23 @@ stat_exit (void)
         }
         unlock_stm_stats();
 
-        debugBelch("STM stats:\n----------\n");
+        debugBelch("STM stats:\n----------\nCap   Starts          Aborts           Retry            Failed-wakeup\n");
 
         while (node != NULL)
         {
             addSTMStats(&total, &node->stats);
-            debugBelch("\nCapability %d\n", node->cap_no);
+            debugBelch("%3d ", node->cap_no);
             printSTMStats(&node->stats);
+            debugBelch("\n");
 
             stm_stats_node* prev = node;
             node = node->next;
             stgFree(prev);
         }
 
-        debugBelch("\nTotal\n");
+        debugBelch("    ");
         printSTMStats(&total);
+        debugBelch("\n");
     }
 }
 

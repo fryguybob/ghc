@@ -1235,8 +1235,8 @@ stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
 
     if (trec->retrying != 0)
         cap->stm_stats->failed_wakeup++;
-
-    cap->stm_stats->retry++;
+    else
+        cap->stm_stats->retry++;
 }
 
 /*......................................................................*/
