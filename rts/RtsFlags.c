@@ -7,6 +7,12 @@
  *
  * ---------------------------------------------------------------------------*/
 
+#if defined(__linux__) || defined(__GLIBC__)
+/* We want GNU extensions in DEBUG mode for mutex error checking */
+/* We also want the affinity API, which requires _GNU_SOURCE */
+#define _GNU_SOURCE
+#endif
+
 #include "PosixSource.h"
 #include "Rts.h"
 
@@ -17,6 +23,10 @@
 
 #ifdef HAVE_CTYPE_H
 #include <ctype.h>
+#endif
+
+#if defined(HAVE_SCHED_H)
+#include <sched.h>
 #endif
 
 #include <string.h>
@@ -78,6 +88,10 @@ static void bad_option       (const char *s);
 
 #ifdef TRACING
 static void read_trace_flags(char *arg);
+#endif
+
+#if defined(THREADED_RTS) && defined(HAVE_SCHED_H)
+static rtsBool readAffinityTopology(const char* file);
 #endif
 
 static void errorUsage      (void) GNU_ATTRIBUTE(__noreturn__);
@@ -209,6 +223,9 @@ void initRtsFlagsDefaults(void)
     RtsFlags.ParFlags.parGcLoadBalancingGen = 1;
     RtsFlags.ParFlags.parGcNoSyncWithIdle   = 0;
     RtsFlags.ParFlags.setAffinity       = 0;
+    RtsFlags.ParFlags.setAffinityTopology = NULL;
+    RtsFlags.ParFlags.setAffinityTopologySize = 0;
+    RtsFlags.ParFlags.setAffinityTopologyCount = 0;
 #endif
 
 #if defined(THREADED_RTS)
@@ -370,17 +387,22 @@ usage_text[] = {
 "",
 #endif /* DEBUG */
 #if defined(THREADED_RTS) && !defined(NOSMP)
-"  -N[<n>]   Use <n> processors (default: 1, -N alone determines",
-"            the number of processors to use automatically)",
-"  -qg[<n>]  Use parallel GC only for generations >= <n>",
-"            (default: 0, -qg alone turns off parallel GC)",
-"  -qb[<n>]  Use load-balancing in the parallel GC only for generations >= <n>",
-"            (default: 1, -qb alone turns off load-balancing)",
-"  -qa       Use the OS to set thread affinity (experimental)",
-"  -qm       Don't automatically migrate threads between CPUs",
-"  -qi<n>    If a processor has been idle for the last <n> GCs, do not",
-"            wake it up for a non-load-balancing parallel GC.",
-"            (0 disables,  default: 0)",
+"  -N[<n>]     Use <n> processors (default: 1, -N alone determines",
+"              the number of processors to use automatically)",
+"  -qg[<n>]    Use parallel GC only for generations >= <n>",
+"              (default: 0, -qg alone turns off parallel GC)",
+"  -qb[<n>]    Use load-balancing in the parallel GC only for generations >= <n>",
+"              (default: 1, -qb alone turns off load-balancing)",
+#if defined(HAVE_SCHED_H)
+"  -qa[<file>] Use the OS to set thread affinity (experimental)",
+"              (optional file specifies affinity masks)",
+#else
+"  -qa         Use the OS to set thread affinity (experimental)",
+#endif
+"  -qm         Don't automatically migrate threads between CPUs",
+"  -qi<n>      If a processor has been idle for the last <n> GCs, do not",
+"              wake it up for a non-load-balancing parallel GC.",
+"              (0 disables,  default: 0)",
 #endif
 "  --install-signal-handlers=<yes|no>",
 "            Install signal handlers (default: yes)",
@@ -1247,6 +1269,14 @@ error = rtsTrue;
                         break;
                     case 'a':
                         RtsFlags.ParFlags.setAffinity = rtsTrue;
+#if defined(HAVE_SCHED_H)
+                        if (rts_argv[arg][3] != '\0') {
+                            if (!readAffinityTopology(rts_argv[arg]+3)) {
+                                errorBelch("failed to parse topology: %s", rts_argv[arg]+3);
+                                error = rtsTrue;
+                            }
+                        }
+#endif
                         break;
                     case 'm':
                         RtsFlags.ParFlags.migrate = rtsFalse;
@@ -1651,6 +1681,79 @@ static void read_trace_flags(char *arg)
             break;
         }
     }
+}
+#endif
+
+#if defined(THREADED_RTS) && defined(HAVE_SCHED_H)
+static rtsBool readAffinityTopology(const char* file)
+{
+    FILE *topo;
+
+    if ((topo = fopen(file, "r")) == NULL) {
+        errorBelch("failed to open file '%s'.", file);
+        return rtsFalse;
+    }
+
+    char line[1000];
+    char *save, *token, *p;
+    int r = 0;
+    nat lines = 0;
+    int n = 0;
+    int x;
+    int procs = getNumberOfProcessors();
+
+    unsigned char* temp;
+    cpu_set_t* set;
+    size_t size = CPU_ALLOC_SIZE(procs);
+
+    temp = (unsigned char*)malloc(size*procs);
+    if (temp == NULL) {
+        errorBelch("Failed to allocate cpu set.");
+        return rtsFalse;
+    }
+
+    while (fgets(line, sizeof(line), topo) != NULL) {
+        lines++;
+
+        cpu_set_t* set = (cpu_set_t*)(temp + (n++ * size));
+
+        CPU_ZERO_S(size, set);
+
+        for (p = line;; p = NULL) {
+            token = strtok_r(p, " ", &save);
+            if (token == NULL)
+                break;
+
+            r = sscanf(token, "0x%x", &x);
+            if (r != 1)
+                r = sscanf(token, "%d", &x);
+
+            if (r != 1) {
+                errorBelch("Failed to parse affinity topology line %d char %d: %s\n",
+                           lines, token - line + 1, token);
+                free(temp);
+                return rtsFalse;
+            }
+
+            if (x < 0 || x > CPU_SETSIZE) {
+                errorBelch("CPU given is out of range line %d char %d: %s\n",
+                           lines, token - line + 1, token);
+                free(temp);
+                return rtsFalse;
+            }
+
+            CPU_SET_S(x, size, set);
+        }
+
+        if (n >= procs)
+            break;
+    }
+
+    RtsFlags.ParFlags.setAffinityTopology = realloc(temp, n*size);
+    RtsFlags.ParFlags.setAffinityTopologySize = size;
+    RtsFlags.ParFlags.setAffinityTopologyCount = n;
+
+    return rtsTrue;
 }
 #endif
 
