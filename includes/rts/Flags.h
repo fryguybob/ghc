@@ -180,6 +180,11 @@ struct PAR_FLAGS {
                                   * (zero disables) */
 
   rtsBool        setAffinity;    /* force thread affinity with CPUs */
+  char*          setAffinityTopology;
+                                 /* Allow the user to specify a particular
+                                  * assignment of capabilites to CPUs */
+  nat            setAffinityTopologySize;
+  nat            setAffinityTopologyCount;
 };
 #endif /* THREADED_RTS */
 
