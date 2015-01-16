@@ -1276,10 +1276,24 @@ stg_readTVarSTMzh (P_ tvar)
     return (result);
 }
 
+// TODO: What if we want a different Bloom filter size?
+stg_bloom_add (W_ filter, W_ id)
+{
+    W_ w;
+
+    w = filter;
+
+    w = w | (1 << ((id & 0x00003f0) >>  4));
+    w = w | (1 << ((id & 0x003f000) >> 12));
+    w = w | (1 << ((id & 0x3f00000) >> 20));
+
+    return (w);
+}
+
 stg_readTVarzh (P_ tvar)
 {
-/* TODO: Expand this to record the read set.
     P_ result;
+    P_ htrec;
     W_ htm;
 
     (htm) = prim %xtest();
@@ -1287,12 +1301,17 @@ stg_readTVarzh (P_ tvar)
     if (htm != 0) {
         result = StgTVar_current_value(tvar);
 
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add 
+            (StgHTRecHeader_read_set(htrec), StgTVar_hash_id(tvar));
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
         return (result);
     } else {
         jump stg_readTVarSTMzh(tvar);
     }
-    */
-    jump stg_readTVarSTMzh(tvar);
 }
 
 stg_readTVarIOzh ( P_ tvar /* :: TVar a */ )
