@@ -180,11 +180,11 @@ static int shake(void) {
 #define IF_STM_UNIPROC(__X)  do { __X } while (0)
 static const StgBool config_use_read_phase = FALSE;
 
-static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
+static void lock_stm(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : lock_stm()", trec);
 }
 
-static void unlock_stm(StgTRecHeader *trec STG_UNUSED) {
+static void unlock_stm(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : unlock_stm()", trec);
 }
 
@@ -238,7 +238,7 @@ static volatile int smp_locked = 0;
 
 #define HTM_LATE_LOCK_SUBSCRIPTION
 
-static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
+static void lock_stm(Capability* cap, StgTRecHeader *trec STG_UNUSED) {
   int i;
   for (i = 0; i < RETRY_COUNT; i++)
   {
@@ -246,8 +246,19 @@ static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
     if (smp_locked == 0)
       return;
     XEND();
+    
+    cap->stm_stats->hle_locked++;
+
+    // spin.
+    while (smp_locked != 0)
+        _mm_pause(); // TODO: backoff?
+    
+    continue;
     XFAIL(fail);
+    cap->stm_stats->hle_fail++;
   }
+
+  cap->stm_stats->hle_fallback++;
 
   while (__sync_lock_test_and_set(&smp_locked, 1))
   {
@@ -257,16 +268,18 @@ static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : lock_stm()", trec);
 }
 
-static void unlock_stm(StgTRecHeader *trec STG_UNUSED) {
+static void unlock_stm(Capability* cap, StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : unlock_stm()", trec);
 
   if (smp_locked == 0)
   {
     XEND();
+    cap->stm_stats->hle_commit++;
   }
   else
   {
     __sync_lock_release(&smp_locked);
+    cap->stm_stats->hle_release++;
   }
 }
 
@@ -307,11 +320,11 @@ static StgBool cond_lock_tvar(StgTRecHeader *trec STG_UNUSED,
 #define IF_STM_FG_LOCKS(__X) do { __X } while (0)
 static const StgBool config_use_read_phase = TRUE;
 
-static void lock_stm(StgTRecHeader *trec STG_UNUSED) {
+static void lock_stm(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : lock_stm()", trec);
 }
 
-static void unlock_stm(StgTRecHeader *trec STG_UNUSED) {
+static void unlock_stm(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : unlock_stm()", trec);
 }
 
@@ -1063,11 +1076,11 @@ static StgBool check_read_only(StgTRecHeader *trec STG_UNUSED) {
 /************************************************************************/
 
 void stmPreGCHook (Capability *cap) {
-  lock_stm(NO_TREC);
+  lock_stm(cap, NO_TREC);
   TRACE("stmPreGCHook");
   cap->free_trec_chunks = END_STM_CHUNK_LIST;
   cap->free_trec_headers = NO_TREC;
-  unlock_stm(NO_TREC);
+  unlock_stm(cap, NO_TREC);
 }
 
 /************************************************************************/
@@ -1118,10 +1131,13 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
      
       int status;
       XFAIL_STATUS(fail, status);
+
+      cap->stm_stats->htm_fail++;
+
       s = status & 0xffffff;
       TRACE("%p : XFAIL %x %x %d", outer, status, s, XABORT_CODE(status));
-      if ((s == XABORT_EXPLICIT && XABORT_CODE(status) == ABORT_FALLBACK) 
-        || s != XABORT_RETRY) {
+      if ((((s & XABORT_EXPLICIT) != 0) && XABORT_CODE(status) == ABORT_FALLBACK) 
+        || ((s & XABORT_RETRY) == 0)) {
           break;
       }
       else
@@ -1133,6 +1149,9 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
               _mm_pause(); // We should have some backoff here.
       }
     }
+
+    cap->stm_stats->htm_fallback++;
+
     free_stg_htrec_header(cap, th);
   }
 #else
@@ -1168,7 +1187,7 @@ void stmAbortTransaction(Capability *cap,
           (trec -> state == TREC_WAITING) ||
           (trec -> state == TREC_CONDEMNED));
 
-  lock_stm(trec);
+  lock_stm(cap, trec);
 
   et = trec -> enclosing_trec;
   if (et == NO_TREC) {
@@ -1196,7 +1215,7 @@ void stmAbortTransaction(Capability *cap,
   } 
 
   trec -> state = TREC_ABORTED;
-  unlock_stm(trec);
+  unlock_stm(cap, trec);
 
   TRACE("%p : stmAbortTransaction done", trec);
 }
@@ -1236,7 +1255,7 @@ void stmCondemnTransaction(Capability *cap STG_UNUSED,
           (trec -> state == TREC_WAITING) ||
           (trec -> state == TREC_CONDEMNED));
 
-  lock_stm(trec);
+  lock_stm(cap, trec);
   if (trec -> state == TREC_WAITING) {
     ASSERT (trec -> enclosing_trec == NO_TREC);
     TRACE("%p : stmCondemnTransaction condemning waiting transaction", trec);
@@ -1244,7 +1263,7 @@ void stmCondemnTransaction(Capability *cap STG_UNUSED,
     // here.
   } 
   trec -> state = TREC_CONDEMNED;
-  unlock_stm(trec);
+  unlock_stm(cap, trec);
 
   TRACE("%p : stmCondemnTransaction done", trec);
 }
@@ -1274,7 +1293,7 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
          (trec -> state == TREC_WAITING) ||
          (trec -> state == TREC_CONDEMNED));
 
-  lock_stm(trec);
+  lock_stm(cap, trec);
 
   t = trec;
   result = TRUE;
@@ -1287,7 +1306,7 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
     trec -> state = TREC_CONDEMNED; 
   }
 
-  unlock_stm(trec);
+  unlock_stm(cap, trec);
 
   TRACE("%p : stmValidateNestOfTransactions()=%d", trec, result);
   return result;
@@ -1340,7 +1359,7 @@ static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
     // A software transaction is committing or a hardware transaction is
     // waking up waiters or performing the GC write barrier on the fully-
     // software code path.
-    XABORT(XABORT_RETRY);
+    XABORT(ABORT_RESTART);
   }
 #endif // HTM_LATE_LOCK_SUBSCRIPTION
 
@@ -1379,6 +1398,8 @@ static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
   free_stg_htrec_header(cap, htrec);
 
+  cap->stm_stats->htm_commit++;
+
   return TRUE;
 }
 #endif
@@ -1397,7 +1418,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   TRACE("%p : stmCommitTransaction()", trec);
   ASSERT (trec != NO_TREC);
 
-  lock_stm(trec);
+  lock_stm(cap, trec);
 
   ASSERT (trec -> enclosing_trec == NO_TREC);
   ASSERT ((trec -> state == TREC_ACTIVE) || 
@@ -1437,12 +1458,14 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
         } 
         ACQ_ASSERT(!tvar_is_locked(s, trec));
       });
+
+      cap->stm_stats->stm_commit++;
     } else {
         revert_ownership(cap, trec, FALSE);
     }
   } 
 
-  unlock_stm(trec);
+  unlock_stm(cap, trec);
 
   free_stg_trec_header(cap, trec);
 
@@ -1467,7 +1490,7 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
   TRACE("%p : stmCommitNestedTransaction() into %p", trec, trec -> enclosing_trec);
   ASSERT ((trec -> state == TREC_ACTIVE) || (trec -> state == TREC_CONDEMNED));
 
-  lock_stm(trec);
+  lock_stm(cap, trec);
 
   et = trec -> enclosing_trec;
   result = validate_and_acquire_ownership(cap, trec, (!config_use_read_phase), TRUE);
@@ -1501,7 +1524,7 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
     }
   } 
 
-  unlock_stm(trec);
+  unlock_stm(cap, trec);
 
   free_stg_trec_header(cap, trec);
 
@@ -1519,7 +1542,7 @@ void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec) {
 #ifdef HTM_LATE_LOCK_SUBSCRIPTION
   if (smp_locked != 0)
   {
-    XABORT(XABORT_RETRY);
+    XABORT(ABORT_RESTART);
   }
 #endif // HTM_LATE_LOCK_SUBSCRIPTION
   // Commit the read-only transaction.
@@ -1554,9 +1577,9 @@ StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
   ASSERT ((trec -> state == TREC_ACTIVE) || 
           (trec -> state == TREC_CONDEMNED));
 
-  lock_stm(trec);
+  lock_stm(cap, trec);
   result = validate_and_acquire_ownership(cap, trec, TRUE, TRUE);
-  unlock_stm(trec);
+  unlock_stm(cap, trec);
 
   if (result) {
     // The transaction is valid so far so we can actually start waiting.

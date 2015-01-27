@@ -39,6 +39,17 @@ typedef struct stm_stats_
     nat abort;         /* Transactions aborted due to conflict */
     nat retry;         /* Successfully blocked transactions */
     nat failed_wakeup; /* wakeups that lead to subsequent retry */
+
+    nat stm_commit;    /* Commit of an STM transaction */
+    nat htm_commit;    /* Commit of an HTM transaction */    
+    nat htm_fallback;  /* Transaction that gave up and switched to STM */
+    nat htm_fail;      /* HTM hardware abort */
+
+    nat hle_locked;    /* STM lock was observed as locked by HLE */
+    nat hle_fail;      /* HLE aborted */
+    nat hle_fallback;  /* HLE gave up */
+    nat hle_commit;    /* HLE success */
+    nat hle_release;   /* Full STM fallback released lock */
 } stm_stats;
 
 typedef struct stm_stats_node_

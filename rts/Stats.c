@@ -109,6 +109,17 @@ static void initSTMStatsValues(stm_stats* s)
     s->abort = 0;
     s->retry = 0;
     s->failed_wakeup = 0;
+
+    s->stm_commit = 0;
+    s->htm_commit = 0;
+    s->htm_fallback = 0;
+    s->htm_fail = 0;
+
+    s->hle_locked = 0;
+    s->hle_fail = 0;
+    s->hle_fallback = 0;
+    s->hle_commit = 0;
+    s->hle_release = 0;
 }
 
 static void addSTMStats(stm_stats* acc, stm_stats* s)
@@ -117,6 +128,17 @@ static void addSTMStats(stm_stats* acc, stm_stats* s)
     acc->abort += s->abort;
     acc->retry += s->retry;
     acc->failed_wakeup += s->failed_wakeup;
+
+    acc->stm_commit += s->stm_commit;
+    acc->htm_commit += s->htm_commit;
+    acc->htm_fallback += s->htm_fallback;
+    acc->htm_fail += s->htm_fail;
+
+    acc->hle_locked   += s->hle_locked;
+    acc->hle_fail     += s->hle_fail;
+    acc->hle_fallback += s->hle_fallback;
+    acc->hle_commit   += s->hle_commit;
+    acc->hle_release  += s->hle_release;
 }
 
 static void printSTMStats(stm_stats* s)
@@ -130,6 +152,30 @@ static void printSTMStats(stm_stats* s)
     showStgWord64(s->retry,         temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
     showStgWord64(s->failed_wakeup, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->stm_commit,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+}
+
+static void printHTMStats(stm_stats* s)
+{
+    char temp[BIG_STRING_LEN];
+
+    showStgWord64(s->htm_commit,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_fallback,  temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_fail,      temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_locked,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_fail,      temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_fallback,  temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_commit,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_release,   temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
 }
 
@@ -909,15 +955,22 @@ stat_exit (void)
         initSTMStatsValues(&total);
 
         lock_stm_stats();
-        stm_stats_node* node = smp_stm_stats;
+        stm_stats_node* nodeStats = smp_stm_stats;
         smp_stm_stats = NULL;
-        int i;
+        nat i;
         for (i = 0; i < n_capabilities; i++) {
           capabilities[i]->stm_stats = NULL;
         }
         unlock_stm_stats();
 
-        debugBelch("STM stats:\n----------\nCap   Starts          Aborts           Retry            Failed-wakeup\n");
+        stm_stats_node* node = nodeStats;
+
+        debugBelch("STM stats:\n----------\nCap"
+                    "   Starts        "
+                    "  Aborts         "
+                    "  Retry          "
+                    "  Failed-wakeup  "
+                    "  STM-commit\n");
 
         while (node != NULL)
         {
@@ -926,13 +979,38 @@ stat_exit (void)
             printSTMStats(&node->stats);
             debugBelch("\n");
 
+            node = node->next;
+        }
+
+        debugBelch("    "); 
+        printSTMStats(&total);
+        debugBelch("\n");
+
+        node = nodeStats;
+
+        debugBelch("HTM stats:\n----------\nCap"
+                    "   HTM-commit    "
+                    "  HTM-fallback   "
+                    "  HTM-fail       "
+                    "  HLE-locked     "
+                    "  HLE-fail       "
+                    "  HLE-fallback   "
+                    "  HLE-commit     "
+                    "  HLE-release\n");
+
+        while (node != NULL)
+        {
+            debugBelch("%3d ", node->cap_no);
+            printHTMStats(&node->stats);
+            debugBelch("\n");
+
             stm_stats_node* prev = node;
             node = node->next;
             stgFree(prev);
         }
 
         debugBelch("    "); 
-        printSTMStats(&total);
+        printHTMStats(&total);
         debugBelch("\n");
     }
 }
