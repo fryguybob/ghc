@@ -108,12 +108,14 @@ static void initSTMStatsValues(stm_stats* s)
     s->start = 0;
     s->abort = 0;
     s->retry = 0;
+    s->validate_fail = 0;
     s->failed_wakeup = 0;
 
     s->stm_commit = 0;
     s->htm_commit = 0;
     s->htm_fallback = 0;
     s->htm_fail = 0;
+    s->htm_gc = 0;
 
     s->hle_locked = 0;
     s->hle_fail = 0;
@@ -127,12 +129,14 @@ static void addSTMStats(stm_stats* acc, stm_stats* s)
     acc->start += s->start;
     acc->abort += s->abort;
     acc->retry += s->retry;
+    acc->validate_fail += s->validate_fail;
     acc->failed_wakeup += s->failed_wakeup;
 
     acc->stm_commit += s->stm_commit;
     acc->htm_commit += s->htm_commit;
     acc->htm_fallback += s->htm_fallback;
     acc->htm_fail += s->htm_fail;
+    acc->htm_gc += s->htm_gc;
 
     acc->hle_locked   += s->hle_locked;
     acc->hle_fail     += s->hle_fail;
@@ -151,19 +155,23 @@ static void printSTMStats(stm_stats* s)
     statsPrintf("%16s ", temp);
     showStgWord64(s->retry,         temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
+    showStgWord64(s->validate_fail, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
     showStgWord64(s->failed_wakeup, temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
     showStgWord64(s->stm_commit,    temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
-}
+    showStgWord64(s->htm_commit,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+ }
 
 static void printHTMStats(stm_stats* s)
 {
     char temp[BIG_STRING_LEN];
 
-    showStgWord64(s->htm_commit,    temp, rtsTrue/*commas*/);
-    statsPrintf("%16s ", temp);
     showStgWord64(s->htm_fallback,  temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_gc,        temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
     showStgWord64(s->htm_fail,      temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
@@ -969,8 +977,10 @@ stat_exit (void)
                     "   Starts        "
                     "  Aborts         "
                     "  Retry          "
+                    "  Validate Fails "
                     "  Failed-wakeup  "
-                    "  STM-commit\n");
+                    "  STM-commit     "
+                    "  HTM-commit\n");
 
         while (node != NULL)
         {
@@ -989,8 +999,8 @@ stat_exit (void)
         node = nodeStats;
 
         debugBelch("HTM stats:\n----------\nCap"
-                    "   HTM-commit    "
-                    "  HTM-fallback   "
+                    "   HTM-fallback  "
+                    "  HTM-GC         "
                     "  HTM-fail       "
                     "  HLE-locked     "
                     "  HLE-fail       "

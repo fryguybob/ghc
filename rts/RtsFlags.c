@@ -209,6 +209,8 @@ void initRtsFlagsDefaults(void)
 #endif
     RtsFlags.ConcFlags.ctxtSwitchTime   = USToTime(20000); // 20ms
     RtsFlags.ConcFlags.stmStats         = rtsFalse;
+    RtsFlags.ConcFlags.htmRetryCount    = 5;
+    RtsFlags.ConcFlags.hleRetryCount    = 5;
 
     RtsFlags.MiscFlags.install_signal_handlers = rtsTrue;
     RtsFlags.MiscFlags.machineReadable = rtsFalse;
@@ -750,6 +752,48 @@ error = rtsTrue;
                   else if (strequal("stm-stats", &rts_argv[arg][2])) {
                       OPTION_SAFE;
                       RtsFlags.ConcFlags.stmStats = rtsTrue;
+                  }
+                  else if (strncmp("htm-retry=", &rts_argv[arg][2], 10) == 0) {
+                      OPTION_SAFE;
+                      if (rts_argv[arg][12] == '\0') {
+                        errorBelch("missing value for --htm-retry=<n>");
+                        error = rtsTrue;
+                        // Count needed.
+                      } else {
+                        int count;
+                        count = strtol(rts_argv[arg]+12, (char **) NULL, 10);
+                        if (count < 0 || count > 100) {
+                           errorBelch("bad value for --htm-retry");
+                           error = rtsTrue;
+                        }
+                        RtsFlags.ConcFlags.htmRetryCount = (nat)count;
+                      }
+                  }
+                  else if (strequal("htm-retry", &rts_argv[arg][2])) {
+                    OPTION_SAFE;
+                    errorBelch("missing value for --htm-retry=<n>");
+                    error = rtsTrue;
+                  }
+                  else if (strncmp("hle-retry=", &rts_argv[arg][2], 10) == 0) {
+                      OPTION_SAFE;
+                      if (rts_argv[arg][12] == '\0') {
+                        errorBelch("missing value for --hle-retry=<n>");
+                        error = rtsTrue;
+                        // Count needed.
+                      } else {
+                        int count;
+                        count = strtol(rts_argv[arg]+12, (char **) NULL, 10);
+                        if (count < 0 || count > 100) {
+                           errorBelch("bad value for --hle-retry");
+                           error = rtsTrue;
+                        }
+                        RtsFlags.ConcFlags.hleRetryCount = (nat)count;
+                      }
+                  }
+                  else if (strequal("hle-retry", &rts_argv[arg][2])) {
+                    OPTION_SAFE;
+                    errorBelch("missing value for --hle-retry=<n>");
+                    error = rtsTrue;
                   }
                   else {
                       OPTION_SAFE;

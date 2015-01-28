@@ -230,17 +230,11 @@ static volatile int smp_locked = 0;
 // We are not tracking the read set so we do not know what watch lists to
 // go on.
 
-// Abort reason codes:
-#define ABORT_FALLBACK  1
-#define ABORT_RESTART   2
-#define ABORT_GC        3
-#define RETRY_COUNT     5
-
 #define HTM_LATE_LOCK_SUBSCRIPTION
 
 static void lock_stm(Capability* cap, StgTRecHeader *trec STG_UNUSED) {
   int i;
-  for (i = 0; i < RETRY_COUNT; i++)
+  for (i = 0; i < RtsFlags.ConcFlags.hleRetryCount; i++)
   {
     XBEGIN(fail);
     if (smp_locked == 0)
@@ -546,7 +540,7 @@ static void lock_bloom_in_htm(void) {
 
 static void lock_bloom_hle(void) {
   int i;
-  for (i = 0; i < RETRY_COUNT; i++)
+  for (i = 0; i < RtsFlags.ConcFlags.hleRetryCount; i++)
   {
     XBEGIN(fail);
     if (smp_locked_bloom == 0)
@@ -1030,6 +1024,10 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
   if ((!result) || (!retain_ownership)) {
       revert_ownership(cap, trec, acquire_all);
   }
+
+  if (!result)  {
+    cap->stm_stats->validate_fail++;
+  }
   
   return result;
 }
@@ -1063,6 +1061,7 @@ static StgBool check_read_only(StgTRecHeader *trec STG_UNUSED) {
         if (s -> current_value != e -> expected_value) {
           TRACE("%p : mismatch", trec);
           result = FALSE;
+          cap->stm_stats->validate_fail++;
           BREAK_FOR_EACH;
         }
       }
@@ -1118,7 +1117,7 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
     cap->stm_stats->start++;
 
     TRACE("%p : stmStartTransaction()=%p XBEGIN", outer, th);
-    for (i = 0; i < RETRY_COUNT; i++) {
+    for (i = 0; i < RtsFlags.ConcFlags.htmRetryCount; i++) {
       XBEGIN(fail); // Aborted transaction will go to the XFAIL_STATUS line below.
 #ifndef HTM_LATE_LOCK_SUBSCRIPTION
       if (smp_locked != 0) {
@@ -1136,19 +1135,31 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 
       s = status & 0xffffff;
       TRACE("%p : XFAIL %x %x %d", outer, status, s, XABORT_CODE(status));
-      if ((((s & XABORT_EXPLICIT) != 0) && XABORT_CODE(status) == ABORT_FALLBACK) 
-        || ((s & XABORT_RETRY) == 0)) {
-          break;
-      }
-      else
+      if ((s & XABORT_EXPLICIT) != 0) // XABORT was executed
       {
-          // Perhaps our failure was due to observing the lock from a committing
-          // STM transaction.  Wait until we observe the lock free.  If we do not
-          // do this we risk all transactions falling back.
-          while (smp_locked != 0)
-              _mm_pause(); // We should have some backoff here.
+        if (XABORT_CODE(status) == ABORT_FALLBACK)
+          break; // Give up and go to the fallback.
+
+        if (XABORT_CODE(status) == ABORT_GC)
+        {
+          cap->stm_stats->htm_gc++;
+          break; // Give up so that GC can happen.
+        }
+
+        if (XABORT_CODE(status) == ABORT_RESTART)
+        { // Try again.
+        }
       }
-    }
+      else if ((s & XABORT_RETRY) == 0)
+        break; // Hardware recommends fallback.
+
+      // go to fall back, system doesn't expect retry will work.
+      // Perhaps our failure was due to observing the lock from a committing
+      // STM transaction.  Wait until we observe the lock free.  If we do not
+      // do this we risk all transactions falling back.
+      while (smp_locked != 0)
+          _mm_pause(); // TODO: backoff?
+     }
 
     cap->stm_stats->htm_fallback++;
 

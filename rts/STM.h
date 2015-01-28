@@ -160,6 +160,13 @@ StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec);
 void stmWaitUnlock(Capability *cap, StgTRecHeader *trec);
 
 #ifdef THREADED_RTS
+
+// Abort reason codes:
+#define ABORT_FALLBACK  1
+#define ABORT_RESTART   2
+#define ABORT_GC        3
+
+
 /*
  * End a hardware transaction and add it's read set to the
  * wakeup bloom filters.
