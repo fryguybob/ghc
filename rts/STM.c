@@ -1106,7 +1106,12 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       FOR_EACH_ENTRY(trec, e, {
         StgTVar *s;
         s = e -> tvar;
+
+#if defined(STM_CG_LOCK)
+        if (e -> new_value != e -> expected_value) {
+#else
         if ((!config_use_read_phase) || (e -> new_value != e -> expected_value)) {
+#endif
           // Either the entry is an update or we're not using a read phase:
 	  // write the value back to the TVar, unlocking it if necessary.
 
