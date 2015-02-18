@@ -140,6 +140,7 @@ static int shake(void) {
 // record
 
 #define _FOR_EACH_ENTRY(_t,_x,CODE,HEADER,CHUNK,ENTRY,END_LIST,SIZE) do {       \
+  __label__ exit_for_each;                                                      \
   HEADER *__t = (_t);                                                           \
   CHUNK *__c = __t -> current_chunk;                                            \
   StgWord __limit = __c -> next_entry_idx;                                      \
@@ -578,15 +579,10 @@ static void unlock_bloom(void) {
 
 #define BLOOM_BIT_COUNT     64 // TODO: Bold assumption.
 
-static StgWord hash1(StgWord w) { return 1 << ((w & 0x00003f0) >>  4); }
-static StgWord hash2(StgWord w) { return 1 << ((w & 0x003f000) >> 12); }
-static StgWord hash3(StgWord w) { return 1 << ((w & 0x3f00000) >> 20); }
-
 // Bloom filters for wakeups
 static StgBloom bloom_add(StgBloom filter, StgTVar *tvar)
 {
-    StgWord w = tvar->hash_id;
-    return filter | hash1(w) | hash2(w) | hash3(w);
+    return filter | tvar->hash_id;
 }
 
 // TODO: this structure will be used to insert new
@@ -802,7 +798,21 @@ static void unpark_tso(Capability *cap, StgTSO *tso) {
     // we mark this fact by setting block_info.closure == STM_AWOKEN.
     // This way we can avoid sending further wakeup messages in the
     // future.
-    lockTSO(tso); // TODO: HLE!
+#ifdef THREADED_RTS 
+    int htm = XTEST();
+    
+    if (htm)
+    {
+        // We only need to check to ensure no one takes the lock while
+        // while we are in the transaction.
+        StgClosure* p = (StgClosure*)tso;
+        if ((P_)(void *)&p->header.info == (P_)&stg_WHITEHOLE_info)
+            XABORT(ABORT_RESTART);
+    }
+    else
+#endif
+        lockTSO(tso);
+
     if (tso->why_blocked == BlockedOnSTM &&
         tso->block_info.closure == &stg_STM_AWOKEN_closure) {
       TRACE("unpark_tso already woken up tso=%p", tso);
@@ -813,7 +823,10 @@ static void unpark_tso(Capability *cap, StgTSO *tso) {
     } else {
       TRACE("spurious unpark_tso on tso=%p", tso);
     }
-    unlockTSO(tso);
+#ifdef THREADED_RTS
+    if (!htm)
+#endif
+        unlockTSO(tso);
 }
 
 static void unpark_waiters_on(Capability *cap, StgTVar *s) {
@@ -996,6 +1009,27 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 	  (trec -> state == TREC_WAITING) ||
 	  (trec -> state == TREC_CONDEMNED));
   result = !((trec -> state) == TREC_CONDEMNED);
+
+#if defined(THREADED_RTS)
+  if (XTEST())
+  {
+    // To successfully get here we have to be in the fallback
+    // STM with HLE.  We can simply check all the values and
+    // continue, no redundent check if entry is update needed.
+    if (!result)
+      return FALSE;
+
+    FOR_EACH_ENTRY(trec, e, {
+      StgTVar *s;
+      s = e -> tvar;
+      if (s -> current_value != e -> expected_value)
+        return FALSE;
+    });
+    return TRUE;
+  }
+#endif
+
+
   if (result) {
     FOR_EACH_ENTRY(trec, e, {
       StgTVar *s;
