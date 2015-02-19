@@ -350,9 +350,9 @@ struct StgTRecHeader_ {
 struct StgHTRecHeader_ {
   StgHeader                  header;
   struct StgHTRecHeader_    *enclosing_trec;
+  StgWord                    write_set;
   StgHalfWord                state;
   StgHalfWord                retrying;
-  StgWord                    write_set;
   StgWord                    read_set;
 };
 
