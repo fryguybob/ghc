@@ -307,7 +307,6 @@ typedef struct {
  */
 
 typedef struct StgTRecHeader_ StgTRecHeader;
-typedef struct StgHTRecHeader_ StgHTRecHeader;
 
 typedef struct {
   StgHeader                  header;
@@ -345,15 +344,6 @@ struct StgTRecHeader_ {
   StgTRecChunk              *current_chunk;
   StgHalfWord                state;
   StgHalfWord                retrying;
-};
-
-struct StgHTRecHeader_ {
-  StgHeader                  header;
-  struct StgHTRecHeader_    *enclosing_trec;
-  StgHalfWord                state;
-  StgHalfWord                retrying;
-  StgWord                    write_set;
-  StgWord                    read_set;
 };
 
 #define BLOOM_WAKEUP_CHUNK_NUM_ENTRIES 7  // TODO: Roundup to a multiple of cacheline size

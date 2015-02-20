@@ -205,12 +205,6 @@ threadPaused(Capability *cap, StgTSO *tso)
     nat weight_pending   = 0;
     rtsBool prev_was_update_frame = rtsFalse;
 
-#ifdef THREADED_RTS
-    if (XTEST()) {
-      XABORT(ABORT_GC);
-    }
-#endif
-
     // Check to see whether we have threads waiting to raise
     // exceptions, and we're not blocking exceptions, or are blocked
     // interruptibly.  This is important; if a thread is running with

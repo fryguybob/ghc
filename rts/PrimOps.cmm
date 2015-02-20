@@ -1150,8 +1150,6 @@ stg_retryzh /* no arg list: explicit stack layout */
     W_ r;
     W_ htm;
 
-    (htm) = prim %xtest();
-
     // STM operations may allocate
     MAYBE_GC_ (stg_retryzh); // NB. not MAYBE_GC(), we cannot make a
                              // function call in an explicit-stack proc
@@ -1168,36 +1166,15 @@ retry_pop_stack:
     if (frame_type == CATCH_RETRY_FRAME) {
         // The retry reaches a CATCH_RETRY_FRAME before the atomic frame
 
-#ifdef THREADED_RTS
-        if (htm != 0) { // HTM
-            // TODO: we could nest write sets here and check if writes happened on the 
-            // speculative branch.  That is stash the current write set on the CatchRetryFrame
-            // and merge the write sets when committing while 
-            if (StgHTRecHeader_write_set(trec) != 0) { // Writes have already happened.
-                // TODO: XABORT directly in cmm
-                ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
-            }
-        } else { // STM
-#endif
-            ASSERT(outer != NO_TREC);
-            // Abort the transaction attempting the current branch
-            ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
-            ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
-#ifdef THREADED_RTS
-        }
-#endif
+        ASSERT(outer != NO_TREC);
+        // Abort the transaction attempting the current branch
+        ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
+        ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
 
         if (!StgCatchRetryFrame_running_alt_code(frame) != 0) {
             // Retry in the first branch: try the alternative
-#ifndef THREADED_RTS
-            if (htm == 0) // STM
-            {
-#endif
-                ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
-                StgTSO_trec(CurrentTSO) = trec;
-#ifndef THREADED_RTS
-            }
-#endif
+            ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+            StgTSO_trec(CurrentTSO) = trec;
             StgCatchRetryFrame_running_alt_code(frame) = 1 :: CInt; // true;
             R1 = StgCatchRetryFrame_alt_code(frame);
             jump stg_ap_v_fast [R1];
@@ -1212,17 +1189,6 @@ retry_pop_stack:
     // We've reached the ATOMICALLY_FRAME: attempt to wait
     ASSERT(frame_type == ATOMICALLY_FRAME);
     ASSERT(outer == NO_TREC);
-
-#ifdef THREADED_RTS
-    if (htm != 0 && StgHTRecHeader_write_set(trec) == 0) // In HTM and read only. 
-    {
-        ccall htmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
-        StgHeader_info(frame) = stg_atomically_waiting_frame_info;
-        Sp = frame;
-        R3 = trec; // passing to stmWaitUnblock()
-        jump stg_block_stmwait [R3];
-    }
-#endif
 
     (r) = ccall stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
     if (r != 0) {
@@ -1278,43 +1244,18 @@ stg_newTVarzh (P_ init)
     return (tv);
 }
 
-stg_readTVarSTMzh (P_ tvar)
+stg_readTVarzh (P_ tvar)
 {
     P_ trec;
     P_ result;
 
-    // Call to stmReadTVarSTM may allocate
-    MAYBE_GC_P (stg_readTVarSTMzh, tvar);
+    // Call to stmReadTVar may allocate
+    MAYBE_GC_P (stg_readTVarzh, tvar);
 
     trec = StgTSO_trec(CurrentTSO);
     ("ptr" result) = ccall stmReadTVar(MyCapability() "ptr", trec "ptr",
                                        tvar "ptr");
     return (result);
-}
-
-
-stg_readTVarzh (P_ tvar)
-{
-    P_ result;
-    P_ htrec;
-    W_ htm;
-    W_ filter;
-
-    (htm) = prim %xtest();
-
-    if (htm != 0) {
-        result = StgTVar_current_value(tvar);
-
-        htrec = StgTSO_trec(CurrentTSO);
-
-        filter = StgHTRecHeader_read_set(htrec) | StgTVar_hash_id(tvar);
-
-        StgHTRecHeader_read_set(htrec) = filter;
-
-        return (result);
-    } else {
-        jump stg_readTVarSTMzh(tvar);
-    }
 }
 
 stg_readTVarIOzh ( P_ tvar /* :: TVar a */ )
@@ -1329,51 +1270,18 @@ again:
     return (result);
 }
 
-stg_writeTVarSTMzh (P_ tvar,     /* :: TVar a */
-                    P_ new_value /* :: a      */)
+stg_writeTVarzh (P_ tvar,     /* :: TVar a */
+                 P_ new_value /* :: a      */)
 {
     W_ trec;
 
-    // Call to stmWriteTVarSTM may allocate
-    MAYBE_GC_PP (stg_writeTVarSTMzh, tvar, new_value);
+    // Call to stmWriteTVar may allocate
+    MAYBE_GC_PP (stg_writeTVarzh, tvar, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTVar(MyCapability() "ptr", trec "ptr", tvar "ptr",
                        new_value "ptr");
     return ();
-}
-
-
-
-stg_writeTVarzh (P_ tvar,     /* :: TVar a */
-                 P_ new_value /* :: a      */)
-{
-    W_ htm;
-    P_ htrec;
-    W_ filter;
-
-    (htm) = prim %xtest();
-
-    if (htm != 0) {
-        StgTVar_current_value(tvar) = new_value;
-
-        htrec = StgTSO_trec(CurrentTSO);
-
-        filter = StgHTRecHeader_write_set(htrec) | StgTVar_hash_id(tvar);
-
-        StgHTRecHeader_write_set(htrec) = filter;
-
-        // TODO: Here we need the GC write barrier when
-        // we are not in gen 0 (transaction with long
-        // lived TVars).  We could also add all promoted 
-        // TVars as a new list of roots that we always
-        // follow at GC and avoid tracking the write set.
-        ccall dirty_TVAR(MyCapability() "ptr", tvar "ptr");
-
-        return ();
-    } else {
-        jump stg_writeTVarSTMzh(tvar,new_value);
-    }
 }
 
 

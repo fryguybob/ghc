@@ -460,34 +460,9 @@ run_thread:
     case ThreadRunGHC:
     {
 	StgRegTable *r;
-fast_run_again:
 	r = StgRun((StgFunPtr) stg_returnToStackTop, &cap->r);
 	cap = regTableToCapability(r);
 	ret = r->rRet;
-#ifdef THREADED_RTS
-    if (XTEST())
-    {
-        switch (ret) {
-        case ThreadYielding:
-            // When in a hardware transaction, don't yield.  Eventually the
-            // transaction will be aborted by the hardware, but while it is running
-            // it should run exclusively.
-
-            // TODO: Perhaps we can push this up to avoid getting all the way back into the
-            // scheduler before deciding that we should not have come here in the first place.
-            cap->context_switch = 0;
-            goto fast_run_again;
-        case HeapOverflow:
-        case StackOverflow:
-        case ThreadBlocked:
-        case ThreadFinished:
-            // We can't handle any of these cases in a hardware transaction and we are likely to
-            // encounter them again if we retry, so give up.
-            XABORT(ABORT_GC);
-            break;
-        }
-    }
-#endif
 	break;
     }
     

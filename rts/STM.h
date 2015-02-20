@@ -34,8 +34,8 @@
 #define STM_H
 
 #ifdef THREADED_RTS
-#define STM_CG_LOCK
-//#define STM_FG_LOCKS
+//#define STM_CG_LOCK
+#define STM_FG_LOCKS
 #else
 #define STM_UNIPROC
 #endif
@@ -162,17 +162,16 @@ void stmWaitUnlock(Capability *cap, StgTRecHeader *trec);
 #ifdef THREADED_RTS
 
 // Abort reason codes:
-#define ABORT_FALLBACK  1
-#define ABORT_RESTART   2
-#define ABORT_GC        3
+#define ABORT_FALLBACK          1
+#define ABORT_RESTART           2
+#define ABORT_GC                3
+#define ABORT_STM_INCONSISTENT  4
 
 
 /*
  * End a hardware transaction and add it's read set to the
  * wakeup bloom filters.
  */
-
-void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec);
 #endif
 
 /*

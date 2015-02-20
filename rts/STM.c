@@ -394,21 +394,6 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
   return result;  
 }
 
-#if defined(THREADED_RTS)
-static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
-  StgHTRecHeader *result;
-  result = (StgHTRecHeader *) allocate(cap, sizeofW(StgHTRecHeader));
-  SET_HDR (result, &stg_HTREC_HEADER_info, CCS_SYSTEM);
-
-  result -> enclosing_trec = (StgHTRecHeader*)NO_TREC;
-  result -> state = TREC_ACTIVE;
-  result -> retrying = 0;
-  result -> write_set = 0;
-  result -> read_set = 0;
-
-  return result;
-}
-#endif
 /*......................................................................*/
 
 // Allocation / deallocation functions that retain per-capability lists
@@ -471,17 +456,6 @@ static void free_stg_trec_header(Capability *cap,
 #endif
 }
 
-#if defined(THREADED_RTS)
-static StgHTRecHeader *alloc_stg_htrec_header(Capability *cap) {
-  StgHTRecHeader *result = NULL;
-  result = new_stg_htrec_header(cap);
-  return result;
-}
-
-static void free_stg_htrec_header(Capability *cap STG_UNUSED,
-                                 StgHTRecHeader *trec STG_UNUSED) {
-}
-#endif
 /*......................................................................*/
 
 static TRecEntry *get_new_entry(Capability *cap,
@@ -1010,26 +984,6 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 	  (trec -> state == TREC_CONDEMNED));
   result = !((trec -> state) == TREC_CONDEMNED);
 
-#if defined(THREADED_RTS)
-  if (XTEST())
-  {
-    // To successfully get here we have to be in the fallback
-    // STM with HLE.  We can simply check all the values and
-    // continue, no redundent check if entry is update needed.
-    if (!result)
-      return FALSE;
-
-    FOR_EACH_ENTRY(trec, e, {
-      StgTVar *s;
-      s = e -> tvar;
-      if (s -> current_value != e -> expected_value)
-        return FALSE;
-    });
-    return TRUE;
-  }
-#endif
-
-
   if (result) {
     FOR_EACH_ENTRY(trec, e, {
       StgTVar *s;
@@ -1077,7 +1031,7 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 // Keir Fraser's PhD dissertation "Practical lock-free programming" discuss
 // this kind of algorithm.
 
-static StgBool check_read_only(StgTRecHeader *trec STG_UNUSED) {
+static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) {
   StgBool result = TRUE;
 
   ASSERT (config_use_read_phase);
@@ -1122,93 +1076,14 @@ void stmPreGCHook (Capability *cap) {
 
 StgTRecHeader *stmStartTransaction(Capability *cap,
                                    StgTRecHeader *outer) {
+  StgTRecHeader *t;
+  TRACE("%p : stmStartTransaction", outer);
 
-  // We will leave this function in two possible states:
-  //
-  // 1) Execution is in a hardware transaction and the return value is an
-  //    StgHTRecHeader*
-  //
-  // 2) Execution is in a software transaction and the return value is an
-  //    StgTRecHeader*
-  //
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    // TODO: Nest HTM
-
-    // For the simple version abort when nesting.  More
-    // complicated versions can use STM inside a hardware
-    // transaction.
-    XABORT(ABORT_FALLBACK);
-  }
-  else if (outer == NO_TREC)
-  {
-    // We check for an outer transaction to avoid starting an HTM transaction
-    // nested in an STM transaction.
-    int i, s;
-    StgHTRecHeader *th;
-    th = alloc_stg_htrec_header(cap);
-
-    cap->stm_stats->start++;
-
-    TRACE("%p : stmStartTransaction()=%p XBEGIN", outer, th);
-    for (i = 0; i < RtsFlags.ConcFlags.htmRetryCount; i++) {
-      XBEGIN(fail); // Aborted transaction will go to the XFAIL_STATUS line below.
-#ifndef HTM_LATE_LOCK_SUBSCRIPTION
-      if (smp_locked != 0) {
-          // Early Lock subscription.
-          // Make sure that no STM transaction is committing while we run.
-          XABORT(ABORT_RESTART);
-      }
-#endif // !HTM_LATE_LOCK_SUBSCRIPTION
-      return (StgTRecHeader*)th;
-     
-      int status;
-      XFAIL_STATUS(fail, status);
-
-      cap->stm_stats->htm_fail++;
-
-      s = status & 0xffffff;
-      TRACE("%p : XFAIL %x %x %d", outer, status, s, XABORT_CODE(status));
-      if ((s & XABORT_EXPLICIT) != 0) // XABORT was executed
-      {
-        if (XABORT_CODE(status) == ABORT_FALLBACK)
-          break; // Give up and go to the fallback.
-
-        if (XABORT_CODE(status) == ABORT_GC)
-        {
-          cap->stm_stats->htm_gc++;
-          break; // Give up so that GC can happen.
-        }
-
-        if (XABORT_CODE(status) == ABORT_RESTART)
-        { // Try again.
-        }
-      }
-      else if ((s & XABORT_RETRY) == 0)
-        break; // Hardware recommends fallback.
-
-      // go to fall back, system doesn't expect retry will work.
-      // Perhaps our failure was due to observing the lock from a committing
-      // STM transaction.  Wait until we observe the lock free.  If we do not
-      // do this we risk all transactions falling back.
-      while (smp_locked != 0)
-          _mm_pause(); // TODO: backoff?
-     }
-
-    cap->stm_stats->htm_fallback++;
-
-    free_stg_htrec_header(cap, th);
-  }
-#else
   if (outer == NO_TREC)
   {
     cap->stm_stats->start++;
   }
-#endif
 
-  TRACE("%p : stmStartTransaction", outer);
-
-  StgTRecHeader* t;
   t = alloc_stg_trec_header(cap, outer);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
@@ -1219,12 +1094,6 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
 void stmAbortTransaction(Capability *cap,
                          StgTRecHeader *trec) {
   StgTRecHeader *et;
-
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    XABORT(ABORT_FALLBACK);
-  }
-#endif
 
   TRACE("%p : stmAbortTransaction", trec);
   ASSERT (trec != NO_TREC);
@@ -1270,10 +1139,6 @@ void stmAbortTransaction(Capability *cap,
 void stmFreeAbortedTRec(Capability *cap,
 			StgTRecHeader *trec) {
 
-  // trec could be a trec header or an htrec header.
-  if (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) != &stg_TREC_HEADER_info)
-    return;
-
   TRACE("%p : stmFreeAbortedTRec", trec);
   ASSERT (trec != NO_TREC);
   ASSERT ((trec -> state == TREC_CONDEMNED) ||
@@ -1288,12 +1153,6 @@ void stmFreeAbortedTRec(Capability *cap,
 
 void stmCondemnTransaction(Capability *cap STG_UNUSED,
                            StgTRecHeader *trec) {
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    XABORT(ABORT_FALLBACK);
-  }
-#endif
-
   TRACE("%p : stmCondemnTransaction", trec);
   ASSERT (trec != NO_TREC);
   ASSERT ((trec -> state == TREC_ACTIVE) || 
@@ -1319,18 +1178,7 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec) {
   StgTRecHeader *t;
   StgBool result;
 
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    // This is called from either an exception or a long running transaction.
-    // TODO: The long running transaction might be ok, but is likely to abort
-    // before rescheduled. 
-    XABORT(ABORT_FALLBACK);
-  }
-  else
-  {
-    ASSERT (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_TREC_HEADER_info);
-  }
-#endif
+  ASSERT (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_TREC_HEADER_info);
 
   TRACE("%p : stmValidateNestOfTransactions", trec);
   ASSERT(trec != NO_TREC);
@@ -1383,82 +1231,8 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
 
 /*......................................................................*/
 
-#if defined(THREADED_RTS)
-static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
-
-#ifdef HTM_LATE_LOCK_SUBSCRIPTION
-  // At some point we need to make sure that the fallback lock is in our
-  // transaction's read set.  By reading it as late as possible we narrow
-  // the window of conflict and can allow a fully-software transaction to 
-  // commit while a hardware transaction runs up to this point.  The danger
-  // is that the hardware transaction may be exposed to inconsistent view
-  // of data.
-  //
-  // TODO: Prove that an inconsistent view of data in a hardware transaction
-  // cannot lead to execution of an XEND instruction.  This proof would also
-  // need to exclude the possiblity of execution of uninitalized data or jumping
-  // to arbitrary code.  I think we should be happy by only concerning ourselves
-  // with "safe" transactions.
-  if (smp_locked != 0)
-  {
-    // A software transaction is committing or a hardware transaction is
-    // waking up waiters or performing the GC write barrier on the fully-
-    // software code path.
-    XABORT(ABORT_RESTART);
-  }
-#endif // HTM_LATE_LOCK_SUBSCRIPTION
-
-  // Commit the transaction.
-  XEND();
-
-  ASSERT(GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_HTREC_HEADER_info);
-
-  StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-
-  if (htrec -> write_set != 0)
-  { // Hardware transaction did some writes, we need to check for wake ups.
-    bloom_wakeup(cap, htrec -> write_set);
-    // TODO: GC write barrier (dirty_TVAR)!  Without it a long lived TVar can
-    // be promoted to a late generation and if it becomes the only reference to
-    // a value in a younger generation, that value could be collected out from
-    // under it.
-    //
-    // The problem is we want to avoid the memory overhead of recording the
-    // location of every write (we might just give up and do that though).  And
-    // we can't just do the GC barrier inside the transaction as it simply
-    // records the TVar, but on a list that could become a source of
-    // contention if it needs to allocate more room on the Capability.  We can
-    // gain some benefit if we do bother to record the write set by waking up
-    // per-write and having less falls positives in our bloom filter.
-    //
-    // Another tact we can take is to check writes to TVars and only record
-    // them if the value's generation differs.  I doubt the risk of further
-    // contention from the reads to figure this out would be worth it.
-    //
-    // This at least serves as a point of comparison for the best case if we
-    // did have some other method of handling the GC issue.
-    //
-    //
-  }
-
-  free_stg_htrec_header(cap, htrec);
-
-  cap->stm_stats->htm_commit++;
-
-  return TRUE;
-}
-#endif
-
-/*......................................................................*/
-
 StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   int result;
-
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    return htmCommitTransaction(cap, trec);
-  }
-#endif
 
   TRACE("%p : stmCommitTransaction()", trec);
   ASSERT (trec != NO_TREC);
@@ -1468,6 +1242,85 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   ASSERT (trec -> enclosing_trec == NO_TREC);
   ASSERT ((trec -> state == TREC_ACTIVE) || 
           (trec -> state == TREC_CONDEMNED));
+
+#if defined(THREADED_RTS)
+  int i, s;
+  for (i = 0; i < RtsFlags.ConcFlags.htmRetryCount; i++)
+  {
+    if (((trec -> state) == TREC_CONDEMNED))
+        break;
+
+    XBEGIN(fail);
+
+    // Attempt the commit.  When we commit in a hardware
+    // transaction we just need to read every TVar and make sure
+    // it matches the expected value, then write in the new value
+    // if it is different.  No separate phases, just once pass and
+    // done.  If we find a problem we have some choice.  We could 
+    // XABORT to rollback the writes that we have already made
+    // and signal that the abort means we saw an *STM* inconsistency
+    // (XABORT is atomic!).  Otherwise we can revert the writes as
+    // we have those values still and XEND.  Not sure what would be
+    // faster.
+    //
+    // TODO: compare XABORT and XEND options.
+    FOR_EACH_ENTRY(trec, e, {
+      StgTVar *s;
+      s = e -> tvar;
+
+      if (s -> current_value != e -> expected_value) // Check consistency
+        XABORT(ABORT_STM_INCONSISTENT); // We don't want the affect of the writes.
+
+      if (e -> expected_value != e -> new_value)
+        s -> current_value = e -> new_value;  // Write values
+    });
+
+    XEND(); // Commit hardware transaction.
+   
+    // Wakeup 
+    FOR_EACH_ENTRY(trec, e, {
+      if (e -> expected_value != e -> new_value)
+        // It is only safe to do the dirty here as long as a GC can't happen between
+        // the XEND and here.  We don't yield between those, so we are safe.
+        dirty_TVAR(cap, e -> tvar);
+        unpark_waiters_on(cap, e -> tvar);
+    });
+ 
+
+    cap->stm_stats->htm_commit++;
+    free_stg_trec_header(cap, trec);
+    return TRUE; // success
+
+    // Hardware transaction aborted:
+    int status;
+    XFAIL_STATUS(fail, status);
+
+    cap->stm_stats->htm_fail++;
+
+    s = status & 0xffffff;
+    TRACE("%p : XFAIL %x %x %d", trec, status, s, XABORT_CODE(status));
+    if ((s & XABORT_EXPLICIT) != 0) // XABORT was executed
+    {
+      if (XABORT_CODE(status) == ABORT_FALLBACK)
+        break; // Give up and go to the fallback.
+ 
+      if (XABORT_CODE(status) == ABORT_STM_INCONSISTENT)
+      {
+        free_stg_trec_header(cap, trec);
+        return FALSE; // we are done, proceed as if validation failed.
+      }
+ 
+      if (XABORT_CODE(status) == ABORT_RESTART)
+      { // Try again.
+      }
+    }
+    else if ((s & XABORT_RETRY) == 0)
+      break; // Hardware recommends fallback.
+  }
+
+  // Fallback to software commit.
+  cap->stm_stats->htm_fallback++;
+#endif
 
   // Use a read-phase (i.e. don't lock TVars we've read but not updated) if
   // the configueration lets us use a read phase.
@@ -1479,7 +1332,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
     if (config_use_read_phase) {
       TRACE("%p : doing read check", trec);
-      result = check_read_only(trec);
+      result = check_read_only(cap, trec);
       TRACE("%p : read-check %s", trec, result ? "succeeded" : "failed");
     }
     
@@ -1530,12 +1383,6 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
   StgTRecHeader *et;
   int result;
 
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    return TRUE;
-  }
-#endif
-
   ASSERT (trec != NO_TREC && trec -> enclosing_trec != NO_TREC);
   TRACE("%p : stmCommitNestedTransaction() into %p", trec, trec -> enclosing_trec);
   ASSERT ((trec -> state == TREC_ACTIVE) || (trec -> state == TREC_CONDEMNED));
@@ -1549,7 +1396,7 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
 
     if (config_use_read_phase) {
       TRACE("%p : doing read check", trec);
-      result = check_read_only(trec);
+      result = check_read_only(cap, trec);
     }
     if (result) {
       // We now know that all of the read-only locations held their exepcted values
@@ -1584,42 +1431,8 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
 }
 
 /*......................................................................*/
-#if defined(THREADED_RTS)
-void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec) {
-
-  lock_bloom_in_htm(); // Take the bloom filter lock
-
-#ifdef HTM_LATE_LOCK_SUBSCRIPTION
-  if (smp_locked != 0)
-  {
-    XABORT(ABORT_RESTART);
-  }
-#endif // HTM_LATE_LOCK_SUBSCRIPTION
-  // Commit the read-only transaction.
-  XEND();
-
-  // TODO: Throw an exception if `read_set` is zero.
-
-  // We are now executing non-transactionally and have the bloom filter
-  // lock.
-  bloom_insert(cap, htrec -> read_set, tso);
-  park_tso(tso);
-  htrec -> state = TREC_WAITING;
-
-  // We continue to hold the bloom lock until the thread can be woken.  We
-  // could have a "lock" (monotonic value) per tso entry and spin on that until
-  // it is ready when waking.
-}
-#endif // THREADED_RTS
-
 StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec) {
   int result;
-
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    XABORT(ABORT_FALLBACK);
-  }
-#endif
 
   TRACE("%p : stmWait(%p)", trec, tso);
   ASSERT (trec != NO_TREC);
@@ -1683,19 +1496,6 @@ stmWaitUnlock(Capability *cap, StgTRecHeader *trec) {
 StgBool stmReWait(Capability *cap, StgTSO *tso) {
   StgTRecHeader *trec = tso->trec;
 
-#if defined(THREADED_RTS)
-  if (XTEST()) {
-    XABORT(ABORT_FALLBACK);
-  }
-
-  if (GET_INFO(UNTAG_CLOSURE((StgClosure*)trec)) == &stg_HTREC_HEADER_info)
-  {
-    TRACE("%p : stmReWait (htm)", trec);
-    free_stg_htrec_header(cap, (StgHTRecHeader*)trec);
-    return 0;
-  }
-#endif
-
   TRACE("%p : stmReWait (stm)", trec);
   ASSERT (trec != NO_TREC);
   ASSERT (trec -> enclosing_trec == NO_TREC);
@@ -1730,16 +1530,6 @@ static StgClosure *read_current_value(StgTRecHeader *trec STG_UNUSED, StgTVar *t
 StgClosure *stmReadTVar(Capability *cap,
                         StgTRecHeader *trec, 
 			StgTVar *tvar) {
-
-#if defined(THREADED_RTS)
-  // Record the write set for later wakeups.
-  if (XTEST()) {
-    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> read_set = bloom_add(htrec -> read_set, tvar);
-    return tvar -> current_value;
-  }
-#endif
-
 
   StgTRecHeader *entry_in = NULL;
   StgClosure *result = NULL;
@@ -1783,17 +1573,6 @@ void stmWriteTVar(Capability *cap,
                   StgTRecHeader *trec,
 		  StgTVar *tvar, 
 		  StgClosure *new_value) {
-
-#if defined(THREADED_RTS)
-  // Record the write set for later wakeups.
-  if (XTEST()) {
-    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> write_set = bloom_add(htrec -> write_set, tvar);
-    tvar -> current_value = new_value;
-    dirty_TVAR(cap,tvar); // TODO: avoid this!
-    return;
-  }
-#endif
 
   StgTRecHeader *entry_in = NULL;
   TRecEntry *entry = NULL;
