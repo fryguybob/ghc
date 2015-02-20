@@ -763,7 +763,7 @@ static void local_wakeup(Capability *cap, tso_wakeup_chunk* q)
 
     for (; q != NULL; prev = q, q = q->prev_chunk)
     {
-        if (prev != NULL)
+        if (prev != NULL && prev->prev_chunk != NULL) // The first chunk is stack allocated
             stgFree(prev);
             
         for (i = 0; i < q -> next_entry_idx; i++)
@@ -781,7 +781,11 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
         return;
 
 #ifdef THREADED_RTS
-    tso_wakeup_chunk* tsos = new_tso_wakeup_chunk();
+    tso_wakeup_chunk  start;
+    start.prev_chunk = NULL;
+    start.next_entry_idx = 0;
+
+    tso_wakeup_chunk* tsos = &start;
 
     lock_bloom_hle();
 #endif
@@ -1555,11 +1559,87 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   TRACE("%p : stmCommitTransaction()", trec);
   ASSERT (trec != NO_TREC);
 
-  lock_stm(cap, trec);
-
   ASSERT (trec -> enclosing_trec == NO_TREC);
   ASSERT ((trec -> state == TREC_ACTIVE) || 
           (trec -> state == TREC_CONDEMNED));
+
+#if defined(THREADED_RTS)
+  int i;
+  for (i = 0; i < RtsFlags.ConcFlags.hleRetryCount; i++)
+  {
+    XBEGIN(fail);
+
+    // Here we attempt to commit in a hardware transaction.
+
+    FOR_EACH_ENTRY(trec, e, {
+      StgTVar *s;
+      s = e -> tvar;
+      if (s -> current_value != e -> expected_value) // Check consistency
+        XABORT(ABORT_STM_INCONSISTENT);
+      
+      if (e -> expected_value != e -> new_value)
+        s -> current_value = e -> new_value; // Perform writes
+    });
+
+    if (smp_locked != 0)
+      XABORT(ABORT_RESTART);
+
+    XEND(); // Commit hardware transaction.
+
+    // Wakeup
+    FOR_EACH_ENTRY(trec, e, {
+      if (e -> expected_value != e -> new_value)
+        // It is only safe to do the dirty here as long as a GC can't happen between
+        // the XEND and here.  We don't yield between those, so we are safe.
+        dirty_TVAR(cap, e -> tvar);
+        unpark_waiters_on(cap, e -> tvar);
+    });
+
+    cap->stm_stats->htm_commit++;
+    free_stg_trec_header(cap, trec);
+    return TRUE;
+   
+    int status,s;
+    XFAIL_STATUS(fail,status);
+    cap->stm_stats->hle_fail++;
+
+    s = status & 0xffffff;
+    TRACE("%p : XFAIL %x %x %d", trec, status, s, XABORT_CODE(status));
+    if ((s & XABORT_EXPLICIT) != 0) // XABORT was executed
+    {
+      if (XABORT_CODE(status) == ABORT_FALLBACK)
+        break; // Give up and go to the fallback.
+
+      if (XABORT_CODE(status) == ABORT_STM_INCONSISTENT)
+      {
+        free_stg_trec_header(cap, trec);
+        return FALSE; // we are done, validation failed.
+      }
+
+      if (XABORT_CODE(status) == ABORT_RESTART)
+      { // Try again, we saw the lock held.
+        cap->stm_stats->hle_locked++;
+
+        // spin.
+        while (smp_locked != 0)
+            _mm_pause(); // TODO: backoff?
+      }
+    }
+    else if ((s & XABORT_RETRY) == 0)
+      break; // Hardware recommends fallback.
+  }
+
+  cap->stm_stats->hle_fallback++;
+
+  // Fallback to fully software transaction.
+  while (__sync_lock_test_and_set(&smp_locked, 1))
+  {
+    while (smp_locked != 0)
+      _mm_pause();
+  }
+#else
+  lock_stm(cap, trec);
+#endif
 
   // Use a read-phase (i.e. don't lock TVars we've read but not updated) if
   // the configueration lets us use a read phase.
