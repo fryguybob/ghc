@@ -339,6 +339,32 @@ stg_newSmallArrayzh ( W_ n /* words */, gcptr init )
     return (arr);
 }
 
+stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
+{
+    W_ words, size, p;
+    gcptr arr;
+
+    again: MAYBE_GC(again);
+
+    words = BYTES_TO_WDS(SIZEOF_StgStmMutArrPtrs) + n + np;
+    ("ptr" arr) = ccall allocate(MyCapability() "ptr",words);
+    TICK_ALLOC_PRIM(SIZEOF_StgStmMutArrPtrs, WDS(n + np), 0);
+
+    SET_HDR(arr, stg_STM_MUT_ARR_PTRS_DIRTY_info, CCCS);
+    StgStmMutArrPtrs_ptrs(arr) = n;
+
+    // Initialise all elements of the the array with the value in R2
+    p = arr + SIZEOF_StgStmMutArrPtrs;
+  for:
+    if (p < arr + SIZEOF_StgStmMutArrPtrs + WDS(np)) {
+        W_[p] = init;
+        p = p + WDS(1);
+        goto for;
+    }
+
+    return (arr);
+}
+
 stg_unsafeThawSmallArrayzh ( gcptr arr )
 {
     // See stg_unsafeThawArrayzh

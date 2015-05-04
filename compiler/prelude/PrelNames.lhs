@@ -1334,7 +1334,7 @@ addrPrimTyConKey, arrayPrimTyConKey, arrayArrayPrimTyConKey, boolTyConKey, byteA
     orderingTyConKey, mVarPrimTyConKey, ratioTyConKey, rationalTyConKey,
     realWorldTyConKey, stablePtrPrimTyConKey, stablePtrTyConKey,
     anyTyConKey, eqTyConKey, smallArrayPrimTyConKey,
-    smallMutableArrayPrimTyConKey :: Unique
+    smallMutableArrayPrimTyConKey, stmMutableArrayPrimTyConKey :: Unique
 addrPrimTyConKey                        = mkPreludeTyConUnique  1
 arrayPrimTyConKey                       = mkPreludeTyConUnique  3
 boolTyConKey                            = mkPreludeTyConUnique  4
@@ -1526,6 +1526,7 @@ specTyConKey = mkPreludeTyConUnique 177
 
 smallArrayPrimTyConKey        = mkPreludeTyConUnique  178
 smallMutableArrayPrimTyConKey = mkPreludeTyConUnique  179
+stmMutableArrayPrimTyConKey   = mkPreludeTyConUnique  180
 
 ---------------- Template Haskell -------------------
 --      USES TyConUniques 200-299

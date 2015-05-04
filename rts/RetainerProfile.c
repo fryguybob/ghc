@@ -543,6 +543,16 @@ push( StgClosure *c, retainer c_child_r, StgClosure **first_child )
 	    return;
 	break;
 
+	// StgStmMutArrPtr.ptrs, no SRT
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+	init_ptrs(&se.info, ((StgStmMutArrPtrs *)c)->ptrs,
+		  (StgPtr)(((StgStmMutArrPtrs *)c)->payload));
+	*first_child = find_ptrs(&se.info);
+	if (*first_child == NULL)
+	    return;
+	break;
+
     // layout.payload.ptrs, SRT
     case FUN:           // *c is a heap object.
     case FUN_2_0:

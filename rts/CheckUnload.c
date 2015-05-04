@@ -207,6 +207,12 @@ static void searchHeapBlocks (HashTable *addrs, bdescr *bd)
 		size = small_mut_arr_ptrs_sizeW((StgSmallMutArrPtrs *)p);
 		break;
 		
+	    case STM_MUT_ARR_PTRS_CLEAN:
+	    case STM_MUT_ARR_PTRS_DIRTY:
+		prim = rtsTrue;
+		size = stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs *)p);
+		break;
+		
 	    case TSO:
 		prim = rtsTrue;
                 size = sizeofW(StgTSO);

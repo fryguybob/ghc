@@ -502,6 +502,19 @@ update_fwd_large( bdescr *bd )
           continue;
       }
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+      // follow every pointer
+      {
+          StgStmMutArrPtrs *a;
+
+          a = (StgStmMutArrPtrs*)p;
+          for (p = (P_)a->payload; p < (P_)&a->payload[a->ptrs]; p++) {
+              thread((StgClosure **)p);
+          }
+          continue;
+      }
+
     case STACK:
     {
         StgStack *stack = (StgStack*)p;
@@ -715,6 +728,20 @@ thread_obj (StgInfoTable *info, StgPtr p)
 	}
 
 	return (StgPtr)a + small_mut_arr_ptrs_sizeW(a);
+    }
+    
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+	// follow every pointer 
+    {
+        StgStmMutArrPtrs *a;
+
+        a = (StgStmMutArrPtrs *)p;
+	for (p = (P_)a->payload; p < (P_)&a->payload[a->ptrs]; p++) {
+	    thread((StgClosure **)p);
+	}
+
+	return (StgPtr)a + stm_mut_arr_ptrs_sizeW(a);
     }
     
     case TSO:

@@ -603,6 +603,12 @@ INFO_TABLE(stg_SMALL_MUT_ARR_PTRS_FROZEN, 0, 0, SMALL_MUT_ARR_PTRS_FROZEN, "SMAL
 INFO_TABLE(stg_SMALL_MUT_ARR_PTRS_FROZEN0, 0, 0, SMALL_MUT_ARR_PTRS_FROZEN0, "SMALL_MUT_ARR_PTRS_FROZEN0", "SMALL_MUT_ARR_PTRS_FROZEN0")
 { foreign "C" barf("SMALL_MUT_ARR_PTRS_FROZEN0 object entered!") never returns; }
 
+INFO_TABLE(stg_STM_MUT_ARR_PTRS_CLEAN, 0, 0, STM_MUT_ARR_PTRS_CLEAN, "STM_MUT_ARR_PTRS_CLEAN", "STM_MUT_ARR_PTRS_CLEAN")
+{ foreign "C" barf("STM_MUT_ARR_PTRS_CLEAN object entered!") never returns; }
+
+INFO_TABLE(stg_STM_MUT_ARR_PTRS_DIRTY, 0, 0, STM_MUT_ARR_PTRS_DIRTY, "STM_MUT_ARR_PTRS_DIRTY", "STM_MUT_ARR_PTRS_DIRTY")
+{ foreign "C" barf("STM_MUT_ARR_PTRS_DIRTY object entered!") never returns; }
+
 /* ----------------------------------------------------------------------------
    Mutable Variables
    ------------------------------------------------------------------------- */

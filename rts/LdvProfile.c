@@ -72,6 +72,8 @@ processHeapClosureForDead( StgClosure *c )
     case SMALL_MUT_ARR_PTRS_DIRTY:
     case SMALL_MUT_ARR_PTRS_FROZEN:
     case SMALL_MUT_ARR_PTRS_FROZEN0:
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
     case ARR_WORDS:
     case WEAK:
     case MUT_VAR_CLEAN:

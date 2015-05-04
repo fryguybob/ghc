@@ -337,6 +337,18 @@ printClosure( StgClosure *obj )
                    (W_)((StgSmallMutArrPtrs *)obj)->ptrs);
 	break;
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+	debugBelch("STM_MUT_ARR_PTRS_CLEAN(size=%" FMT_Word ")\n",
+                   (W_)((StgStmMutArrPtrs *)obj)->ptrs+
+                   (W_)((StgStmMutArrPtrs *)obj)->words);
+	break;
+
+    case STM_MUT_ARR_PTRS_DIRTY:
+	debugBelch("STM_MUT_ARR_PTRS_DIRTY(size=%" FMT_Word ")\n",
+                   (W_)((StgStmMutArrPtrs *)obj)->ptrs+
+                   (W_)((StgStmMutArrPtrs *)obj)->words);
+	break;
+
     case MVAR_CLEAN:
     case MVAR_DIRTY:
         {

@@ -162,6 +162,17 @@ typedef struct {
     StgClosure *payload[FLEXIBLE_ARRAY];
 } StgSmallMutArrPtrs;
 
+typedef struct{
+    StgHeader        header;
+    volatile StgWord lock;
+    StgWord          ptrs;
+    StgWord          words;
+    StgWord          padding[4]; // TODO: assumes 64-byte cacheline
+                                 // Fill out 64-bytes assuming the
+                                 // struct is already aligned.
+    StgClosure      *payload[FLEXIBLE_ARRAY];
+} StgStmMutArrPtrs;
+
 typedef struct {
     StgHeader   header;
     StgClosure *var;

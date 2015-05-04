@@ -60,6 +60,7 @@ module TysPrim(
 	mutableByteArrayPrimTyCon, mkMutableByteArrayPrimTy,
 	mutableArrayArrayPrimTyCon, mkMutableArrayArrayPrimTy,
 	smallMutableArrayPrimTyCon, mkSmallMutableArrayPrimTy,
+	stmMutableArrayPrimTyCon, mkSTMMutableArrayPrimTy,
 	mutVarPrimTyCon, mkMutVarPrimTy,
 
 	mVarPrimTyCon,			mkMVarPrimTy,	
@@ -127,6 +128,7 @@ primTyCons
     , mutableByteArrayPrimTyCon
     , mutableArrayArrayPrimTyCon
     , smallMutableArrayPrimTyCon
+    , stmMutableArrayPrimTyCon
     , mVarPrimTyCon
     , tVarPrimTyCon
     , mutVarPrimTyCon
@@ -169,7 +171,7 @@ mkBuiltInPrimTc fs unique tycon
 		  BuiltInSyntax
 
 
-charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, voidPrimTyConName :: Name
+charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, stmMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, voidPrimTyConName :: Name
 charPrimTyConName    	      = mkPrimTc (fsLit "Char#") charPrimTyConKey charPrimTyCon
 intPrimTyConName     	      = mkPrimTc (fsLit "Int#") intPrimTyConKey  intPrimTyCon
 int32PrimTyConName	      = mkPrimTc (fsLit "Int32#") int32PrimTyConKey int32PrimTyCon
@@ -194,6 +196,7 @@ mutableArrayPrimTyConName     = mkPrimTc (fsLit "MutableArray#") mutableArrayPri
 mutableByteArrayPrimTyConName = mkPrimTc (fsLit "MutableByteArray#") mutableByteArrayPrimTyConKey mutableByteArrayPrimTyCon
 mutableArrayArrayPrimTyConName= mkPrimTc (fsLit "MutableArrayArray#") mutableArrayArrayPrimTyConKey mutableArrayArrayPrimTyCon
 smallMutableArrayPrimTyConName= mkPrimTc (fsLit "SmallMutableArray#") smallMutableArrayPrimTyConKey smallMutableArrayPrimTyCon
+stmMutableArrayPrimTyConName  = mkPrimTc (fsLit "STMMutableArray#") stmMutableArrayPrimTyConKey stmMutableArrayPrimTyCon
 mutVarPrimTyConName	      = mkPrimTc (fsLit "MutVar#") mutVarPrimTyConKey mutVarPrimTyCon
 mVarPrimTyConName	      = mkPrimTc (fsLit "MVar#") mVarPrimTyConKey mVarPrimTyCon
 tVarPrimTyConName	      = mkPrimTc (fsLit "TVar#") tVarPrimTyConKey tVarPrimTyCon
@@ -554,7 +557,8 @@ defined in \tr{TysWiredIn.lhs}, not here.
 \begin{code}
 arrayPrimTyCon, mutableArrayPrimTyCon, mutableByteArrayPrimTyCon,
     byteArrayPrimTyCon, arrayArrayPrimTyCon, mutableArrayArrayPrimTyCon,
-    smallArrayPrimTyCon, smallMutableArrayPrimTyCon :: TyCon
+    smallArrayPrimTyCon, smallMutableArrayPrimTyCon,
+    stmMutableArrayPrimTyCon :: TyCon
 arrayPrimTyCon             = pcPrimTyCon arrayPrimTyConName             [Representational] PtrRep
 mutableArrayPrimTyCon      = pcPrimTyCon  mutableArrayPrimTyConName     [Nominal, Representational] PtrRep
 mutableByteArrayPrimTyCon  = pcPrimTyCon mutableByteArrayPrimTyConName  [Nominal] PtrRep
@@ -563,6 +567,7 @@ arrayArrayPrimTyCon        = pcPrimTyCon0 arrayArrayPrimTyConName       PtrRep
 mutableArrayArrayPrimTyCon = pcPrimTyCon mutableArrayArrayPrimTyConName [Nominal] PtrRep
 smallArrayPrimTyCon        = pcPrimTyCon smallArrayPrimTyConName        [Representational] PtrRep
 smallMutableArrayPrimTyCon = pcPrimTyCon smallMutableArrayPrimTyConName [Nominal, Representational] PtrRep
+stmMutableArrayPrimTyCon   = pcPrimTyCon stmMutableArrayPrimTyConName [Nominal, Representational] PtrRep
 
 mkArrayPrimTy :: Type -> Type
 mkArrayPrimTy elt    	    = TyConApp arrayPrimTyCon [elt]
@@ -580,6 +585,8 @@ mkMutableArrayArrayPrimTy :: Type -> Type
 mkMutableArrayArrayPrimTy s = TyConApp mutableArrayArrayPrimTyCon [s]
 mkSmallMutableArrayPrimTy :: Type -> Type -> Type
 mkSmallMutableArrayPrimTy s elt = TyConApp smallMutableArrayPrimTyCon [s, elt]
+mkSTMMutableArrayPrimTy :: Type -> Type -> Type
+mkSTMMutableArrayPrimTy s elt = TyConApp stmMutableArrayPrimTyCon [s, elt]
 \end{code}
 
 %************************************************************************

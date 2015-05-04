@@ -709,6 +709,33 @@ scavenge_block (bdescr *bd)
         break;
     }
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+        // follow every pointer
+    {
+        StgPtr next;
+
+        // We don't eagerly promote objects pointed to by a mutable
+        // array, but if we find the array only points to objects in
+        // the same or an older generation, we mark it "clean" and
+        // avoid traversing it during minor GCs.
+        gct->eager_promotion = rtsFalse;
+        next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
+        for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
+            evacuate((StgClosure **)p);
+        }
+        gct->eager_promotion = saved_eager_promotion;
+
+        if (gct->failed_to_evac) {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
+        } else {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
+        }
+
+        gct->failed_to_evac = rtsTrue; // always put it on the mutable list.
+        break;
+    }
+
     case TSO:
     { 
         scavengeTSO((StgTSO *)p);
@@ -1133,6 +1160,35 @@ scavenge_mark_stack(void)
             break;
         }
 
+        case STM_MUT_ARR_PTRS_CLEAN:
+        case STM_MUT_ARR_PTRS_DIRTY:
+            // follow every pointer
+        {
+            StgPtr next;
+            rtsBool saved_eager;
+
+            // We don't eagerly promote objects pointed to by a mutable
+            // array, but if we find the array only points to objects in
+            // the same or an older generation, we mark it "clean" and
+            // avoid traversing it during minor GCs.
+            saved_eager = gct->eager_promotion;
+            gct->eager_promotion = rtsFalse;
+            next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
+            for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
+                evacuate((StgClosure **)p);
+            }
+            gct->eager_promotion = saved_eager;
+
+            if (gct->failed_to_evac) {
+                ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
+            } else {
+                ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
+            }
+
+            gct->failed_to_evac = rtsTrue; // mutable anyhow.
+            break;
+        }
+
 	case TSO:
 	{ 
             scavengeTSO((StgTSO*)p);
@@ -1463,6 +1519,35 @@ scavenge_one(StgPtr p)
         } else {
             ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_FROZEN_info;
         }
+        break;
+    }
+
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+    {
+        StgPtr next, q;
+        rtsBool saved_eager;
+
+        // We don't eagerly promote objects pointed to by a mutable
+        // array, but if we find the array only points to objects in
+        // the same or an older generation, we mark it "clean" and
+        // avoid traversing it during minor GCs.
+        saved_eager = gct->eager_promotion;
+        gct->eager_promotion = rtsFalse;
+        q = p;
+        next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
+        for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
+            evacuate((StgClosure **)p);
+        }
+        gct->eager_promotion = saved_eager;
+
+        if (gct->failed_to_evac) {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
+        } else {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
+        }
+
+        gct->failed_to_evac = rtsTrue;
         break;
     }
 

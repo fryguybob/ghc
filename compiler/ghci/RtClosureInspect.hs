@@ -511,6 +511,7 @@ repPrim t = rep where
     | t == byteArrayPrimTyCon        = text "<bytearray>"
     | t == mutableArrayPrimTyCon     = text "<mutableArray>"
     | t == smallMutableArrayPrimTyCon = text "<smallMutableArray>"
+    | t == stmMutableArrayPrimTyCon  = text "<STMMutableArray>"
     | t == mutableByteArrayPrimTyCon = text "<mutableByteArray>"
     | t == mutVarPrimTyCon           = text "<mutVar>"
     | t == mVarPrimTyCon             = text "<mVar>"
