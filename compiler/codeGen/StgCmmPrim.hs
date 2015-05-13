@@ -219,7 +219,7 @@ shouldInlinePrimOp dflags NewSTMArrayOp [ (CmmLit (CmmInt ptrs _))
                                         , (CmmLit (CmmInt words _)), init]
   | wordsToBytes dflags (fromInteger (ptrs+words)) <= maxInlineAllocSize dflags =
       Just $ \ [res] ->
-      doNewArrayOp res (stmArrPtrsRep (fromInteger (ptrs+words))) mkSMAP_DIRTY_infoLabel
+      doNewArrayOp res (stmArrPtrsRep (fromInteger (ptrs+words))) mkSTMMAP_DIRTY_infoLabel
       [ (mkIntExpr dflags 0, -- Lock
          fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_lock  dflags)
       , (mkIntExpr dflags (fromInteger ptrs), -- ptrs
@@ -483,11 +483,13 @@ emitPrimOp _ []    WriteSTMArrayWordOp [obj,ix,v] = doWriteSTMArrayWordOp obj ix
 emitPrimOp dflags [res] SizeofSTMMutableArrayOp [arg] =
     emit $ mkAssign (CmmLocal res)
     (cmmLoadIndexW dflags arg
-     (fixedHdrSizeW dflags + oFFSET_StgStmMutArrPtrs_ptrs dflags) (bWord dflags))
+     (fixedHdrSizeW dflags + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_ptrs dflags))
+        (bWord dflags))
 emitPrimOp dflags [res] SizeofSTMMutableArrayWordsOp [arg] =
     emit $ mkAssign (CmmLocal res)
     (cmmLoadIndexW dflags arg
-     (fixedHdrSizeW dflags + oFFSET_StgStmMutArrPtrs_words dflags) (bWord dflags))
+     (fixedHdrSizeW dflags + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_words dflags))
+        (bWord dflags))
 
 
 -- IndexXXXoffAddr

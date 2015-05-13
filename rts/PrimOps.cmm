@@ -351,7 +351,9 @@ stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
     TICK_ALLOC_PRIM(SIZEOF_StgStmMutArrPtrs, WDS(n + np), 0);
 
     SET_HDR(arr, stg_STM_MUT_ARR_PTRS_DIRTY_info, CCCS);
-    StgStmMutArrPtrs_ptrs(arr) = n;
+    StgStmMutArrPtrs_lock(arr) = 0;
+    StgStmMutArrPtrs_ptrs(arr) = np;
+    StgStmMutArrPtrs_words(arr) = n;
 
     // Initialise all elements of the the array with the value in R2
     p = arr + SIZEOF_StgStmMutArrPtrs;
