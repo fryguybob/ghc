@@ -407,6 +407,8 @@ closure_sizeW_ (StgClosure *p, StgInfoTable *info)
 	return bco_sizeW((StgBCO *)p);
     case TREC_CHUNK:
         return sizeofW(StgTRecChunk);
+    case TARRAY_REC_CHUNK:
+        return sizeofW(StgTArrayRecChunk);
     case BLOOM_WAKEUP_CHUNK:
         return sizeofW(StgBloomWakeupChunk);
     default:

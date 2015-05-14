@@ -763,6 +763,10 @@ loop:
       copy(p,info,q,sizeofW(StgTRecChunk),gen_no);
       return;
 
+  case TARRAY_REC_CHUNK:
+      copy(p,info,q,sizeofW(StgTArrayRecChunk),gen_no);
+      return;
+
   case BLOOM_WAKEUP_CHUNK:
       copy(p,info,q,sizeofW(StgBloomWakeupChunk),gen_no);
       return;

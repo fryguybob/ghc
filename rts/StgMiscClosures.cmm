@@ -492,10 +492,13 @@ INFO_TABLE(stg_TVAR_DIRTY, 1, 1, TVAR, "TVAR", "TVAR")
 INFO_TABLE(stg_TREC_CHUNK, 0, 0, TREC_CHUNK, "TREC_CHUNK", "TREC_CHUNK")
 { foreign "C" barf("TREC_CHUNK object entered!") never returns; }
 
+INFO_TABLE(stg_TARRAY_REC_CHUNK, 0, 0, TARRAY_REC_CHUNK, "TARRAY_REC_CHUNK", "TARRAY_REC_CHUNK")
+{ foreign "C" barf("TARRAY_REC_CHUNK object entered!") never returns; }
+
 INFO_TABLE(stg_BLOOM_WAKEUP_CHUNK, 0, 0, BLOOM_WAKEUP_CHUNK, "BLOOM_WAKEUP_CHUNK", "BLOOM_WAKEUP_CHUNK")
 { foreign "C" barf("BLOOM_WAKEUP_CHUNK object entered!") never returns; }
 
-INFO_TABLE(stg_TREC_HEADER, 2, 1, MUT_PRIM, "TREC_HEADER", "TREC_HEADER")
+INFO_TABLE(stg_TREC_HEADER, 2, 2, MUT_PRIM, "TREC_HEADER", "TREC_HEADER")
 { foreign "C" barf("TREC_HEADER object entered!") never returns; }
 
 INFO_TABLE(stg_HTREC_HEADER, 1, 3, MUT_PRIM, "HTREC_HEADER", "HTREC_HEADER")

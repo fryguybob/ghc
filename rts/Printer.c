@@ -1161,6 +1161,7 @@ char *closure_type_names[] = {
  [TSO]                   = "TSO",
  [STACK]                 = "STACK",
  [TREC_CHUNK]            = "TREC_CHUNK",
+ [TARRAY_REC_CHUNK]      = "TARRAY_REC_CHUNK",
  [BLOOM_WAKEUP_CHUNK]    = "BLOOM_WAKEUP_CHUNK",
  [ATOMICALLY_FRAME]      = "ATOMICALLY_FRAME",
  [CATCH_RETRY_FRAME]     = "CATCH_RETRY_FRAME",

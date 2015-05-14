@@ -78,6 +78,7 @@ StgWord16 closure_flags[] = {
  [TSO]                  =  (_HNF|     _NS|         _MUT|_UPT           ),
  [STACK]                =  (_HNF|     _NS|         _MUT|_UPT           ),
  [TREC_CHUNK]           =  (          _NS|         _MUT|_UPT           ),
+ [TARRAY_REC_CHUNK]     =  (          _NS|         _MUT|_UPT           ),
  [BLOOM_WAKEUP_CHUNK]   =  (          _NS|         _MUT|_UPT           ),
  [ATOMICALLY_FRAME]     =  (     _BTM                                  ),
  [CATCH_RETRY_FRAME]    =  (     _BTM                                  ),
@@ -91,7 +92,7 @@ StgWord16 closure_flags[] = {
  [STM_MUT_ARR_PTRS_DIRTY]     =  (_HNF|     _NS|         _MUT|_UPT           )
 };
 
-#if N_CLOSURE_TYPES != 68
+#if N_CLOSURE_TYPES != 69
 #error Closure types changed: update ClosureFlags.c!
 #endif
 

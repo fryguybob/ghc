@@ -1078,6 +1078,11 @@ heapCensusChain( Census *census, bdescr *bd )
 		size = sizeofW(StgTRecChunk);
 		break;
 
+            case TARRAY_REC_CHUNK:
+                prim = rtsTrue;
+                size = sizeofW(StgTArrayRecChunk);
+                break;
+
 	    default:
 		barf("heapCensus, unknown object: %d", info->type);
 	    }

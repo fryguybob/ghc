@@ -342,6 +342,36 @@ typedef struct StgTRecChunk_ {
   TRecEntry                  entries[TREC_CHUNK_NUM_ENTRIES];
 } StgTRecChunk;
 
+
+/* Transactional array entries */
+
+typedef struct {
+  StgStmMutArrPtrs          *tarray;
+  // TODO: we sould evaluate if it is better to store word accesses
+  // in a separate structure from pointer accesses to avoid some
+  // branches on word_access in the GC and elsewhere.
+  StgHalfWord                word_access;
+  StgHalfWord                index;
+  union {
+    StgClosure                *ptr;
+    StgWord                    word;
+  } expected_value;
+  union {
+    StgClosure                *ptr;
+    StgWord                    word;
+  } new_value;
+} TArrayRecEntry;
+
+#define TARRAY_REC_CHUNK_NUM_ENTRIES 16
+
+typedef struct StgTArrayRecChunk_ {
+  StgHeader                  header;
+  struct StgTRecChunk_      *prev_chunk;
+  StgWord                    next_entry_idx;
+  TArrayRecEntry             entries[TARRAY_REC_CHUNK_NUM_ENTRIES];
+} StgTArrayRecChunk;
+
+
 typedef enum { 
   TREC_ACTIVE,        /* Transaction in progress, outcome undecided */
   TREC_CONDEMNED,     /* Transaction in progress, inconsistent / out of date reads */
@@ -354,6 +384,7 @@ struct StgTRecHeader_ {
   StgHeader                  header;
   struct StgTRecHeader_     *enclosing_trec;
   StgTRecChunk              *current_chunk;
+  StgTArrayRecChunk         *current_array_chunk;
   StgHalfWord                state;
   StgHalfWord                retrying;
 };

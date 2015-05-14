@@ -395,6 +395,7 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
 
   result -> enclosing_trec = enclosing_trec;
   result -> current_chunk = new_stg_trec_chunk(cap);
+  result -> current_array_chunk = NULL;
 
   if (enclosing_trec == NO_TREC) {
     result -> state = TREC_ACTIVE;

@@ -792,6 +792,26 @@ scavenge_block (bdescr *bd)
 	break;
       }
 
+    case TARRAY_REC_CHUNK:
+      {
+        StgWord i;
+        StgTArrayRecChunk *tc = ((StgTArrayRecChunk *) p);
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        gct->eager_promotion = rtsFalse;
+        evacuate((StgClosure **)&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          evacuate((StgClosure **)&e->tarray);
+          if (!e->word_access) {
+            evacuate((StgClosure **)&e->expected_value.ptr);
+            evacuate((StgClosure **)&e->new_value.ptr);
+          }
+        }
+        gct->eager_promotion = saved_eager_promotion;
+        gct->failed_to_evac = rtsTrue; // mutable
+        p += sizeofW(StgTArrayRecChunk);
+        break;
+      }
+
     case BLOOM_WAKEUP_CHUNK:
       {
 	StgWord i;
@@ -1241,6 +1261,26 @@ scavenge_mark_stack(void)
 	    break;
 	  }
 
+	case TARRAY_REC_CHUNK:
+	  {
+	    StgWord i;
+	    StgTArrayRecChunk *tc = ((StgTArrayRecChunk *) p);
+	    TArrayRecEntry *e = &(tc -> entries[0]);
+	    gct->eager_promotion = rtsFalse;
+	    evacuate((StgClosure **)&tc->prev_chunk);
+	    for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+	      evacuate((StgClosure **)&e->tarray);
+          if (!e->word_Access)
+          {
+            evacuate((StgClosure **)&e->expected_value.ptr);
+            evacuate((StgClosure **)&e->new_value.ptr);
+          }
+	    }
+	    gct->eager_promotion = saved_eager_promotion;
+	    gct->failed_to_evac = rtsTrue; // mutable
+	    break;
+	  }
+
 	case BLOOM_WAKEUP_CHUNK:
 	  {
 	    StgWord i;
@@ -1604,6 +1644,25 @@ scavenge_one(StgPtr p)
 	break;
       }
 
+    case TARRAY_REC_CHUNK:
+      {
+        StgWord i;
+        StgTArrayRecChunk *tc = ((StgTArrayRecChunk *) p);
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        gct->eager_promotion = rtsFalse;
+        evacuate((StgClosure **)&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          evacuate((StgClosure **)&e->tarray);
+          if (!e->word_access) {
+            evacuate((StgClosure **)&e->expected_value.ptr);
+            evacuate((StgClosure **)&e->new_value.ptr);
+          }
+        }
+        gct->eager_promotion = saved_eager_promotion;
+        gct->failed_to_evac = rtsTrue; // mutable
+        break;
+      }
+
     case BLOOM_WAKEUP_CHUNK:
       {
 	StgWord i;
@@ -1705,6 +1764,8 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
             case TVAR:
                 mutlist_TVAR++; break;
             case TREC_CHUNK:
+                mutlist_TREC_CHUNK++; break;
+            case TARRAY_REC_CHUNK:
                 mutlist_TREC_CHUNK++; break;
             case BLOOM_WAKEUP_CHUNK:
                 mutlist_WAKEUP_CHUNK++; break;

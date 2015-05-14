@@ -544,6 +544,22 @@ update_fwd_large( bdescr *bd )
 	continue;
     }
 
+    case TARRAY_REC_CHUNK:
+    {
+        StgWord i;
+        StgTArrayRecChunk *tc = (StgTArrayRecChunk *)p;
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        thread_(&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          thread_(&e->tarray);
+          if (!e->word_access) {
+            thread(&e->expected_value.ptr);
+            thread(&e->new_value.ptr);
+          }
+        }
+        continue;
+    }
+
     case BLOOM_WAKEUP_CHUNK:
     {
         StgWord i;
@@ -766,6 +782,22 @@ thread_obj (StgInfoTable *info, StgPtr p)
 	  thread(&e->new_value);
 	}
 	return p + sizeofW(StgTRecChunk);
+    }
+
+    case TARRAY_REC_CHUNK:
+    {
+        StgWord i;
+        StgTArrayRecChunk *tc = (StgTArrayRecChunk *)p;
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        thread_(&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          thread_(&e->tarray);
+          if (!e->word_access) {
+            thread(&e->expected_value.ptr);
+            thread(&e->new_value.ptr);
+          }
+        }
+        return p + sizeofW(StgTArrayRecChunk);
     }
 
     case BLOOM_WAKEUP_CHUNK:
