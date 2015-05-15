@@ -1741,13 +1741,12 @@ static rtsBool readAffinityTopology(const char* file)
     char line[1000];
     char *save, *token, *p;
     int r = 0;
-    nat lines = 0;
+    int lines = 0;
     int n = 0;
     int x;
     int procs = getNumberOfProcessors();
 
     unsigned char* temp;
-    cpu_set_t* set;
     size_t size = CPU_ALLOC_SIZE(procs);
 
     temp = (unsigned char*)malloc(size*procs);

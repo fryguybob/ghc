@@ -167,7 +167,8 @@ typedef struct{
     volatile StgWord lock;
     StgWord          ptrs;
     StgWord          words;
-    StgWord          padding[4]; // TODO: assumes 64-byte cacheline
+    StgWord          hash_id;
+    StgWord          padding[3]; // TODO: assumes 64-byte cacheline
                                  // Fill out 64-bytes assuming the
                                  // struct is already aligned.
     StgClosure      *payload[FLEXIBLE_ARRAY];
@@ -366,7 +367,7 @@ typedef struct {
 
 typedef struct StgTArrayRecChunk_ {
   StgHeader                  header;
-  struct StgTRecChunk_      *prev_chunk;
+  struct StgTArrayRecChunk_ *prev_chunk;
   StgWord                    next_entry_idx;
   TArrayRecEntry             entries[TARRAY_REC_CHUNK_NUM_ENTRIES];
 } StgTArrayRecChunk;

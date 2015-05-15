@@ -1113,6 +1113,7 @@ typedef struct _RtsSymbolVal {
       SymI_HasProto(stg_deRefStablePtrzh)                               \
       SymI_HasProto(dirty_MUT_VAR)                                      \
       SymI_HasProto(dirty_TVAR)                                         \
+      SymI_HasProto(dirty_TARRAY)                                       \
       SymI_HasProto(stg_forkzh)                                         \
       SymI_HasProto(stg_forkOnzh)                                       \
       SymI_HasProto(forkProcess)                                        \

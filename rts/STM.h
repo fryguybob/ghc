@@ -210,6 +210,51 @@ void stmWriteTVar(Capability *cap,
                   StgTVar *tvar, 
                   StgClosure *new_value);
 
+/* ----- TArray ----- */
+
+typedef StgStmMutArrPtrs StgTArray;
+
+/*
+ * Return the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+StgClosure *stmReadTArray(Capability *cap,
+                          StgTRecHeader *trec, 
+                          StgTArray *tarray,
+                          StgHalfWord index);
+
+/* Update the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+void stmWriteTArray(Capability *cap,
+                    StgTRecHeader *trec,
+                    StgTArray *tarray,
+                    StgHalfWord index,
+                    StgClosure *new_value);
+
+
+/*
+ * Return the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+StgWord stmReadTArrayWord(Capability *cap,
+                          StgTRecHeader *trec, 
+                          StgTArray *tarray,
+                          StgHalfWord index);
+
+/* Update the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+void stmWriteTArrayWord(Capability *cap,
+                        StgTRecHeader *trec,
+                        StgTArray *tarray, 
+                        StgHalfWord index,
+                        StgWord new_value);
+
 
 void markWakeupSTM (evac_fn evac, void *user);
 
@@ -218,6 +263,7 @@ void markWakeupSTM (evac_fn evac, void *user);
 /* NULLs */
 
 #define END_STM_CHUNK_LIST ((StgTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
+#define END_STM_ARRAY_CHUNK_LIST ((StgTArrayRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 #define END_BLOOM_WAKEUP_CHUNK_LIST ((StgBloomWakeupChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 
 #define NO_TREC ((StgTRecHeader *)(void *)&stg_NO_TREC_closure)

@@ -131,8 +131,9 @@ struct Capability_ {
     W_ total_allocated;
 
     // Per-capability STM-related data
-    StgTRecChunk *free_trec_chunks;
-    StgTRecHeader *free_trec_headers;
+    StgTRecChunk      *free_trec_chunks;
+    StgTArrayRecChunk *free_tarray_rec_chunks;
+    StgTRecHeader     *free_trec_headers;
 
     struct stm_stats_ *stm_stats;
 } // typedef Capability is defined in RtsAPI.h

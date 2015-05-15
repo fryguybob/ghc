@@ -139,10 +139,10 @@ static int shake(void) {
 // Helper macros for iterating over entries within a transaction
 // record
 
-#define _FOR_EACH_ENTRY(_t,_x,CODE,HEADER,CHUNK,ENTRY,END_LIST,SIZE) do {       \
+#define _FOR_EACH_ENTRY(_t,_x,CODE,HEADER,CHUNK,CUR,ENTRY,END_LIST,SIZE) do {   \
   __label__ exit_for_each;                                                      \
   HEADER *__t = (_t);                                                           \
-  CHUNK *__c = __t -> current_chunk;                                            \
+  CHUNK *__c = __t -> CUR;                                            \
   StgWord __limit = __c -> next_entry_idx;                                      \
   TRACE("%p : FOR_EACH_ENTRY, current_chunk=%p limit=%ld", __t, __c, __limit);  \
   while (__c != END_LIST) {                                                     \
@@ -161,8 +161,13 @@ static int shake(void) {
 #define BREAK_FOR_EACH goto exit_for_each
 
 #define FOR_EACH_ENTRY(_t,_x,CODE)                                              \
-  _FOR_EACH_ENTRY(_t,_x,CODE,StgTRecHeader,StgTRecChunk,TRecEntry               \
+  _FOR_EACH_ENTRY(_t,_x,CODE,StgTRecHeader,StgTRecChunk,current_chunk,TRecEntry \
                  ,END_STM_CHUNK_LIST,TREC_CHUNK_NUM_ENTRIES)
+
+#define FOR_EACH_ARRAY_ENTRY(_t,_x,CODE)                                        \
+  _FOR_EACH_ENTRY(_t,_x,CODE,StgTRecHeader,StgTArrayRecChunk                    \
+                  ,current_array_chunk,TArrayRecEntry                           \
+                 ,END_STM_ARRAY_CHUNK_LIST,TARRAY_REC_CHUNK_NUM_ENTRIES)
 /*......................................................................*/
 
 // if REUSE_MEMORY is defined then attempt to re-use descriptors, log chunks,
@@ -187,14 +192,6 @@ static void lock_stm(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED)
 
 static void unlock_stm(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED) {
   TRACE("%p : unlock_stm()", trec);
-}
-
-static StgClosure *lock_tvar(StgTRecHeader *trec STG_UNUSED, 
-                             StgTVar *s STG_UNUSED) {
-  StgClosure *result;
-  TRACE("%p : lock_tvar(%p)", trec, s);
-  result = s -> current_value;
-  return result;
 }
 
 static void unlock_tvar(Capability *cap,
@@ -387,6 +384,15 @@ static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
   return result;
 }
 
+static StgTArrayRecChunk *new_stg_tarray_rec_chunk(Capability *cap) {
+  StgTArrayRecChunk *result;
+  result = (StgTArrayRecChunk *)allocate(cap, sizeofW(StgTArrayRecChunk));
+  SET_HDR (result, &stg_TARRAY_REC_CHUNK_info, CCS_SYSTEM);
+  result -> prev_chunk = END_STM_ARRAY_CHUNK_LIST;
+  result -> next_entry_idx = 0;
+  return result;
+}
+
 static StgTRecHeader *new_stg_trec_header(Capability *cap,
                                           StgTRecHeader *enclosing_trec) {
   StgTRecHeader *result;
@@ -395,7 +401,7 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
 
   result -> enclosing_trec = enclosing_trec;
   result -> current_chunk = new_stg_trec_chunk(cap);
-  result -> current_array_chunk = NULL;
+  result -> current_array_chunk = new_stg_tarray_rec_chunk(cap);
 
   if (enclosing_trec == NO_TREC) {
     result -> state = TREC_ACTIVE;
@@ -442,11 +448,32 @@ static StgTRecChunk *alloc_stg_trec_chunk(Capability *cap) {
   return result;
 }
 
+static StgTArrayRecChunk *alloc_stg_tarray_rec_chunk(Capability *cap) {
+  StgTArrayRecChunk *result = NULL;
+  if (cap -> free_tarray_rec_chunks == END_STM_ARRAY_CHUNK_LIST) {
+    result = new_stg_tarray_rec_chunk(cap);
+  } else {
+    result = cap -> free_tarray_rec_chunks;
+    cap -> free_tarray_rec_chunks = result -> prev_chunk;
+    result -> prev_chunk = END_STM_ARRAY_CHUNK_LIST;
+    result -> next_entry_idx = 0;
+  }
+  return result;
+}
+
 static void free_stg_trec_chunk(Capability *cap, 
                                 StgTRecChunk *c) {
 #if defined(REUSE_MEMORY)
   c -> prev_chunk = cap -> free_trec_chunks;
   cap -> free_trec_chunks = c;
+#endif
+}
+
+static void free_stg_tarray_rec_chunk(Capability *cap, 
+                                      StgTArrayRecChunk *c) {
+#if defined(REUSE_MEMORY)
+  c -> prev_chunk = cap -> free_tarray_rec_chunks;
+  cap -> free_tarray_rec_chunks = c;
 #endif
 }
 
@@ -460,6 +487,7 @@ static StgTRecHeader *alloc_stg_trec_header(Capability *cap,
     cap -> free_trec_headers = result -> enclosing_trec;
     result -> enclosing_trec = enclosing_trec;
     result -> current_chunk -> next_entry_idx = 0;
+    result -> current_array_chunk -> next_entry_idx = 0;
     if (enclosing_trec == NO_TREC) {
       result -> state = TREC_ACTIVE;
     } else {
@@ -481,6 +509,15 @@ static void free_stg_trec_header(Capability *cap,
     chunk = prev_chunk;
   } 
   trec -> current_chunk -> prev_chunk = END_STM_CHUNK_LIST;
+
+  StgTArrayRecChunk *achunk = trec -> current_array_chunk -> prev_chunk;
+  while (achunk != END_STM_ARRAY_CHUNK_LIST) {
+    StgTArrayRecChunk *prev_chunk = achunk -> prev_chunk;
+    free_stg_tarray_rec_chunk(cap, achunk);
+    achunk = prev_chunk;
+  } 
+  trec -> current_array_chunk -> prev_chunk = END_STM_ARRAY_CHUNK_LIST;
+
   trec -> enclosing_trec = cap -> free_trec_headers;
   cap -> free_trec_headers = trec;
 #endif
@@ -520,6 +557,35 @@ static TRecEntry *get_new_entry(Capability *cap,
     nc -> prev_chunk = c;
     nc -> next_entry_idx = 1;
     t -> current_chunk = nc;
+    result = &(nc -> entries[0]);
+  }
+
+  return result;
+}
+
+/*......................................................................*/
+
+static TArrayRecEntry *get_new_array_entry(Capability *cap,
+                                           StgTRecHeader *t) {
+  TArrayRecEntry *result;
+  StgTArrayRecChunk *c;
+  int i;
+
+  c = t -> current_array_chunk;
+  i = c -> next_entry_idx;
+  ASSERT(c != END_STM_ARRAY_CHUNK_LIST);
+
+  if (i < TARRAY_REC_CHUNK_NUM_ENTRIES) {
+    // Continue to use current chunk
+    result = &(c -> entries[i]);
+    c -> next_entry_idx ++;
+  } else {
+    // Current chunk is full: allocate a fresh one
+    StgTArrayRecChunk *nc;
+    nc = alloc_stg_tarray_rec_chunk(cap);
+    nc -> prev_chunk = c;
+    nc -> next_entry_idx = 1;
+    t -> current_array_chunk = nc;
     result = &(nc -> entries[0]);
   }
 
@@ -602,7 +668,8 @@ static void unlock_bloom_hle(void) {
     unlock_bloom();
   }
 }
-#else // !THREADED_RTS
+#elif defined(STM_UNIPROC)
+#else // !THREADED_RTS !STM_UNIPROC
 
 static void lock_bloom(void) {
 }
@@ -615,9 +682,9 @@ static void unlock_bloom(void) {
 #define BLOOM_BIT_COUNT     64 // TODO: Bold assumption.
 
 // Bloom filters for wakeups
-static StgBloom bloom_add(StgBloom filter, StgTVar *tvar)
+static StgBloom bloom_add(StgBloom filter, StgWord id)
 {
-    return filter | tvar->hash_id;
+    return filter | id;
 }
 
 // TODO: this structure will be used to insert new
@@ -724,6 +791,7 @@ static StgBool bloom_match(StgBloom a, StgBloom b)
 
 static void unpark_tso(Capability *cap, StgTSO *tso);
 
+#ifdef THREADED_RTS
 // Structure to buffer the local wakeup list as we
 // take items off the global list.
 typedef struct tso_wakeup_chunk_
@@ -755,7 +823,6 @@ static tso_wakeup_chunk* add_tso(tso_wakeup_chunk* chunk, StgTSO* tso)
     return chunk;
 };
 
-
 static void local_wakeup(Capability *cap, tso_wakeup_chunk* q)
 {
     StgWord i;
@@ -773,6 +840,7 @@ static void local_wakeup(Capability *cap, tso_wakeup_chunk* q)
         }
     }
 }
+#endif
 
 // Wake up and remove any blocked transactions who's read sets
 // overlap with write sets.
@@ -867,7 +935,7 @@ static StgBloom bloom_readset(StgTRecHeader* trec)
     StgBloom filter = 0;
 
     FOR_EACH_ENTRY(trec, e, {
-        filter = bloom_add(filter, e -> tvar);
+        filter = bloom_add(filter, e -> tvar -> hash_id);
     });
 
     return filter;
@@ -930,7 +998,7 @@ static void unpark_waiters_on(Capability *cap, StgTVar *s) {
     // We have a write, wake up any filters that include
     // the TVar being written.
     // TODO: Locking?
-    bloom_wakeup(cap, bloom_add(0, s));
+    bloom_wakeup(cap, bloom_add(0, s -> hash_id));
 }
 
 
@@ -1480,6 +1548,33 @@ static TRecEntry *get_entry_for(StgTRecHeader *trec, StgTVar *tvar, StgTRecHeade
 
 /*......................................................................*/
 
+static TArrayRecEntry *get_array_entry_for(StgTRecHeader *trec, StgTArray *tarray,
+                                           StgHalfWord access,
+                                           StgHalfWord index,
+                                           StgTRecHeader **in) {
+  TArrayRecEntry *result = NULL;
+
+  TRACE("%p : get_array_entry_for TVar %p[%d]", trec, tarray, index);
+  ASSERT(trec != NO_TREC);
+
+  do {
+    FOR_EACH_ARRAY_ENTRY(trec, e, {
+      if (e -> tarray == tarray && e -> word_access == access && e -> index == index) {
+        result = e;
+        if (in != NULL) {
+          *in = trec;
+        }
+        BREAK_FOR_EACH;
+      }
+    });
+    trec = trec -> enclosing_trec;
+  } while (result == NULL && trec != NO_TREC);
+
+  return result;    
+}
+
+/*......................................................................*/
+
 #if defined(THREADED_RTS)
 static StgBool htmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
@@ -1900,6 +1995,52 @@ static StgClosure *read_current_value(StgTRecHeader *trec STG_UNUSED, StgTVar *t
 
 /*......................................................................*/
 
+static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
+                                            StgTArray *tarray,
+                                            StgHalfWord index) {
+  StgClosure *result;
+  result = tarray -> payload[index];
+  // TODO: bounds check?
+  // TODO: Fence?  
+
+#if defined(STM_FG_LOCKS)
+// The values are not locks, so we don't need to do this.
+//
+//  while (GET_INFO(UNTAG_CLOSURE(result)) == &stg_TREC_HEADER_info) {
+//    TRACE("%p : read_current_value(%p) saw %p", trec, tvar, result);
+//    result = tvar -> current_value;
+//  }
+#endif
+
+  TRACE("%p : read_array_current_value(%p[%d])=%p", trec, tarray, index, result);
+  return result;
+}
+
+/*......................................................................*/
+
+static StgWord read_array_current_value_word(StgTRecHeader *trec STG_UNUSED,
+                                             StgTArray *tarray,
+                                             StgHalfWord index) {
+  StgWord result;
+  result = (StgWord)(tarray -> payload[tarray -> ptrs + index]);
+  // TODO: bounds check?
+  // TODO: Fence?
+
+#if defined(STM_FG_LOCKS)
+// The values are not locks, so we don't need to do this.
+//
+//  while (GET_INFO(UNTAG_CLOSURE(result)) == &stg_TREC_HEADER_info) {
+//    TRACE("%p : read_current_value(%p) saw %p", trec, tvar, result);
+//    result = tvar -> current_value;
+//  }
+#endif
+
+  TRACE("%p : read_array_current_value_word(%p[%d])=%p", trec, tarray, index, result);
+  return result;
+}
+
+/*......................................................................*/
+
 StgClosure *stmReadTVar(Capability *cap,
                         StgTRecHeader *trec, 
 			StgTVar *tvar) {
@@ -1908,7 +2049,7 @@ StgClosure *stmReadTVar(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> read_set = bloom_add(htrec -> read_set, tvar);
+    htrec -> read_set = bloom_add(htrec -> read_set, tvar -> hash_id);
     return tvar -> current_value;
   }
 #endif
@@ -1961,7 +2102,7 @@ void stmWriteTVar(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> write_set = bloom_add(htrec -> write_set, tvar);
+    htrec -> write_set = bloom_add(htrec -> write_set, tvar -> hash_id);
     tvar -> current_value = new_value;
     dirty_TVAR(cap,tvar); // TODO: avoid this!
     return;
@@ -1995,6 +2136,232 @@ void stmWriteTVar(Capability *cap,
     new_entry -> tvar = tvar;
     new_entry -> expected_value = current_value;
     new_entry -> new_value = new_value;
+  }
+
+  TRACE("%p : stmWriteTVar done", trec);
+}
+
+/*......................................................................*/
+
+StgClosure *stmReadTArray(Capability *cap,
+                        StgTRecHeader *trec, 
+                        StgTArray *tarray,
+                        StgHalfWord index) {
+
+#if defined(THREADED_RTS)
+  // Record the write set for later wakeups.
+  if (XTEST()) {
+    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
+    htrec -> read_set = bloom_add(htrec -> read_set, tarray -> hash_id ^ index);
+    // TODO: bounds check
+    return tarray -> payload[index];
+  }
+#endif
+
+
+  StgTRecHeader *entry_in = NULL;
+  StgClosure *result = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmReadTArray(%p[%d])", trec, tarray, index);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE || 
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      result = entry -> new_value.ptr;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> word_access = 0;
+      new_entry -> index = index;
+      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
+      new_entry -> new_value.ptr = entry -> new_value.ptr;
+      result = new_entry -> new_value.ptr;
+    } 
+  } else {
+    // No entry found
+    StgClosure *current_value = read_array_current_value(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> word_access = 0;
+    new_entry -> index = index;
+    new_entry -> expected_value.ptr = current_value;
+    new_entry -> new_value.ptr = current_value;
+    result = current_value;
+  }
+
+  TRACE("%p : stmReadTArray(%p[%d])=%p", trec, tarray, index, result);
+  return result;
+}
+
+/*......................................................................*/
+
+void stmWriteTArray(Capability *cap,
+                    StgTRecHeader *trec,
+                    StgTArray *tarray,
+                    StgHalfWord index,
+                    StgClosure *new_value) {
+
+#if defined(THREADED_RTS)
+  // Record the write set for later wakeups.
+  if (XTEST()) {
+    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
+    htrec -> write_set = bloom_add(htrec -> write_set, tarray -> hash_id ^ index);
+    // TODO: bounds checking?
+    tarray -> payload[index] = new_value;
+    dirty_TARRAY(cap,tarray); // TODO: avoid this!
+    return;
+  }
+#endif
+
+  StgTRecHeader *entry_in = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmWriteTArray(%p[%d], %p)", trec, tarray, index, new_value);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE || 
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      entry -> new_value.ptr = new_value;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> word_access = 0;
+      new_entry -> index = index;
+      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
+      new_entry -> new_value.ptr = new_value;
+    } 
+  } else {
+    // No entry found
+    StgClosure *current_value = read_array_current_value(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> word_access = 0;
+    new_entry -> index = index;
+    new_entry -> expected_value.ptr = current_value;
+    new_entry -> new_value.ptr = new_value;
+  }
+
+  TRACE("%p : stmWriteTVar done", trec);
+}/*......................................................................*/
+
+StgWord stmReadTArrayWord(Capability *cap,
+                          StgTRecHeader *trec, 
+                          StgTArray *tarray,
+                          StgHalfWord index) {
+
+#if defined(THREADED_RTS)
+  // Record the write set for later wakeups.
+  if (XTEST()) {
+    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
+    htrec -> read_set = bloom_add(htrec -> read_set, tarray -> hash_id ^ index);
+    // TODO: bounds check
+    return (StgWord)(tarray -> payload[tarray -> ptrs + index]);
+  }
+#endif
+
+
+  StgTRecHeader *entry_in = NULL;
+  StgWord result = 0;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmReadTArrayWord(%p[%d])", trec, tarray, index);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE || 
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 1, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      result = entry -> new_value.word;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> word_access = 1;
+      new_entry -> index = index;
+      new_entry -> expected_value.word = entry -> expected_value.word;
+      new_entry -> new_value.word = entry -> new_value.word;
+      result = new_entry -> new_value.word;
+    } 
+  } else {
+    // No entry found
+    StgWord current_value = read_array_current_value_word(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> word_access = 1;
+    new_entry -> index = index;
+    new_entry -> expected_value.word = current_value;
+    new_entry -> new_value.word = current_value;
+    result = current_value;
+  }
+
+  TRACE("%p : stmReadTArray(%p[%d])=%ld", trec, tarray, index, result);
+  return result;
+}
+
+/*......................................................................*/
+
+void stmWriteTArrayWord(Capability *cap,
+                        StgTRecHeader *trec,
+                        StgTArray *tarray,
+                        StgHalfWord index,
+                        StgWord new_value) {
+
+#if defined(THREADED_RTS)
+  // Record the write set for later wakeups.
+  if (XTEST()) {
+    StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
+    htrec -> write_set = bloom_add(htrec -> write_set, tarray -> hash_id ^ index);
+    // TODO: bounds checking?
+    tarray -> payload[tarray -> ptrs + index] = new_value;
+    dirty_TARRAY(cap,tarray); // TODO: avoid this!
+    return;
+  }
+#endif
+
+  StgTRecHeader *entry_in = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmWriteTArrayWord(%p[%d], %p)", trec, tarray, index, new_value);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE || 
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 1, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      entry -> new_value.word = new_value;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> word_access = 1;
+      new_entry -> index = index;
+      new_entry -> expected_value.word = entry -> expected_value.word;
+      new_entry -> new_value.word = new_value;
+    } 
+  } else {
+    // No entry found
+    StgWord current_value = read_array_current_value_word(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> word_access = 1;
+    new_entry -> index = index;
+    new_entry -> expected_value.word = current_value;
+    new_entry -> new_value.word = new_value;
   }
 
   TRACE("%p : stmWriteTVar done", trec);

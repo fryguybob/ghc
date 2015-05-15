@@ -277,6 +277,7 @@ initCapability( Capability *cap, nat i )
     cap->weak_ptr_list_hd = NULL;
     cap->weak_ptr_list_tl = NULL;
     cap->free_trec_chunks = END_STM_CHUNK_LIST;
+    cap->free_tarray_rec_chunks = END_STM_ARRAY_CHUNK_LIST;
     cap->free_trec_headers = NO_TREC;
     cap->context_switch = 0;
     cap->pinned_object_block = NULL;

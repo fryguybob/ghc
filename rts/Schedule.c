@@ -460,7 +460,9 @@ run_thread:
     case ThreadRunGHC:
     {
 	StgRegTable *r;
+#ifdef THREADED_RTS
 fast_run_again:
+#endif
 	r = StgRun((StgFunPtr) stg_returnToStackTop, &cap->r);
 	cap = regTableToCapability(r);
 	ret = r->rRet;

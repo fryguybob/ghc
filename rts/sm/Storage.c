@@ -932,6 +932,15 @@ dirty_TVAR(Capability *cap, StgTVar *p)
     }
 }
 
+void
+dirty_TARRAY(Capability *cap, StgStmMutArrPtrs *p)
+{
+    if (p->header.info == &stg_STM_MUT_ARR_PTRS_CLEAN_info) {
+        p->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
+        recordClosureMutated(cap,(StgClosure*)p);
+    }
+}
+
 // Setting a TSO's link field with a write barrier.
 // It is *not* necessary to call this function when
 //    * setting the link field to END_TSO_QUEUE
