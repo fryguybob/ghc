@@ -687,6 +687,19 @@ static StgBloom bloom_add(StgBloom filter, StgWord id)
     return filter | id;
 }
 
+// Bloom filters for wakeups from arrays
+static StgBloom bloom_add_array(StgBloom filter, StgWord array_hash, StgHalfWord index)
+{
+    StgWord w = filter;
+    StgWord id = array_hash ^ (index << 16);
+
+    w = w | (1 << ((id & 0x00003f0) >>  4));
+    w = w | (1 << ((id & 0x003f000) >> 12));
+    w = w | (1 << ((id & 0x3f00000) >> 20));
+
+    return w;
+}
+
 // TODO: this structure will be used to insert new
 // filters for blocked transactions when they commit in HTM on
 // `retry`.  When a transaction commits with writes, we will
@@ -936,6 +949,10 @@ static StgBloom bloom_readset(StgTRecHeader* trec)
 
     FOR_EACH_ENTRY(trec, e, {
         filter = bloom_add(filter, e -> tvar -> hash_id);
+    });
+
+    FOR_EACH_ARRAY_ENTRY(trec, e, {
+        filter = bloom_add_array(filter, e -> tarray -> hash_id, e -> index);
     });
 
     return filter;
@@ -2152,7 +2169,7 @@ StgClosure *stmReadTArray(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> read_set = bloom_add(htrec -> read_set, tarray -> hash_id ^ index);
+    htrec -> read_set = bloom_add_array(htrec -> read_set, tarray -> hash_id, index);
     // TODO: bounds check
     return tarray -> payload[index];
   }
@@ -2211,7 +2228,7 @@ void stmWriteTArray(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> write_set = bloom_add(htrec -> write_set, tarray -> hash_id ^ index);
+    htrec -> write_set = bloom_add_array(htrec -> write_set, tarray -> hash_id, index);
     // TODO: bounds checking?
     tarray -> payload[index] = new_value;
     dirty_TARRAY(cap,tarray); // TODO: avoid this!
@@ -2264,7 +2281,7 @@ StgWord stmReadTArrayWord(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> read_set = bloom_add(htrec -> read_set, tarray -> hash_id ^ index);
+    htrec -> read_set = bloom_add_array(htrec -> read_set, tarray -> hash_id, index);
     // TODO: bounds check
     return (StgWord)(tarray -> payload[tarray -> ptrs + index]);
   }
@@ -2323,7 +2340,7 @@ void stmWriteTArrayWord(Capability *cap,
   // Record the write set for later wakeups.
   if (XTEST()) {
     StgHTRecHeader *htrec = (StgHTRecHeader*)trec;
-    htrec -> write_set = bloom_add(htrec -> write_set, tarray -> hash_id ^ index);
+    htrec -> write_set = bloom_add_array(htrec -> write_set, tarray -> hash_id, index);
     // TODO: bounds checking?
     tarray -> payload[tarray -> ptrs + index] = new_value;
     dirty_TARRAY(cap,tarray); // TODO: avoid this!

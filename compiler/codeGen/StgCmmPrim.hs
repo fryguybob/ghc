@@ -218,16 +218,22 @@ shouldInlinePrimOp dflags ThawSmallArrayOp [src, src_off, (CmmLit (CmmInt n _))]
 shouldInlinePrimOp dflags NewSTMArrayOp [ (CmmLit (CmmInt ptrs _))
                                         , (CmmLit (CmmInt words _)), init]
   | wordsToBytes dflags (fromInteger (ptrs+words)) <= maxInlineAllocSize dflags =
-      Just $ \ [res] ->
+      Just $ \ [res] -> do
       doNewArrayOp res (stmArrPtrsRep (fromInteger (ptrs+words))) mkSTMMAP_DIRTY_infoLabel
-      [ (mkIntExpr dflags 0, -- Lock
-         fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_lock  dflags)
-      , (mkIntExpr dflags (fromInteger ptrs), -- ptrs
-         fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_ptrs  dflags)
-      , (mkIntExpr dflags (fromInteger words), -- words
-         fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_words dflags) 
-      ]
-      (fromInteger (ptrs+words)) init
+        [ (mkIntExpr dflags 0, -- Lock
+           fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_lock  dflags)
+        , (mkIntExpr dflags (fromInteger ptrs), -- ptrs
+           fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_ptrs  dflags)
+        , (mkIntExpr dflags (fromInteger words), -- words
+           fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_words dflags)
+        ]
+        (fromInteger (ptrs+words)) init
+
+      -- Use the inital array address as the hash_id
+      let base = CmmReg (CmmLocal res)
+          offset = fixedHdrSizeW dflags
+                 + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_hash_id dflags)
+      emitStore (cmmOffsetW dflags base offset) base
 
 shouldInlinePrimOp dflags primop args
   | primOpOutOfLine primop = Nothing
