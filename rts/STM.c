@@ -1589,10 +1589,12 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
     // Wakeup
     FOR_EACH_ENTRY(trec, e, {
       if (e -> expected_value != e -> new_value)
+      {
         // It is only safe to do the dirty here as long as a GC can't happen between
         // the XEND and here.  We don't yield between those, so we are safe.
         dirty_TVAR(cap, e -> tvar);
         unpark_waiters_on(cap, e -> tvar);
+      }
     });
 
     cap->stm_stats->htm_commit++;
