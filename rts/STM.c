@@ -514,14 +514,34 @@ static void lock_bloom_in_htm(void) {
 #endif
 
 static void lock_bloom_hle(void) {
-  int i;
+  int i,s,status;
   for (i = 0; i < RtsFlags.ConcFlags.hleRetryCount; i++)
   {
     XBEGIN(fail);
     if (smp_locked_bloom == 0)
       return;
     XEND();
-    XFAIL(fail);
+
+    // spin.
+    while (smp_locked_bloom != 0)
+        _mm_pause(); // TODO: backoff?
+
+    continue;
+    XFAIL_STATUS(fail,status);
+    // TODO: stats collection?
+    s = status & 0xffffff;
+    TRACE("lock_bloom : XFAIL %x %x %d", status, s, XABORT_CODE(status));
+    if ((s & XABORT_EXPLICIT) != 0) // XABORT was executed
+    { 
+      if (XABORT_CODE(status) == ABORT_FALLBACK)
+        break; // Give up and go to the fallback.
+
+      if (XABORT_CODE(status) == ABORT_RESTART)
+      { // Try again.
+      }
+    }
+    else if ((s & XABORT_RETRY) == 0)
+      break; // Hardware recommends fallback.
   }
 
   lock_bloom();
@@ -663,6 +683,55 @@ static StgBool bloom_match(StgBloom a, StgBloom b)
 
 static void unpark_tso(Capability *cap, StgTSO *tso);
 
+// Structure to buffer the local wakeup list as we
+// take items off the global list.
+typedef struct tso_wakeup_chunk_
+{
+    struct tso_wakeup_chunk_* prev_chunk;
+    StgWord next_entry_idx;
+    StgTSO* tsos[BLOOM_WAKEUP_CHUNK_NUM_ENTRIES];
+} tso_wakeup_chunk;
+
+static tso_wakeup_chunk* new_tso_wakeup_chunk(void)
+{
+    tso_wakeup_chunk* p = stgMallocBytes(sizeof(tso_wakeup_chunk), "tso_wakeup_chunk");
+    p->next_entry_idx = 0;
+    p->prev_chunk = NULL;
+    return p;
+}
+
+static tso_wakeup_chunk* add_tso(tso_wakeup_chunk* chunk, StgTSO* tso)
+{
+    if (chunk == NULL || chunk->next_entry_idx == BLOOM_WAKEUP_CHUNK_NUM_ENTRIES)
+    {   
+        tso_wakeup_chunk* p = new_tso_wakeup_chunk();
+        p->prev_chunk = chunk;
+        chunk = p;
+    }
+
+    chunk->tsos[chunk->next_entry_idx++] = tso;
+
+    return chunk;
+};
+
+static void local_wakeup(Capability *cap, tso_wakeup_chunk* q)
+{
+    StgWord i;
+
+    tso_wakeup_chunk* prev = NULL;
+
+    for (; q != NULL; prev = q, q = q->prev_chunk)
+    {
+        if (prev != NULL && prev->prev_chunk != NULL) // The first chunk is stack allocated
+            stgFree(prev);
+
+        for (i = 0; i < q -> next_entry_idx; i++)
+        {
+            unpark_tso(cap, q->tsos[i]);
+        }
+    }
+}
+
 // Wake up and remove any blocked transactions who's read sets
 // overlap with write sets.
 static void bloom_wakeup(Capability *cap, StgBloom filter)
@@ -671,6 +740,12 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
         return;
 
 #ifdef THREADED_RTS
+    tso_wakeup_chunk  start;
+    start.prev_chunk = NULL;
+    start.next_entry_idx = 0;
+
+    tso_wakeup_chunk* tsos = &start;
+
     lock_bloom_hle();
 #endif
 
@@ -678,7 +753,6 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
     StgBloomWakeupChunk *q, *prev;
     q = smp_bloomWakeupList;
     prev = NULL;
-
 
     for (; q != END_BLOOM_WAKEUP_CHUNK_LIST; prev = q, q = q -> prev_chunk)
     {
@@ -703,7 +777,12 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
                     // TODO: HLE the TSO lock?  Make some simpler
                     // way of doing the wakeup?  have a local queue for
                     // waking up?
+#ifdef THREADED_RTS
+                    tsos = add_tso(tsos, q -> filters[i].tso);
+#else
+                    // Avoid doing the wakeup here as it takes a lock.
                     unpark_tso(cap, q -> filters[i].tso);
+#endif
 
                     // mark for removal.
                     q -> filters[i].filter = 0;
@@ -736,6 +815,8 @@ static void bloom_wakeup(Capability *cap, StgBloom filter)
 
 #ifdef THREADED_RTS
     unlock_bloom_hle();
+
+    local_wakeup(cap, tsos);
 #endif
 }
 
@@ -1280,10 +1361,12 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
     // Wakeup 
     FOR_EACH_ENTRY(trec, e, {
       if (e -> expected_value != e -> new_value)
+      {
         // It is only safe to do the dirty here as long as a GC can't happen between
         // the XEND and here.  We don't yield between those, so we are safe.
         dirty_TVAR(cap, e -> tvar);
         unpark_waiters_on(cap, e -> tvar);
+      }
     });
  
 
