@@ -1773,14 +1773,14 @@ static rtsBool readAffinityTopology(const char* file)
 
             if (r != 1) {
                 errorBelch("Failed to parse affinity topology line %d char %d: %s\n",
-                           lines, token - line + 1, token);
+                           lines, (int)(token - line + 1), token);
                 free(temp);
                 return rtsFalse;
             }
 
             if (x < 0 || x > CPU_SETSIZE) {
                 errorBelch("CPU given is out of range line %d char %d: %s\n",
-                           lines, token - line + 1, token);
+                           lines, (int)(token - line + 1), token);
                 free(temp);
                 return rtsFalse;
             }

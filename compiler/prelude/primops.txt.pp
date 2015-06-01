@@ -2108,6 +2108,69 @@ primop WriteTVarSTMOp "writeTVarSTM#" GenPrimOp
 primop  SameTVarOp "sameTVar#" GenPrimOp
    TVar# s a -> TVar# s a -> Int#
 
+primop	ReadTArrayOp "readTArray#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> State# s -> (# State# s, a #)
+   {Read contents of {\tt TArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	WriteTArrayOp "writeTArray#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> a -> State# s -> State# s
+   {Write contents of {\tt TArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	ReadTArrayWordOp "readTArrayWord#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> State# s -> (# State# s, Word# #)
+   {Read contents of {\tt TArray\#}.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	WriteTArrayWordOp "writeTArrayWord#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> Word# -> State# s -> State# s
+   {Write contents of {\tt TArray\#}.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	ReadTArraySTMOp "readTArraySTM#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> State# s -> (# State# s, a #)
+   {Read contents of {\tt TArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	WriteTArraySTMOp "writeTArraySTM#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> a -> State# s -> State# s
+   {Write contents of {\tt TArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	ReadTArrayWordSTMOp "readTArrayWordSTM#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> State# s -> (# State# s, Word# #)
+   {Read contents of {\tt TArray\#}.}
+   with
+   out_of_line	= True
+   has_side_effects = True
+
+primop	WriteTArrayWordSTMOp "writeTArrayWordSTM#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> Word# -> State# s -> State# s
+   {Write contents of {\tt TArray\#}.}
+   with
+   out_of_line	= True
+   has_side_effects = True
 
 ------------------------------------------------------------------------
 section "Synchronized Mutable Variables"

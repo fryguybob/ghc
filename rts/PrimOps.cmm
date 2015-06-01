@@ -1290,6 +1290,19 @@ stg_bloom_add (W_ filter, W_ id)
     return (w);
 }
 
+stg_bloom_add_array (W_ filter, W_ id, W_ index)
+{
+    W_ w;
+
+    w = filter ^ (index << 16);
+
+    w = w | (1 << ((id & 0x00003f0) >>  4));
+    w = w | (1 << ((id & 0x003f000) >> 12));
+    w = w | (1 << ((id & 0x3f00000) >> 20));
+
+    return (w);
+}
+
 stg_newTVarzh (P_ init)
 {
     W_ tv;
@@ -1406,6 +1419,215 @@ stg_writeTVarzh (P_ tvar,     /* :: TVar a */
     }
 }
 
+
+stg_gc_prim_pn (P_ arg1, W_ arg2, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2);
+}
+
+stg_gc_prim_pnp (P_ arg1, W_ arg2, P_ arg3, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2,arg3);
+}
+
+#define GC_PRIM_PN(fun,arg1,arg2)               \
+        jump stg_gc_prim_pn(arg1,arg2,fun);
+
+#define GC_PRIM_PNP(fun,arg1,arg2,arg3)         \
+        jump stg_gc_prim_pnp(arg1,arg2,arg3,fun);
+
+#define MAYBE_GC_PN(fun,arg1,arg2)              \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PN(fun,arg1,arg2)               \
+   }
+
+#define MAYBE_GC_PNP(fun,arg1,arg2,arg3)        \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PNP(fun,arg1,arg2,arg3)         \
+   }
+
+
+stg_readTArraySTMzh (P_ tarray, W_ index)
+{
+    P_ trec;
+    P_ result;
+
+    // Call to stmReadTArraySTM may allocate
+    MAYBE_GC_PN (stg_readTArraySTMzh, tarray, index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ("ptr" result) = ccall stmReadTArray(MyCapability() "ptr", trec "ptr",
+                                         tarray "ptr", index);
+    return (result);
+}
+
+stg_readTArrayWordSTMzh (P_ tarray, W_ index)
+{
+    P_ trec;
+    P_ result;
+
+   // Call to stmReadTArrayWordSTM may allocate
+    MAYBE_GC_PN (stg_readTArrayWordSTMzh, tarray, index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ("ptr" result) = ccall stmReadTArrayWord(MyCapability() "ptr", trec "ptr",
+                                             tarray "ptr", index);
+    return (result);
+}
+
+stg_readTArrayzh (P_ tarray, W_ index)
+{
+    P_ result;
+    P_ htrec;
+    W_ htm;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {      
+        result = StgStmMutArrPtrs_payload(tarray,index);
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+    } else {
+        jump stg_readTArraySTMzh(tarray, index);
+    }
+}
+
+stg_readTArrayWordzh (P_ tarray, W_ index)
+{
+    W_ result;
+    P_ htrec;
+    W_ htm;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+       
+        result = StgStmMutArrPtrs_payload(tarray,StgStmMutArrPtrs_ptrs(tarray) + index);
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+    } else {
+        jump stg_readTArrayWordSTMzh(tarray, index);
+    }
+}
+
+stg_writeTArraySTMzh (P_ tarray,    // :: TArray a
+                      W_ index,     // :: Word
+                      P_ new_value) // :: a
+{
+    W_ trec;
+    // Call to stmWriteTArraySTM may allocate
+    MAYBE_GC_PNP (stg_writeTArraySTMzh, tarray, index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTArray(MyCapability() "ptr", trec "ptr", tarray "ptr", index,
+                         new_value "ptr");
+    return ();
+}
+
+stg_writeTArrayWordSTMzh (P_ tarray,    // :: TArray a
+                          W_ index,     // :: Word
+                          W_ new_value) // :: Word
+{
+    W_ trec;
+
+    // Call to stmWriteTArrayWordSTM may allocate
+    MAYBE_GC_PNP (stg_writeTArrayWordSTMzh, tarray, index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTArrayWord(MyCapability() "ptr", trec "ptr", tarray "ptr", index,
+                             new_value);
+    return ();
+}
+
+stg_writeTArrayzh (P_ tarray,    // :: TArray a
+                   W_ index,     // :: Word    
+                   P_ new_value) // :: a       
+{
+    W_ htm;
+    P_ htrec;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        StgStmMutArrPtrs_payload(tarray,index) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+
+        // TODO: Here we need the GC write barrier when
+        // we are not in gen 0 (transaction with long
+        // lived TArrays).  We could also add all promoted 
+        // TVars as a new list of roots that we always
+        // follow at GC and avoid tracking the write set.
+        ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
+
+        return ();
+    } else {
+        jump stg_writeTArraySTMzh(tarray,index,new_value);
+    }
+}
+
+stg_writeTArrayWordzh (P_ tarray,    // :: TArray a
+                       W_ index,     // :: Word
+                       W_ new_value) // :: Word
+{
+    W_ htm;
+    P_ htrec;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        StgStmMutArrPtrs_payload(tarray, StgStmMutArrPtrs_ptrs(tarray) + index) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+
+        // TODO: Here we need the GC write barrier when
+        // we are not in gen 0 (transaction with long
+        // lived TArrays).  We could also add all promoted 
+        // TVars as a new list of roots that we always
+        // follow at GC and avoid tracking the write set.
+        ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
+
+        return ();
+    } else {
+        jump stg_writeTArraySTMzh(tarray, index, new_value);
+    }
+}
 
 /* -----------------------------------------------------------------------------
  * MVar primitives

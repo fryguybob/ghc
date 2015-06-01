@@ -401,6 +401,8 @@ wanteds = concat
           ,closureField Both "StgStmMutArrPtrs" "ptrs"
           ,closureField Both "StgStmMutArrPtrs" "words"
           ,closureField Both "StgStmMutArrPtrs" "hash_id"
+          ,closureField Both "StgStmMutArrPtrs" "lock_count"
+          ,closurePayload C  "StgStmMutArrPtrs" "payload"
 
           ,closureSize    Both "StgArrWords"
           ,closureField   Both "StgArrWords" "bytes"

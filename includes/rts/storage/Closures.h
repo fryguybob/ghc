@@ -168,7 +168,8 @@ typedef struct{
     StgWord          ptrs;
     StgWord          words;
     StgWord          hash_id;
-    StgWord          padding[3]; // TODO: assumes 64-byte cacheline
+    volatile StgWord lock_count;
+    StgWord          padding[2]; // TODO: assumes 64-byte cacheline
                                  // Fill out 64-bytes assuming the
                                  // struct is already aligned.
     StgClosure      *payload[FLEXIBLE_ARRAY];
