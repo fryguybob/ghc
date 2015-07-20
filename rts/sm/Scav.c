@@ -733,6 +733,8 @@ scavenge_block (bdescr *bd)
         }
 
         gct->failed_to_evac = rtsTrue; // always put it on the mutable list.
+
+        p = p + ((StgStmMutArrPtrs*)q)->words;
         break;
     }
 
