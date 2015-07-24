@@ -2020,7 +2020,8 @@ stmArrayWordIndex :: DynFlags -> CmmExpr -> CmmExpr -> CmmExpr
 stmArrayWordIndex dflags addr idx =
     CmmMachOp (MO_Add (wordWidth dflags))
       [ cmmLoadIndexW dflags addr
-         (fixedHdrSizeW dflags + oFFSET_StgStmMutArrPtrs_ptrs dflags) (bWord dflags)
+         (fixedHdrSizeW dflags + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_ptrs dflags))
+            (bWord dflags)
       , idx
       ]
 
