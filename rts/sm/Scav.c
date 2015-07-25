@@ -1757,6 +1757,12 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
 	    case MUT_ARR_PTRS_DIRTY:
 	    case MUT_ARR_PTRS_FROZEN:
 	    case MUT_ARR_PTRS_FROZEN0:
+        case SMALL_MUT_ARR_PTRS_CLEAN:
+        case SMALL_MUT_ARR_PTRS_DIRTY:
+        case SMALL_MUT_ARR_PTRS_FROZEN:
+        case SMALL_MUT_ARR_PTRS_FROZEN0:
+        case STM_MUT_ARR_PTRS_CLEAN:
+        case STM_MUT_ARR_PTRS_DIRTY:
 		mutlist_MUTARRS++; break;
 	    case MVAR_CLEAN:
 		barf("MVAR_CLEAN on mutable list");

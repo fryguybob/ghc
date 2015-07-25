@@ -219,6 +219,7 @@ shouldInlinePrimOp dflags NewSTMArrayOp [ (CmmLit (CmmInt ptrs _))
                                         , (CmmLit (CmmInt words _)), init]
   | wordsToBytes dflags (fromInteger (ptrs+words)) <= maxInlineAllocSize dflags =
       Just $ \ [res] -> do
+      emit (mkComment $ mkFastString "NewSTMArray")
       doNewArrayOp res (stmArrPtrsRep (fromInteger (ptrs+words))) mkSTMMAP_DIRTY_infoLabel
         [ (mkIntExpr dflags 0, -- Lock
            fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_lock  dflags)
@@ -233,7 +234,9 @@ shouldInlinePrimOp dflags NewSTMArrayOp [ (CmmLit (CmmInt ptrs _))
       let base = CmmReg (CmmLocal res)
           offset = fixedHdrSizeW dflags
                  + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_hash_id dflags)
+      emit (mkComment $ mkFastString "NewSTMArray record hash")
       emitStore (cmmOffsetW dflags base offset) base
+      emit (mkComment $ mkFastString "NewSTMArray done")
 
 shouldInlinePrimOp dflags primop args
   | primOpOutOfLine primop = Nothing
@@ -2041,9 +2044,10 @@ doWriteSTMArrayWordOp :: CmmExpr
 doWriteSTMArrayWordOp addr idx val = do
     dflags <- getDynFlags
     let ty = cmmExprType dflags val
+    emit (mkComment $ mkFastString "WriteSTMArrayWord")
     mkBasicIndexedWrite (stmArrPtrsHdrSize dflags) Nothing addr ty
         (stmArrayWordIndex dflags addr idx) val
-    emit (setInfo addr (CmmLit (CmmLabel mkSMAP_DIRTY_infoLabel)))
+    emit (mkComment $ mkFastString "WriteSTMArrayWord done")
   where
 ------------------------------------------------------------------------------
 -- Atomic read-modify-write

@@ -366,6 +366,13 @@ stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
         goto for;
     }
 
+  forw:
+    if (p < arr + SIZEOF_StgStmMutArrPtrs + WDS(np) + WDS(n)) {
+        W_[p] = 0;
+        p = p + WDS(1);
+        goto forw;
+    }
+
     return (arr);
 }
 
