@@ -278,6 +278,9 @@ RTS_FUN_DECL(stg_gc_prim);
 RTS_FUN_DECL(stg_gc_prim_p);
 RTS_FUN_DECL(stg_gc_prim_pp);
 RTS_FUN_DECL(stg_gc_prim_n);
+RTS_FUN_DECL(stg_gc_prim_pn);
+RTS_FUN_DECL(stg_gc_prim_pnp);
+RTS_FUN_DECL(stg_gc_prim_pnn);
 
 RTS_RET(stg_gc_prim_p_ll_ret);
 RTS_FUN_DECL(stg_gc_prim_p_ll);

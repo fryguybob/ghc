@@ -1062,6 +1062,9 @@ typedef struct _RtsSymbolVal {
       SymI_HasProto(stg_gc_prim_p)                                      \
       SymI_HasProto(stg_gc_prim_pp)                                     \
       SymI_HasProto(stg_gc_prim_n)                                      \
+      SymI_HasProto(stg_gc_prim_pn)                                     \
+      SymI_HasProto(stg_gc_prim_pnp)                                    \
+      SymI_HasProto(stg_gc_prim_pnn)                                    \
       SymI_HasProto(stg_enter_info)                                     \
       SymI_HasProto(__stg_gc_enter_1)                                   \
       SymI_HasProto(stg_gc_unpt_r1)                                     \

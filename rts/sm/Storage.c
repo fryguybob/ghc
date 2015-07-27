@@ -937,7 +937,9 @@ dirty_TARRAY(Capability *cap, StgStmMutArrPtrs *p)
 {
     if (p->header.info == &stg_STM_MUT_ARR_PTRS_CLEAN_info) {
         p->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
-        recordClosureMutated(cap,(StgClosure*)p);
+        // Only the header needs to be updated as TArrays are
+        // always on the mut_list.  So this is not needed:
+        //      recordClosureMutated(cap,(StgClosure*)p);
     }
 }
 

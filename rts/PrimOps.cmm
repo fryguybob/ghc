@@ -1439,11 +1439,20 @@ stg_gc_prim_pnp (P_ arg1, W_ arg2, P_ arg3, W_ fun)
     jump fun(arg1,arg2,arg3);
 }
 
+stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2,arg3);
+}
+
 #define GC_PRIM_PN(fun,arg1,arg2)               \
         jump stg_gc_prim_pn(arg1,arg2,fun);
 
 #define GC_PRIM_PNP(fun,arg1,arg2,arg3)         \
         jump stg_gc_prim_pnp(arg1,arg2,arg3,fun);
+
+#define GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
+        jump stg_gc_prim_pnn(arg1,arg2,arg3,fun);
 
 #define MAYBE_GC_PN(fun,arg1,arg2)              \
     if (CHECK_GC()) {                           \
@@ -1455,6 +1464,12 @@ stg_gc_prim_pnp (P_ arg1, W_ arg2, P_ arg3, W_ fun)
     if (CHECK_GC()) {                           \
         HpAlloc = 0;                            \
         GC_PRIM_PNP(fun,arg1,arg2,arg3)         \
+   }
+
+#define MAYBE_GC_PNN(fun,arg1,arg2,arg3)        \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
    }
 
 
@@ -1560,7 +1575,7 @@ stg_writeTArrayWordSTMzh (P_ tarray,    // :: TArray a
     W_ trec;
 
     // Call to stmWriteTArrayWordSTM may allocate
-    MAYBE_GC_PNP (stg_writeTArrayWordSTMzh, tarray, index, new_value);
+    MAYBE_GC_PNN (stg_writeTArrayWordSTMzh, tarray, index, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTArrayWord(MyCapability() "ptr", trec "ptr", tarray "ptr", index,
@@ -1589,12 +1604,20 @@ stg_writeTArrayzh (P_ tarray,    // :: TArray a
 
         StgHTRecHeader_write_set(htrec) = filter;
 
-        // TODO: Here we need the GC write barrier when
-        // we are not in gen 0 (transaction with long
-        // lived TArrays).  We could also add all promoted 
-        // TVars as a new list of roots that we always
-        // follow at GC and avoid tracking the write set.
-        ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
+        // TArrays are always on the mut list after they are
+        // promoted.  We only need to dirty the header.  We
+        // also want to avoid the conflict, so check first.
+        
+        W_ info;
+
+        info = StgHeader_info(tarray);
+        if (info == stg_STM_MUT_ARR_PTRS_CLEAN_info)
+        {
+            SET_INFO(tarray,stg_STM_MUT_ARR_PTRS_DIRTY_info);
+        }
+        
+        // We do not need to do this:
+        //    ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
 
         return ();
     } else {
@@ -1623,16 +1646,11 @@ stg_writeTArrayWordzh (P_ tarray,    // :: TArray a
 
         StgHTRecHeader_write_set(htrec) = filter;
 
-        // TODO: Here we need the GC write barrier when
-        // we are not in gen 0 (transaction with long
-        // lived TArrays).  We could also add all promoted 
-        // TVars as a new list of roots that we always
-        // follow at GC and avoid tracking the write set.
-        ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
-
+        // We only need to dirty the header if a pointer
+        // changes.  Mutating a word comes at no cost.
         return ();
     } else {
-        jump stg_writeTArraySTMzh(tarray, index, new_value);
+        jump stg_writeTArrayWordSTMzh(tarray, index, new_value);
     }
 }
 

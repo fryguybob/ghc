@@ -231,7 +231,8 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   StgTArray *s;
   StgClosure *result;
   s = e -> tarray;
-  TRACE("%p : cond_lock_tarray(%p, %p)", trec, s, e -> expected_value.ptr);
+  TRACE("%p : cond_lock_tarray(%p, access %d, %p)", trec, s
+       , e -> word_access, e -> expected_value.ptr);
   // No other threads can be committing, so we simply check that the expected
   // value holds.
   StgWord off = e -> word_access * s -> ptrs + e -> index;
@@ -358,7 +359,8 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   StgTArray *s;
   StgClosure *result;
   s = e -> tarray;
-  TRACE("%p : cond_lock_tarray(%p, %p)", trec, s, e -> expected_value.ptr);
+  TRACE("%p : cond_lock_tarray(%p, access %d, %p)", trec, s
+       , e -> word_access, e -> expected_value.ptr);
   // No other threads can be committing, so we simply check that the expected
   // value holds.
   StgWord off = e -> word_access * s -> ptrs + e -> index;
@@ -416,6 +418,12 @@ static void unlock_tarray(Capability *cap,
   if (s -> lock_count == 0) {
     s -> lock = 0;
     if (was_update) {
+        // TODO: we might be able to do better here by removing the
+        // dirty out of the unlock and only dirtying if we made an update
+        // to a pointer.  I think this implies yet another structure
+        // to track which ones to dirty.  With the lock counter, we are
+        // already writing to the same cacheline as the header, so
+        // a lot would have to change to get this benefit.
         dirty_TARRAY(cap,s); // Assume the unlocking is due to a write.
     }
   } else {
@@ -441,7 +449,8 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   StgTArray *s;
   StgClosure *result;
   s = e -> tarray;
-  TRACE("%p : cond_lock_tarray(%p, %p)", trec, s, e -> expected_value.ptr);
+  TRACE("%p : cond_lock_tarray(%p, access %d, %p)", trec, s
+       , e -> word_access, e -> expected_value.ptr);
   // Two things need to hold to conditionally lock an array:
   //
   //    1.  The value must match the expected value.
@@ -692,6 +701,8 @@ static TArrayRecEntry *get_new_array_entry(Capability *cap,
   StgTArrayRecChunk *c;
   int i;
 
+  TRACE("%p : get_new_array_entry", t);
+
   c = t -> current_array_chunk;
   i = c -> next_entry_idx;
   ASSERT(c != END_STM_ARRAY_CHUNK_LIST);
@@ -702,6 +713,7 @@ static TArrayRecEntry *get_new_array_entry(Capability *cap,
     c -> next_entry_idx ++;
   } else {
     // Current chunk is full: allocate a fresh one
+    TRACE("%p : get_new_array_entry new chunk", t);
     StgTArrayRecChunk *nc;
     nc = alloc_stg_tarray_rec_chunk(cap);
     nc -> prev_chunk = c;
@@ -1568,6 +1580,7 @@ void stmPreGCHook (Capability *cap) {
   lock_stm(cap, NO_TREC);
   TRACE("stmPreGCHook");
   cap->free_trec_chunks = END_STM_CHUNK_LIST;
+  cap->free_tarray_rec_chunks = END_STM_ARRAY_CHUNK_LIST;
   cap->free_trec_headers = NO_TREC;
   unlock_stm(cap, NO_TREC);
 }
@@ -2003,7 +2016,10 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
      if (e -> expected_value.ptr != e -> new_value.ptr) {
-        dirty_TARRAY(cap, e -> tarray);
+        if (!e -> word_access)
+        {
+            dirty_TARRAY(cap, e -> tarray);
+        }
         unpark_waiters_on(cap, bloom_add_array(0, e -> tarray -> hash_id, e -> index));
       }
     });
@@ -2346,6 +2362,9 @@ static StgClosure *read_current_value(StgTRecHeader *trec STG_UNUSED, StgTVar *t
 static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
                                             StgTArray *tarray,
                                             StgHalfWord index) {
+  
+  ASSERT (index < tarray -> ptrs);
+  
   StgClosure *result;
   result = tarray -> payload[index];
   // TODO: bounds check?
@@ -2369,6 +2388,8 @@ static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
 static StgWord read_array_current_value_word(StgTRecHeader *trec STG_UNUSED,
                                              StgTArray *tarray,
                                              StgHalfWord index) {
+  ASSERT (index < tarray -> words);
+
   StgWord result;
   result = (StgWord)(tarray -> payload[tarray -> ptrs + index]);
   // TODO: bounds check?
@@ -2524,6 +2545,7 @@ StgClosure *stmReadTArray(Capability *cap,
     } else {
       // Entry found in another trec
       TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      TRACE("%p : stmReadTArray copied from %p", trec, entry_in);
       new_entry -> tarray = tarray;
       new_entry -> word_access = 0;
       new_entry -> index = index;
@@ -2535,6 +2557,7 @@ StgClosure *stmReadTArray(Capability *cap,
     // No entry found
     StgClosure *current_value = read_array_current_value(trec, tarray, index);
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    TRACE("%p : stmReadTArray new entry with value %p", trec, current_value);
     new_entry -> tarray = tarray;
     new_entry -> word_access = 0;
     new_entry -> index = index;
@@ -2674,7 +2697,8 @@ void stmWriteTArrayWord(Capability *cap,
     htrec -> write_set = bloom_add_array(htrec -> write_set, tarray -> hash_id, index);
     // TODO: bounds checking?
     tarray -> payload[tarray -> ptrs + index] = (StgClosure*)new_value;
-    dirty_TARRAY(cap,tarray); // TODO: avoid this!
+    // Dirtying is not needed here as we haven't updated a pointer!
+    //    dirty_TARRAY(cap,tarray); // TODO: avoid this!
     return;
   }
 #endif
