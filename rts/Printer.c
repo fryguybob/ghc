@@ -349,6 +349,10 @@ printClosure( StgClosure *obj )
                    (W_)((StgStmMutArrPtrs *)obj)->words);
 	break;
 
+    case PADDING:
+    debugBelch("PADDING(size=%" FMT_Word ")\n", 0);
+    break;
+
     case MVAR_CLEAN:
     case MVAR_DIRTY:
         {
@@ -1172,7 +1176,8 @@ char *closure_type_names[] = {
  [SMALL_MUT_ARR_PTRS_FROZEN0] = "SMALL_MUT_ARR_PTRS_FROZEN0",
  [SMALL_MUT_ARR_PTRS_FROZEN]  = "SMALL_MUT_ARR_PTRS_FROZEN",
  [STM_MUT_ARR_PTRS_CLEAN]     = "STM_MUT_ARR_PTRS_CLEAN",
- [STM_MUT_ARR_PTRS_DIRTY]     = "STM_MUT_ARR_PTRS_DIRTY"
+ [STM_MUT_ARR_PTRS_DIRTY]     = "STM_MUT_ARR_PTRS_DIRTY",
+ [PADDING]                    = "PADDING"
 };
 
 char *

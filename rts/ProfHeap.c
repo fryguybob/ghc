@@ -1040,6 +1040,11 @@ heapCensusChain( Census *census, bdescr *bd )
 		prim = rtsTrue;
 		size = stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs *)p);
 		break;
+
+        case PADDING:
+        prim = rtsTrue;
+        size = 1;
+        break;
 		
 	    case TSO:
 		prim = rtsTrue;

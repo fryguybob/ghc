@@ -468,6 +468,7 @@ update_fwd_large( bdescr *bd )
 
     switch (info->type) {
 
+    case PADDING:
     case ARR_WORDS:
       // nothing to follow 
       continue;
@@ -713,6 +714,9 @@ thread_obj (StgInfoTable *info, StgPtr p)
 	
     case ARR_WORDS:
 	return p + arr_words_sizeW((StgArrWords *)p);
+
+    case PADDING:
+    return p + 1;
 	
     case MUT_ARR_PTRS_CLEAN:
     case MUT_ARR_PTRS_DIRTY:

@@ -154,6 +154,7 @@ extern generation * oldest_gen;
    -------------------------------------------------------------------------- */
 
 StgPtr  allocate        ( Capability *cap, W_ n );
+StgPtr  allocateCacheAligned ( Capability *cap, W_ n );
 StgPtr  allocatePinned  ( Capability *cap, W_ n );
 
 /* memory allocator for executable memory */

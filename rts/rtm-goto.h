@@ -64,7 +64,7 @@ Abort a transaction.
 #define XFAIL(label) label: asm volatile("" ::: "eax")
 #define XFAIL_STATUS(label, status) label: asm volatile("" : "=a" (status))
 
-#if __GNUC__ >= 5
+#if __GNUC__ >= 4
 #include "immintrin.h"
 #else
 #include "rtm.h"

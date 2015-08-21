@@ -85,6 +85,65 @@ alloc_for_copy (nat size, nat gen_no)
     return to;
 }
 
+STATIC_INLINE StgPtr
+alloc_for_copy_aligned (nat size, nat gen_no)
+{
+    StgPtr to;
+    StgPtr pad;
+    gen_workspace *ws;
+    nat m;
+    nat t;
+
+    /* Find out where we're going, using the handy "to" pointer in 
+     * the gen of the source object.  If it turns out we need to
+     * evacuate to an older generation, adjust it here (see comment
+     * by evacuate()).
+     */
+    if (gen_no < gct->evac_gen_no) {
+	if (gct->eager_promotion) {
+            gen_no = gct->evac_gen_no;
+	} else {
+	    gct->failed_to_evac = rtsTrue;
+	}
+    }
+    
+    ws = &gct->gens[gen_no];  // zero memory references here
+
+    /* chain a new block onto the to-space for the destination gen if
+     * necessary.
+     */
+
+    // TODO: assumes cache size and word size...
+    m = ((1 << 6) - (((size_t)(ws->todo_free)) & ((1 << 6) - 1))) >> 3;
+    t = size + m;
+
+    pad = ws->todo_free;
+    to = pad + m;
+    ws->todo_free += t;
+    if (ws->todo_free > ws->todo_lim) {
+    pad = todo_block_full(t, ws);
+    to = pad + m; // TODO: this isn't aligned, just easier...
+    }
+
+    if (m > 0)
+    {
+        // make a dead object for the padding.
+        if (m == 1)
+        {
+            SET_HDR(((StgRetry*)pad), &stg_PADDING_info, CCS_SYSTEM);
+        }
+        else
+        {
+            SET_HDR(((StgArrWords*)pad), &stg_ARR_WORDS_info, CCS_SYSTEM);
+            ((StgArrWords*)pad)->bytes  = (m-2) << 3; // TODO: WDS?
+        }
+    }
+
+    ASSERT(ws->todo_free >= ws->todo_bd->free && ws->todo_free <= ws->todo_lim);
+
+    return to;
+}
+
 /* -----------------------------------------------------------------------------
    The evacuate() code
    -------------------------------------------------------------------------- */
@@ -240,6 +299,58 @@ copy(StgClosure **p, const StgInfoTable *info,
     copy_tag(p,info,src,size,gen_no,0);
 }
 
+STATIC_INLINE GNUC_ATTR_HOT void
+copy_aligned(StgClosure **p, const StgInfoTable *info, StgClosure *src, nat size, nat gen_no)
+{
+    StgPtr to, from;
+    nat i;
+
+    to = alloc_for_copy_aligned(size,gen_no);
+    
+    from = (StgPtr)src;
+    to[0] = (W_)info;
+    for (i = 1; i < size; i++) { // unroll for small i
+	to[i] = from[i];
+    }
+
+//  if (to+size+2 < bd->start + BLOCK_SIZE_W) {
+//      __builtin_prefetch(to + size + 2, 1);
+//  }
+
+#if defined(PARALLEL_GC)
+    {
+        const StgInfoTable *new_info;
+        new_info = (const StgInfoTable *)cas((StgPtr)&src->header.info, (W_)info, MK_FORWARDING_PTR(to));
+        if (new_info != info) {
+#ifdef PROFILING
+            // We copied this object at the same time as another
+            // thread.  We'll evacuate the object again and the copy
+            // we just made will be discarded at the next GC, but we
+            // may have copied it after the other thread called
+            // SET_EVACUAEE_FOR_LDV(), which would confuse the LDV
+            // profiler when it encounters this closure in
+            // processHeapClosureForDead.  So we reset the LDVW field
+            // here.
+            LDVW(to) = 0;
+#endif
+            return evacuate(p); // does the failed_to_evac stuff
+        } else {
+            *p = TAG_CLOSURE(0,(StgClosure*)to);
+        }
+    }
+#else
+    src->header.info = (const StgInfoTable *)MK_FORWARDING_PTR(to);
+    *p = TAG_CLOSURE(0,(StgClosure*)to);
+#endif
+
+#ifdef PROFILING
+    // We store the size of the just evacuated object in the LDV word so that
+    // the profiler can guess the position of the next object later.
+    // This is safe only if we are sure that no other thread evacuates
+    // the object again, so we cannot use copy_tag_nolock when PROFILING.
+    SET_EVACUAEE_FOR_LDV(from, size);
+#endif
+}
 /* -----------------------------------------------------------------------------
    Evacuate a large object
 
@@ -656,12 +767,16 @@ loop:
   case MUT_VAR_DIRTY:
   case MVAR_CLEAN:
   case MVAR_DIRTY:
-  case TVAR:
+//  case TVAR:
   case BLOCKING_QUEUE:
   case WEAK:
   case PRIM:
   case MUT_PRIM:
       copy(p,info,q,sizeW_fromITBL(INFO_PTR_TO_STRUCT(info)),gen_no);
+      return;
+
+  case TVAR:
+      copy_aligned(p,info,q,sizeW_fromITBL(INFO_PTR_TO_STRUCT(info)),gen_no);
       return;
 
   case BCO:
@@ -708,6 +823,10 @@ loop:
       copy(p,info,q,arr_words_sizeW((StgArrWords *)q),gen_no);
       return;
 
+  case PADDING:
+      copy(p,info,q,1,gen_no); // TODO: this should never be live right?
+      return;
+
   case MUT_ARR_PTRS_CLEAN:
   case MUT_ARR_PTRS_DIRTY:
   case MUT_ARR_PTRS_FROZEN:
@@ -727,7 +846,7 @@ loop:
   case STM_MUT_ARR_PTRS_CLEAN:
   case STM_MUT_ARR_PTRS_DIRTY:
       // just copy the block 
-      copy(p,info,q,stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs *)q),gen_no);
+      copy_aligned(p,info,q,stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs *)q),gen_no);
       return;
 
   case TSO:
@@ -760,16 +879,18 @@ loop:
     }
 
   case TREC_CHUNK:
-      copy(p,info,q,sizeofW(StgTRecChunk),gen_no);
+      copy_aligned(p,info,q,sizeofW(StgTRecChunk),gen_no);
       return;
 
   case TARRAY_REC_CHUNK:
-      copy(p,info,q,sizeofW(StgTArrayRecChunk),gen_no);
+      copy_aligned(p,info,q,sizeofW(StgTArrayRecChunk),gen_no);
       return;
 
   case BLOOM_WAKEUP_CHUNK:
-      copy(p,info,q,sizeofW(StgBloomWakeupChunk),gen_no);
+      copy_aligned(p,info,q,sizeofW(StgBloomWakeupChunk),gen_no);
       return;
+
+  // TODO: make special cases for TRec headers?
 
   default:
     barf("evacuate: strange closure type %d", (int)(INFO_PTR_TO_STRUCT(info)->type));

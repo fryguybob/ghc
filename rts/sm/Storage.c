@@ -662,6 +662,121 @@ move_STACK (StgStack *src, StgStack *dest)
 }
 
 /* -----------------------------------------------------------------------------
+   StgPtr allocateCacheAligned (Capability *cap, W_ n)
+
+   Like allocate, but ensures that the returned address is cache aligned.
+   It may add some dead objects to the heap to get the desired alignment.
+   -------------------------------------------------------------------------- */
+
+// TODO: assumes 64-byte cache line (log2 (64 bytes) = 6) and 
+// 64-bit word (log2 (8 bytes/word) = 3)
+#define CACHE_PAD(m,t,n,bd) \
+    if (bd != NULL) {\
+        m = ((1 << 6) - (((size_t)(bd->free)) & ((1 << 6) - 1))) >> 3;\
+        t = n + m;\
+    }
+
+StgPtr allocateCacheAligned (Capability *cap, W_ n)
+{
+    bdescr *bd;
+    StgPtr p;
+    StgPtr pad; // padding to cache align
+    W_ m;       // size of padding
+    W_ t;       // total size with padding
+
+    // For some situations we just over allocate, then
+    // fill in at the end or beginning as needed
+    if (n >= LARGE_OBJECT_THRESHOLD/sizeof(W_)) { return allocate(cap, n); }
+
+    bd = cap->r.rCurrentAlloc;
+    CACHE_PAD(m,t,n,bd);
+
+    if (bd == NULL || bd->free + t > bd->start + BLOCK_SIZE_W) {
+        
+        // The CurrentAlloc block is full, we need to find another
+        // one.  First, we try taking the next block from the
+        // nursery:
+        bd = cap->r.rCurrentNursery->link;
+        CACHE_PAD(m,t,n,bd);
+               
+        if (bd == NULL || bd->free + t > bd->start + BLOCK_SIZE_W) {
+
+            // The nursery is empty, or the next block is already
+            // full: allocate a fresh block (we can't fail here).
+            ACQUIRE_SM_LOCK;
+            bd = allocBlock();
+            cap->r.rNursery->n_blocks++;
+            RELEASE_SM_LOCK;
+            initBdescr(bd, g0, g0);
+            bd->flags = 0;
+
+
+            // If we had to allocate a new block, then we'll GC
+            // pretty quickly now, because MAYBE_GC() will
+            // notice that CurrentNursery->link is NULL.
+        } else {
+            // we have a block in the nursery: take it and put
+            // it at the *front* of the nursery list, and use it
+            // to allocate() from.
+            //
+            // Previously the nursery looked like this:
+            //
+            //           CurrentNursery
+            //                  /
+            //                +-+    +-+
+            // nursery -> ... |A| -> |B| -> ...
+            //                +-+    +-+
+            //
+            // After doing this, it looks like this:
+            //
+            //                      CurrentNursery
+            //                            /
+            //            +-+           +-+
+            // nursery -> |B| -> ... -> |A| -> ...
+            //            +-+           +-+
+            //             |
+            //             CurrentAlloc
+            //
+            // The point is to get the block out of the way of the
+            // advancing CurrentNursery pointer, while keeping it
+            // on the nursery list so we don't lose track of it.
+            cap->r.rCurrentNursery->link = bd->link;
+            if (bd->link != NULL) {
+                bd->link->u.back = cap->r.rCurrentNursery;
+            }
+        }
+        dbl_link_onto(bd, &cap->r.rNursery->blocks);
+        cap->r.rCurrentAlloc = bd;
+        IF_DEBUG(sanity, checkNurserySanity(cap->r.rNursery));
+
+        CACHE_PAD(m,t,n,bd);
+     }
+    pad = bd->free;
+    p = pad + m;
+    
+    bd->free += t;
+
+    IF_DEBUG(sanity, ASSERT(*((StgWord8*)p) == 0xaa));
+
+    if (m > 0)
+    {
+        // make a dead object for the padding.
+        if (m == 1)
+        {
+            SET_HDR(((StgRetry*)pad), &stg_PADDING_info, CCS_SYSTEM);
+        }
+        else
+        {
+            SET_HDR(((StgArrWords*)pad), &stg_ARR_WORDS_info, CCS_SYSTEM);
+            ((StgArrWords*)pad)->bytes  = (m-2) << 3; // TODO: WDS?
+        }
+    }
+
+    return p;
+
+}
+
+/* -----------------------------------------------------------------------------
    StgPtr allocate (Capability *cap, W_ n)
 
    Allocates an area of memory n *words* large, from the nursery of

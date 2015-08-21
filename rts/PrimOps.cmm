@@ -347,7 +347,7 @@ stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
     again: MAYBE_GC(again);
 
     words = BYTES_TO_WDS(SIZEOF_StgStmMutArrPtrs) + n + np;
-    ("ptr" arr) = ccall allocate(MyCapability() "ptr",words);
+    ("ptr" arr) = ccall allocateCacheAligned(MyCapability() "ptr",words);
     TICK_ALLOC_PRIM(SIZEOF_StgStmMutArrPtrs, WDS(n + np), 0);
 
     SET_HDR(arr, stg_STM_MUT_ARR_PTRS_DIRTY_info, CCCS);
@@ -1313,10 +1313,13 @@ stg_bloom_add_array (W_ filter, W_ id, W_ index)
 stg_newTVarzh (P_ init)
 {
     W_ tv;
+    
+    ("ptr" tv) = ccall allocateCacheAligned(MyCapability() "ptr", SIZEOF_StgTVar);
+    TICK_ALLOC_PRIM(SIZEOF_StgTVar, 2, 0);
 
-    ALLOC_PRIM_P (SIZEOF_StgTVar, stg_newTVarzh, init);
+//    ALLOC_PRIM_P (SIZEOF_StgTVar, stg_newTVarzh, init);
 
-    tv = Hp - SIZEOF_StgTVar + WDS(1);
+//    tv = Hp - SIZEOF_StgTVar + WDS(1);
     SET_HDR (tv, stg_TVAR_DIRTY_info, CCCS);
 
     StgTVar_current_value(tv) = init;

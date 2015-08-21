@@ -122,6 +122,9 @@ static void initSTMStatsValues(stm_stats* s)
     s->hle_fallback = 0;
     s->hle_commit = 0;
     s->hle_release = 0;
+
+    s->htm_array_unaligned = 0;
+    s->htm_array_accesses = 0;
 }
 
 static void addSTMStats(stm_stats* acc, stm_stats* s)
@@ -143,6 +146,9 @@ static void addSTMStats(stm_stats* acc, stm_stats* s)
     acc->hle_fallback += s->hle_fallback;
     acc->hle_commit   += s->hle_commit;
     acc->hle_release  += s->hle_release;
+
+    acc->htm_array_unaligned += s->htm_array_unaligned;
+    acc->htm_array_accesses  += s->htm_array_accesses;
 }
 
 static void printSTMStats(stm_stats* s)
@@ -185,6 +191,56 @@ static void printHTMStats(stm_stats* s)
     statsPrintf("%16s ", temp);
     showStgWord64(s->hle_release,   temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_array_unaligned, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_array_accesses,  temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+}
+
+static void printTMSizes(void)
+{
+    char temp[BIG_STRING_LEN];
+
+    debugBelch("Sizes:\n"
+
+               "TVar         "
+               "TStruct      "
+
+               "TRecHeader   "
+               "HTRecHeader  "
+
+               "TRecChunk    "
+               "Entries      "
+               "Entry        "
+
+               "ArrChunk     "
+               "Entries      "
+               "Entry        "
+
+               "BloomChunk   "
+               "Entries      "
+               "Entry        "
+               "\n");
+
+    showStgWord64(sizeof(StgTVar),          temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(sizeof(StgStmMutArrPtrs), temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+
+    showStgWord64(sizeof(StgTRecHeader),   temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(sizeof(StgHTRecHeader),  temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+
+    showStgWord64(sizeof(StgTRecChunk),    temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(TREC_CHUNK_NUM_ENTRIES,  temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(sizeof(TRecEntry),       temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+
+    showStgWord64(sizeof(StgTArrayRecChunk),    temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(TARRAY_REC_CHUNK_NUM_ENTRIES, temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(sizeof(TArrayRecEntry),       temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+
+    showStgWord64(sizeof(StgBloomWakeupChunk),    temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(BLOOM_WAKEUP_CHUNK_NUM_ENTRIES, temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+    showStgWord64(sizeof(BloomWakeupEntry),       temp, rtsTrue/*commas*/); statsPrintf("%14s ", temp);
+
+    debugBelch("\n");
 }
 
 void initSTMStats(Capability* cap)
@@ -1006,7 +1062,9 @@ stat_exit (void)
                     "  HLE-fail       "
                     "  HLE-fallback   "
                     "  HLE-commit     "
-                    "  HLE-release\n");
+                    "  HLE-release    "
+                    "  Unaligned arr  "
+                    "  access    arr\n");
 
         while (node != NULL)
         {
@@ -1022,6 +1080,8 @@ stat_exit (void)
         debugBelch("    "); 
         printHTMStats(&total);
         debugBelch("\n");
+
+        printTMSizes();
     }
 }
 

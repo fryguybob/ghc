@@ -455,6 +455,7 @@ push( StgClosure *c, retainer c_child_r, StgClosure **first_child )
     case CONSTR_0_1:
     case CONSTR_0_2:
     case ARR_WORDS:
+    case PADDING:
 	*first_child = NULL;
 	return;
 

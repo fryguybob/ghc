@@ -623,6 +623,10 @@ scavenge_block (bdescr *bd)
 	p += arr_words_sizeW((StgArrWords *)p);
 	break;
 
+    case PADDING:
+    p += 1;
+    break;
+
     case MUT_ARR_PTRS_CLEAN:
     case MUT_ARR_PTRS_DIRTY:
     {
@@ -1064,6 +1068,7 @@ scavenge_mark_stack(void)
         }
 
 	case ARR_WORDS:
+    case PADDING:
 	    break;
 
 	case THUNK_SELECTOR:
@@ -1472,6 +1477,7 @@ scavenge_one(StgPtr p)
 	break;
 
     case ARR_WORDS:
+    case PADDING:
 	// nothing to follow 
 	break;
 

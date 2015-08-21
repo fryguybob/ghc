@@ -52,6 +52,9 @@ typedef struct stm_stats_
     nat hle_fallback;  /* HLE gave up */
     nat hle_commit;    /* HLE success */
     nat hle_release;   /* Full STM fallback released lock */
+
+    nat htm_array_unaligned; /* Count TArray's that are commited unaligned */
+    nat htm_array_accesses;  /* Count TArray accesses that are commited */
 } stm_stats;
 
 typedef struct stm_stats_node_

@@ -507,7 +507,7 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
 
 static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
   StgTRecChunk *result;
-  result = (StgTRecChunk *)allocate(cap, sizeofW(StgTRecChunk));
+  result = (StgTRecChunk *)allocateCacheAligned(cap, sizeofW(StgTRecChunk));
   SET_HDR (result, &stg_TREC_CHUNK_info, CCS_SYSTEM);
   result -> prev_chunk = END_STM_CHUNK_LIST;
   result -> next_entry_idx = 0;
@@ -516,7 +516,7 @@ static StgTRecChunk *new_stg_trec_chunk(Capability *cap) {
 
 static StgTArrayRecChunk *new_stg_tarray_rec_chunk(Capability *cap) {
   StgTArrayRecChunk *result;
-  result = (StgTArrayRecChunk *)allocate(cap, sizeofW(StgTArrayRecChunk));
+  result = (StgTArrayRecChunk *)allocateCacheAligned(cap, sizeofW(StgTArrayRecChunk));
   SET_HDR (result, &stg_TARRAY_REC_CHUNK_info, CCS_SYSTEM);
   result -> prev_chunk = END_STM_ARRAY_CHUNK_LIST;
   result -> next_entry_idx = 0;
@@ -526,7 +526,7 @@ static StgTArrayRecChunk *new_stg_tarray_rec_chunk(Capability *cap) {
 static StgTRecHeader *new_stg_trec_header(Capability *cap,
                                           StgTRecHeader *enclosing_trec) {
   StgTRecHeader *result;
-  result = (StgTRecHeader *) allocate(cap, sizeofW(StgTRecHeader));
+  result = (StgTRecHeader *)allocateCacheAligned(cap, sizeofW(StgTRecHeader));
   SET_HDR (result, &stg_TREC_HEADER_info, CCS_SYSTEM);
 
   result -> enclosing_trec = enclosing_trec;
@@ -548,7 +548,7 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
 #if defined(THREADED_RTS)
 static StgHTRecHeader *new_stg_htrec_header(Capability *cap) {
   StgHTRecHeader *result;
-  result = (StgHTRecHeader *) allocate(cap, sizeofW(StgHTRecHeader));
+  result = (StgHTRecHeader *) allocateCacheAligned(cap, sizeofW(StgHTRecHeader));
   SET_HDR (result, &stg_HTREC_HEADER_info, CCS_SYSTEM);
 
   result -> enclosing_trec = (StgHTRecHeader*)NO_TREC;
@@ -854,7 +854,7 @@ StgBloomWakeupChunk *smp_bloomWakeupList = END_BLOOM_WAKEUP_CHUNK_LIST;
 
 static StgBloomWakeupChunk *new_stg_bloom_wakeup_chunk(Capability *cap) {
   StgBloomWakeupChunk *result;
-  result = (StgBloomWakeupChunk *)allocate(cap, sizeofW(StgBloomWakeupChunk));
+  result = (StgBloomWakeupChunk *)allocateCacheAligned(cap, sizeofW(StgBloomWakeupChunk));
   SET_HDR (result, &stg_BLOOM_WAKEUP_CHUNK_info, CCS_SYSTEM);
   result -> prev_chunk = END_BLOOM_WAKEUP_CHUNK_LIST;
   result -> next_entry_idx = 0;
@@ -2021,6 +2021,9 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
             dirty_TARRAY(cap, e -> tarray);
         }
         unpark_waiters_on(cap, bloom_add_array(0, e -> tarray -> hash_id, e -> index));
+        if ((((StgWord)e->tarray) & 0x3f) != 0)
+            cap->stm_stats->htm_array_unaligned++;
+        cap->stm_stats->htm_array_accesses++;
       }
     });
 
@@ -2413,7 +2416,7 @@ static StgWord read_array_current_value_word(StgTRecHeader *trec STG_UNUSED,
 StgClosure *stmReadTVar(Capability *cap,
                         StgTRecHeader *trec, 
 			StgTVar *tvar) {
-
+/* This code is at the CMM level
 #if defined(THREADED_RTS)
   // Record the write set for later wakeups.
   if (XTEST()) {
@@ -2422,7 +2425,7 @@ StgClosure *stmReadTVar(Capability *cap,
     return tvar -> current_value;
   }
 #endif
-
+*/
 
   StgTRecHeader *entry_in = NULL;
   StgClosure *result = NULL;
@@ -2466,7 +2469,7 @@ void stmWriteTVar(Capability *cap,
                   StgTRecHeader *trec,
 		  StgTVar *tvar, 
 		  StgClosure *new_value) {
-
+/*
 #if defined(THREADED_RTS)
   // Record the write set for later wakeups.
   if (XTEST()) {
@@ -2477,7 +2480,7 @@ void stmWriteTVar(Capability *cap,
     return;
   }
 #endif
-
+*/
   StgTRecHeader *entry_in = NULL;
   TRecEntry *entry = NULL;
   TRACE("%p : stmWriteTVar(%p, %p)", trec, tvar, new_value);
@@ -2516,7 +2519,7 @@ StgClosure *stmReadTArray(Capability *cap,
                         StgTRecHeader *trec, 
                         StgTArray *tarray,
                         StgHalfWord index) {
-
+/* This code is in the CMM level now
 #if defined(THREADED_RTS)
   // Record the write set for later wakeups.
   if (XTEST()) {
@@ -2526,7 +2529,7 @@ StgClosure *stmReadTArray(Capability *cap,
     return tarray -> payload[index];
   }
 #endif
-
+*/
 
   StgTRecHeader *entry_in = NULL;
   StgClosure *result = NULL;
@@ -2577,7 +2580,7 @@ void stmWriteTArray(Capability *cap,
                     StgTArray *tarray,
                     StgHalfWord index,
                     StgClosure *new_value) {
-
+/* This code is in the CMM level now
 #if defined(THREADED_RTS)
   // Record the write set for later wakeups.
   if (XTEST()) {
@@ -2589,6 +2592,7 @@ void stmWriteTArray(Capability *cap,
     return;
   }
 #endif
+*/
 
   StgTRecHeader *entry_in = NULL;
   TArrayRecEntry *entry = NULL;
@@ -2630,7 +2634,7 @@ StgWord stmReadTArrayWord(Capability *cap,
                           StgTRecHeader *trec, 
                           StgTArray *tarray,
                           StgHalfWord index) {
-
+/* This code is in the CMM level
 #if defined(THREADED_RTS)
   // Record the write set for later wakeups.
   if (XTEST()) {
@@ -2640,7 +2644,7 @@ StgWord stmReadTArrayWord(Capability *cap,
     return (StgWord)(tarray -> payload[tarray -> ptrs + index]);
   }
 #endif
-
+*/
 
   StgTRecHeader *entry_in = NULL;
   StgWord result = 0;
@@ -2689,7 +2693,7 @@ void stmWriteTArrayWord(Capability *cap,
                         StgTArray *tarray,
                         StgHalfWord index,
                         StgWord new_value) {
-
+/* This code is in the CMM level
 #if defined(THREADED_RTS)
   // Record the write set for later wakeups.
   if (XTEST()) {
@@ -2702,6 +2706,7 @@ void stmWriteTArrayWord(Capability *cap,
     return;
   }
 #endif
+*/
 
   StgTRecHeader *entry_in = NULL;
   TArrayRecEntry *entry = NULL;

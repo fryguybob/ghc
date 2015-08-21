@@ -214,7 +214,7 @@ shouldInlinePrimOp dflags FreezeSmallArrayOp [src, src_off, (CmmLit (CmmInt n _)
 shouldInlinePrimOp dflags ThawSmallArrayOp [src, src_off, (CmmLit (CmmInt n _))]
   | wordsToBytes dflags (fromInteger n) <= maxInlineAllocSize dflags =
       Just $ \ [res] -> emitCloneSmallArray mkSMAP_DIRTY_infoLabel res src src_off (fromInteger n)
-
+{-
 shouldInlinePrimOp dflags NewSTMArrayOp [ (CmmLit (CmmInt ptrs _))
                                         , (CmmLit (CmmInt words _)), init]
   | wordsToBytes dflags (fromInteger (ptrs+words)) <= maxInlineAllocSize dflags =
@@ -238,7 +238,7 @@ shouldInlinePrimOp dflags NewSTMArrayOp [ (CmmLit (CmmInt ptrs _))
       emit (mkComment $ mkFastString "NewSTMArray record hash")
       emitStore (cmmOffsetW dflags base offset) base
       emit (mkComment $ mkFastString "NewSTMArray done")
-
+ -}
 shouldInlinePrimOp dflags primop args
   | primOpOutOfLine primop = Nothing
   | otherwise = Just $ \ regs -> emitPrimOp dflags regs primop args
