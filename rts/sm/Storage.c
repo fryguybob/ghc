@@ -668,6 +668,8 @@ move_STACK (StgStack *src, StgStack *dest)
    It may add some dead objects to the heap to get the desired alignment.
    -------------------------------------------------------------------------- */
 
+StgPtr allocateCacheAligned (Capability *cap, W_ n) { return allocate(cap,n); }
+#if 0
 // TODO: assumes 64-byte cache line (log2 (64 bytes) = 6) and 
 // 64-bit word (log2 (8 bytes/word) = 3)
 #define CACHE_PAD(m,t,n,bd) \
@@ -775,6 +777,7 @@ StgPtr allocateCacheAligned (Capability *cap, W_ n)
     return p;
 
 }
+#endif 
 
 /* -----------------------------------------------------------------------------
    StgPtr allocate (Capability *cap, W_ n)

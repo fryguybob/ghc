@@ -349,11 +349,7 @@ typedef struct StgTRecChunk_ {
 
 typedef struct {
   StgStmMutArrPtrs          *tarray;
-  // TODO: we sould evaluate if it is better to store word accesses
-  // in a separate structure from pointer accesses to avoid some
-  // branches on word_access in the GC and elsewhere.
-  StgHalfWord                word_access;
-  StgHalfWord                index;
+  StgWord                    offset;
   union {
     StgClosure                *ptr;
     StgWord                    word;
@@ -364,7 +360,9 @@ typedef struct {
   } new_value;
 } TArrayRecEntry;
 
-#define TARRAY_REC_CHUNK_NUM_ENTRIES 15
+//#define TARRAY_REC_CHUNK_NUM_ENTRIES 15
+//#define TARRAY_REC_CHUNK_NUM_ENTRIES 20
+#define TARRAY_REC_CHUNK_NUM_ENTRIES 4
 
 typedef struct StgTArrayRecChunk_ {
   StgHeader                  header;

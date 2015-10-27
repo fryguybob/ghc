@@ -231,12 +231,11 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   StgTArray *s;
   StgClosure *result;
   s = e -> tarray;
-  TRACE("%p : cond_lock_tarray(%p, access %d, %p)", trec, s
-       , e -> word_access, e -> expected_value.ptr);
+  TRACE("%p : cond_lock_tarray(%p, offset %d, %p)", trec, s
+       , e -> offset, e -> expected_value.ptr);
   // No other threads can be committing, so we simply check that the expected
   // value holds.
-  StgWord off = e -> word_access * s -> ptrs + e -> index;
-  result = s -> payload[off];
+  result = s -> payload[e -> offset];
   TRACE("%p : %s", trec, (result == e -> expected_value.ptr) ? "success" : "failure");
   return (result == e -> expected_value.ptr);
 }
@@ -359,12 +358,11 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   StgTArray *s;
   StgClosure *result;
   s = e -> tarray;
-  TRACE("%p : cond_lock_tarray(%p, access %d, %p)", trec, s
-       , e -> word_access, e -> expected_value.ptr);
+  TRACE("%p : cond_lock_tarray(%p, offset %d, %p)", trec, s
+       , e -> offset, e -> expected_value.ptr);
   // No other threads can be committing, so we simply check that the expected
   // value holds.
-  StgWord off = e -> word_access * s -> ptrs + e -> index;
-  result = s -> payload[off];
+  result = s -> payload[e -> offset];
   TRACE("%p : %s", trec, (result == e -> expected_value.ptr) ? "success" : "failure");
   return (result == e -> expected_value.ptr);
 }
@@ -449,8 +447,8 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   StgTArray *s;
   StgClosure *result;
   s = e -> tarray;
-  TRACE("%p : cond_lock_tarray(%p, access %d, %p)", trec, s
-       , e -> word_access, e -> expected_value.ptr);
+  TRACE("%p : cond_lock_tarray(%p, offset %d, %p)", trec, s
+       , e -> offest, e -> expected_value.ptr);
   // Two things need to hold to conditionally lock an array:
   //
   //    1.  The value must match the expected value.
@@ -468,8 +466,7 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   if (w == (StgWord)trec)  { // Lock is already held, increment count.
     s -> lock_count = s -> lock_count + 1;
 
-    StgWord off = e -> word_access * s -> ptrs + e -> index;
-    result = s -> payload[off];
+    result = s -> payload[e -> offset];
     TRACE("%p : %s", trec, (result == e -> expected_value.ptr) ? "success" : "failure");
     // Don't release the lock if already held
     return (result == e -> expected_value.ptr);
@@ -478,8 +475,7 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   // Try to get the lock:
   w = cas((void *)&(s -> lock), 0, (StgWord)trec);
   if (w == 0) { // we got the lock
-    StgWord off = e -> word_access * s -> ptrs + e -> index;
-    result = s -> payload[off];
+    result = s -> payload[e -> offset];
     if (result == e -> expected_value.ptr) {
       TRACE("%p : %s", trec, "success");
       // Hold the lock.
@@ -1085,7 +1081,7 @@ static StgBloom bloom_readset(StgTRecHeader* trec)
     });
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
-        filter = bloom_add_array(filter, e -> tarray -> hash_id, e -> index);
+        filter = bloom_add_array(filter, e -> tarray -> hash_id, e -> offset);
     });
 
     return filter;
@@ -1198,8 +1194,7 @@ static void merge_array_update_into(Capability *cap,
   found = FALSE;
   FOR_EACH_ARRAY_ENTRY(t, e, {
     if (e -> tarray      == entry -> tarray
-     && e -> index       == entry -> index
-     && e -> word_access == entry -> word_access) {
+     && e -> offset      == entry -> offset) {
       found = TRUE;
       if (e -> expected_value.ptr != entry -> expected_value.ptr) {
         // Must abort if the two entries start from different values
@@ -1217,8 +1212,7 @@ static void merge_array_update_into(Capability *cap,
     TArrayRecEntry *ne;
     ne = get_new_array_entry(cap, t);
     ne -> tarray             = entry -> tarray;
-    ne -> index              = entry -> index;
-    ne -> word_access        = entry -> word_access;
+    ne -> offset             = entry -> offset;
     ne -> expected_value.ptr = entry -> expected_value.ptr;
     ne -> new_value.ptr      = entry -> new_value.ptr;
   }
@@ -1295,8 +1289,7 @@ static void merge_array_read_into(Capability *cap,
   {
     FOR_EACH_ARRAY_ENTRY(t, e, {
       if ( e -> tarray      == entry -> tarray
-        && e -> index       == entry -> index
-        && e -> word_access == entry -> word_access) {
+        && e -> offset      == entry -> offset) {
         found = TRUE;
         if (e -> expected_value.ptr != entry -> expected_value.ptr) {
             // Must abort if the two entries start from different values
@@ -1314,8 +1307,7 @@ static void merge_array_read_into(Capability *cap,
     TArrayRecEntry *ne;
     ne = get_new_array_entry(cap, t);
     ne -> tarray             = entry -> tarray;
-    ne -> index              = entry -> index;
-    ne -> word_access        = entry -> word_access;
+    ne -> offset             = entry -> offset;
     ne -> expected_value.ptr = entry -> expected_value.ptr;
     ne -> new_value.ptr      = entry -> expected_value.ptr; // merging the read!
   }
@@ -1443,10 +1435,8 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
     FOR_EACH_ARRAY_ENTRY(trec, e, {
       StgTArray *s;
       s = e -> tarray;
-      // Equality is same on .ptr as .word.  Avoid the branch by 
-      // Multiplying word_access, 1 is word access, 0 is ptr access.
-      StgWord off = e -> word_access * s -> ptrs + e -> index;
-      if (s -> payload[off] != e -> expected_value.ptr)
+      // Equality is same on .ptr as .word.
+      if (s -> payload[e -> offset] != e -> expected_value.ptr)
         return FALSE;
     });
     return TRUE;
@@ -1492,8 +1482,7 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
           StgTArray *s;
           s = e -> tarray;
           TRACE("%p : will need to check %p", trec, s);
-          StgWord off = e -> word_access * s -> ptrs + e -> index;
-          if (s -> payload[off] != e -> expected_value.ptr) {
+          if (s -> payload[e -> offset] != e -> expected_value.ptr) {
             TRACE("%p : doesn't match", trec);
             result = FALSE;
             BREAK_FOR_EACH;
@@ -1559,8 +1548,7 @@ static StgBool check_read_only(StgTRecHeader *trec STG_UNUSED) {
         // locked by another transaction that is committing but has not yet
         // incremented `num_updates` (See #7815).  This means `num_updates`
         // does not achieve the desired optimization, so we have removed it.
-        StgWord off = e -> word_access * s -> ptrs + e -> index;
-        if (s -> payload[off] != e -> expected_value.ptr) {
+        if (s -> payload[e -> offset] != e -> expected_value.ptr) {
           TRACE("%p : mismatch", trec);
           result = FALSE;
           cap->stm_stats->validate_fail++;
@@ -1865,9 +1853,11 @@ static TArrayRecEntry *get_array_entry_for(StgTRecHeader *trec, StgTArray *tarra
   TRACE("%p : get_array_entry_for TVar %p[%d]", trec, tarray, index);
   ASSERT(trec != NO_TREC);
 
+  StgWord offset = access * tarray -> ptrs + index;
+
   do {
     FOR_EACH_ARRAY_ENTRY(trec, e, {
-      if (e -> tarray == tarray && e -> word_access == access && e -> index == index) {
+      if (e -> tarray == tarray && e -> offset == offset) {
         result = e;
         if (in != NULL) {
           *in = trec;
@@ -1988,14 +1978,12 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
     FOR_EACH_ARRAY_ENTRY(trec, e, {
       StgTArray *s;
       s = e -> tarray;
-      // Equality is same on .ptr as .word.  Avoid the branch by 
-      // Multiplying word_access, 1 is word access, 0 is ptr access.
-      StgWord off = e -> word_access * s -> ptrs + e -> index;
-      if (s -> payload[off] != e -> expected_value.ptr)
+      // Equality is same on .ptr as .word.
+      if (s -> payload[e -> offset] != e -> expected_value.ptr)
         XABORT(ABORT_STM_INCONSISTENT);
 
       if (e -> expected_value.ptr != e -> new_value.ptr)
-        s -> payload[off] = e -> new_value.ptr;
+        s -> payload[e -> offset] = e -> new_value.ptr;
     });
 
 
@@ -2016,11 +2004,11 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
      if (e -> expected_value.ptr != e -> new_value.ptr) {
-        if (!e -> word_access)
+        if (e -> offset < e -> tarray -> ptrs) // If this is a ptr access
         {
             dirty_TARRAY(cap, e -> tarray);
         }
-        unpark_waiters_on(cap, bloom_add_array(0, e -> tarray -> hash_id, e -> index));
+        unpark_waiters_on(cap, bloom_add_array(0, e -> tarray -> hash_id, e -> offset));
         if ((((StgWord)e->tarray) & 0x3f) != 0)
             cap->stm_stats->htm_array_unaligned++;
         cap->stm_stats->htm_array_accesses++;
@@ -2126,11 +2114,10 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           // write the value back to the TVar, unlocking it if necessary.
 
           ACQ_ASSERT(tarray_is_locked(s, trec));
-          TRACE("%p : writing %p to %p[%d], waking waiters", trec, e -> new_value.ptr, s, e -> index);
-          unpark_waiters_on(cap, bloom_add_array(0, s -> hash_id, e -> index));
+          TRACE("%p : writing %p to %p[%d], waking waiters", trec, e -> new_value.ptr, s, e -> offset);
+          unpark_waiters_on(cap, bloom_add_array(0, s -> hash_id, e -> offset));
           // Perform write
-          StgWord off = e -> word_access * s -> ptrs + e -> index;
-          s -> payload[off] = e -> new_value.ptr;
+          s -> payload[e -> offset] = e -> new_value.ptr;
           unlock_tarray(cap, trec, s, TRUE); // May still be locked but with decremented counter.
         }
       });
@@ -2550,8 +2537,7 @@ StgClosure *stmReadTArray(Capability *cap,
       TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
       TRACE("%p : stmReadTArray copied from %p", trec, entry_in);
       new_entry -> tarray = tarray;
-      new_entry -> word_access = 0;
-      new_entry -> index = index;
+      new_entry -> offset = index;
       new_entry -> expected_value.ptr = entry -> expected_value.ptr;
       new_entry -> new_value.ptr = entry -> new_value.ptr;
       result = new_entry -> new_value.ptr;
@@ -2562,8 +2548,7 @@ StgClosure *stmReadTArray(Capability *cap,
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
     TRACE("%p : stmReadTArray new entry with value %p", trec, current_value);
     new_entry -> tarray = tarray;
-    new_entry -> word_access = 0;
-    new_entry -> index = index;
+    new_entry -> offset = index;
     new_entry -> expected_value.ptr = current_value;
     new_entry -> new_value.ptr = current_value;
     result = current_value;
@@ -2611,8 +2596,7 @@ void stmWriteTArray(Capability *cap,
       // Entry found in another trec
       TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
       new_entry -> tarray = tarray;
-      new_entry -> word_access = 0;
-      new_entry -> index = index;
+      new_entry -> offset = index;
       new_entry -> expected_value.ptr = entry -> expected_value.ptr;
       new_entry -> new_value.ptr = new_value;
     } 
@@ -2621,8 +2605,7 @@ void stmWriteTArray(Capability *cap,
     StgClosure *current_value = read_array_current_value(trec, tarray, index);
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
     new_entry -> tarray = tarray;
-    new_entry -> word_access = 0;
-    new_entry -> index = index;
+    new_entry -> offset = index;
     new_entry -> expected_value.ptr = current_value;
     new_entry -> new_value.ptr = new_value;
   }
@@ -2664,9 +2647,8 @@ StgWord stmReadTArrayWord(Capability *cap,
       // Entry found in another trec
       TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
       new_entry -> tarray = tarray;
-      new_entry -> word_access = 1;
-      new_entry -> index = index;
-      new_entry -> expected_value.word = entry -> expected_value.word;
+      new_entry -> offset = tarray -> ptrs + index;
+     new_entry -> expected_value.word = entry -> expected_value.word;
       new_entry -> new_value.word = entry -> new_value.word;
       result = new_entry -> new_value.word;
     } 
@@ -2675,8 +2657,7 @@ StgWord stmReadTArrayWord(Capability *cap,
     StgWord current_value = read_array_current_value_word(trec, tarray, index);
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
     new_entry -> tarray = tarray;
-    new_entry -> word_access = 1;
-    new_entry -> index = index;
+    new_entry -> offset = tarray -> ptrs + index;
     new_entry -> expected_value.word = current_value;
     new_entry -> new_value.word = current_value;
     result = current_value;
@@ -2725,8 +2706,7 @@ void stmWriteTArrayWord(Capability *cap,
       // Entry found in another trec
       TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
       new_entry -> tarray = tarray;
-      new_entry -> word_access = 1;
-      new_entry -> index = index;
+      new_entry -> offset = tarray -> ptrs + index;
       new_entry -> expected_value.word = entry -> expected_value.word;
       new_entry -> new_value.word = new_value;
     } 
@@ -2735,8 +2715,7 @@ void stmWriteTArrayWord(Capability *cap,
     StgWord current_value = read_array_current_value_word(trec, tarray, index);
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
     new_entry -> tarray = tarray;
-    new_entry -> word_access = 1;
-    new_entry -> index = index;
+    new_entry -> offset = tarray -> ptrs + index;
     new_entry -> expected_value.word = current_value;
     new_entry -> new_value.word = new_value;
   }
