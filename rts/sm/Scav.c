@@ -807,7 +807,7 @@ scavenge_block (bdescr *bd)
         evacuate((StgClosure **)&tc->prev_chunk);
         for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
           evacuate((StgClosure **)&e->tarray);
-          if (!e->word_access) {
+          if (e->offset < e->tarray->ptrs) {
             evacuate((StgClosure **)&e->expected_value.ptr);
             evacuate((StgClosure **)&e->new_value.ptr);
           }
@@ -1277,7 +1277,7 @@ scavenge_mark_stack(void)
         evacuate((StgClosure **)&tc->prev_chunk);
         for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
           evacuate((StgClosure **)&e->tarray);
-          if (!e->word_access) {
+          if (e->offset < e->tarray->ptrs) {
             evacuate((StgClosure **)&e->expected_value.ptr);
             evacuate((StgClosure **)&e->new_value.ptr);
           }
@@ -1660,7 +1660,7 @@ scavenge_one(StgPtr p)
         evacuate((StgClosure **)&tc->prev_chunk);
         for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
           evacuate((StgClosure **)&e->tarray);
-          if (!e->word_access) {
+          if (e->offset < e->tarray->ptrs) {
             evacuate((StgClosure **)&e->expected_value.ptr);
             evacuate((StgClosure **)&e->new_value.ptr);
           }

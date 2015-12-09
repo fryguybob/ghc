@@ -85,6 +85,7 @@ import LeaveCriticalSection;
 stg_gc_noregs
 {
     W_ ret;
+    W_ htm;
 
     DEBUG_ONLY(foreign "C" heapCheckFail());
     if (Hp > HpLim) {
@@ -99,6 +100,13 @@ stg_gc_noregs
             CLOSE_NURSERY();
             CurrentNursery = bdescr_link(CurrentNursery);
             OPEN_NURSERY();
+
+            // If we are in a hardware transaction get back to work!
+            (htm) = prim %xtest();
+            if (htm != 0) {
+                jump %ENTRY_CODE(Sp(0)) [];
+            }
+
             if (Capability_context_switch(MyCapability()) != 0 :: CInt ||
                 Capability_interrupt(MyCapability())      != 0 :: CInt) {
                 ret = ThreadYielding;
