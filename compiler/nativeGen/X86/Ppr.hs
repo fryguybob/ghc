@@ -577,6 +577,14 @@ pprInstr (XOR FF32 src dst) = pprOpOp (sLit "xorps") FF32 src dst
 pprInstr (XOR FF64 src dst) = pprOpOp (sLit "xorpd") FF64 src dst
 pprInstr (XOR size src dst) = pprSizeOpOp (sLit "xor")  size src dst
 
+pprInstr (POPCNT size src@(OpReg srcReg) dst)
+  | srcReg == dst = pprOpOp (sLit "popcnt") size src dstOp
+  | otherwise = vcat
+        [ pprInstr (XOR size dstOp dstOp) -- Break false-dependency on dst register
+        , pprOpOp (sLit "popcnt") size src dstOp
+        ]
+  where
+    dstOp = OpReg dst
 pprInstr (POPCNT size src dst) = pprOpOp (sLit "popcnt") size src (OpReg dst)
 
 pprInstr (PREFETCH NTA size src ) =  pprSizeOp_ (sLit "prefetchnta") size src
