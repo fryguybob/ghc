@@ -948,6 +948,7 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
         P_ new_trec;
         ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr",
                                                            outer "ptr");
+        StgTRecHeader_HpStart(new_trec) = Hp;
         StgTSO_trec(CurrentTSO) = new_trec;
         if (running_alt_code != 0) {
             jump stg_ap_v_fast
@@ -990,6 +991,7 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
 
     trec   = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
+    StgTRecHeader_HpEnd(trec) = Hp;
 
     /* Back at the atomically frame */
     frame_result = result;
@@ -1004,6 +1006,7 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
         /* Transaction was not valid: try again */
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
                                                  NO_TREC "ptr");
+        StgTRecHeader_HpStart(trec) = Hp;
         StgTSO_trec(CurrentTSO) = trec;
 
         jump stg_ap_v_fast
@@ -1038,6 +1041,7 @@ INFO_TABLE_RET(stg_atomically_waiting_frame, ATOMICALLY_FRAME,
         /* Previous attempt is no longer valid: try again */
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", NO_TREC "ptr");
         StgTRecHeader_retrying(trec) = 1;
+        StgTRecHeader_HpStart(trec) = Hp;
         StgTSO_trec(CurrentTSO) = trec;
 
         // change the frame header to stg_atomically_frame_info
@@ -1079,6 +1083,9 @@ INFO_TABLE_RET(stg_catch_stm_frame, CATCH_STM_FRAME,
         /* Commit failed */
         W_ new_trec;
         ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+
+        StgTRecHeader_HpStart(new_trec) = Hp;
+
         StgTSO_trec(CurrentTSO) = new_trec;
 
         jump stg_ap_v_fast
@@ -1114,6 +1121,8 @@ stg_atomicallyzh (P_ stm)
     /* Start the memory transcation */
     ("ptr" new_trec) = ccall stmStartTransaction(MyCapability() "ptr", old_trec "ptr");
     StgTSO_trec(CurrentTSO) = new_trec;
+
+    StgTRecHeader_HpStart(new_trec) = Hp;
 
     jump stg_ap_v_fast
         (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_frame_info, CCCS, 0,
@@ -1271,6 +1280,7 @@ retry_pop_stack:
     } else {
         // Transaction was not valid: retry immediately
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+        StgTRecHeader_HpStart(trec) = Hp;
         StgTSO_trec(CurrentTSO) = trec;
         Sp = frame;
         R1 = StgAtomicallyFrame_code(frame);

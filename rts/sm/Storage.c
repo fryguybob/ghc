@@ -802,6 +802,9 @@ StgPtr allocate (Capability *cap, W_ n)
 
     TICK_ALLOC_HEAP_NOCTR(WDS(n));
     CCS_ALLOC(cap->r.rCCCS,n);
+#if defined(THREADED_RTS)
+    cap->stm_stats->alloc_snapshot += n*8;
+#endif
     
     if (n >= LARGE_OBJECT_THRESHOLD/sizeof(W_)) {
         // The largest number of words such that
