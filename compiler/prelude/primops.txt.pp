@@ -2071,14 +2071,6 @@ primop	ReadTVarOp "readTVar#" GenPrimOp
    out_of_line	= True
    has_side_effects = True
 
-primop ReadTVarSTMOp "readTVarSTM#" GenPrimOp
-       TVar# s a
-    -> State# s -> (# State# s, a #)
-   {Read contents of {\tt TVar\#}.  Result is not yet evaluated.}
-   with
-   out_of_line = True
-   has_side_effects = True
-
 primop ReadTVarIOOp "readTVarIO#" GenPrimOp
        TVar# s a
     -> State# s -> (# State# s, a #)
@@ -2094,15 +2086,6 @@ primop	WriteTVarOp "writeTVar#" GenPrimOp
    {Write contents of {\tt TVar\#}.}
    with
    out_of_line	    = True
-   has_side_effects = True
-
-primop WriteTVarSTMOp "writeTVarSTM#" GenPrimOp
-       TVar# s a
-    -> a
-    -> State# s -> State# s
-   {Write contents of {\tt TVar\#}.}
-   with
-   out_of_line     = True
    has_side_effects = True
 
 primop  SameTVarOp "sameTVar#" GenPrimOp
@@ -2133,38 +2116,6 @@ primop	ReadTArrayWordOp "readTArrayWord#" GenPrimOp
    has_side_effects = True
 
 primop	WriteTArrayWordOp "writeTArrayWord#" GenPrimOp
-    STMMutableArray# s a
-    -> Word# -> Word# -> State# s -> State# s
-   {Write contents of {\tt TArray\#}.}
-   with
-   out_of_line	= True
-   has_side_effects = True
-
-primop	ReadTArraySTMOp "readTArraySTM#" GenPrimOp
-    STMMutableArray# s a
-    -> Word# -> State# s -> (# State# s, a #)
-   {Read contents of {\tt TArray\#}.  Result is not yet evaluated.}
-   with
-   out_of_line	= True
-   has_side_effects = True
-
-primop	WriteTArraySTMOp "writeTArraySTM#" GenPrimOp
-    STMMutableArray# s a
-    -> Word# -> a -> State# s -> State# s
-   {Write contents of {\tt TArray\#}.  Result is not yet evaluated.}
-   with
-   out_of_line	= True
-   has_side_effects = True
-
-primop	ReadTArrayWordSTMOp "readTArrayWordSTM#" GenPrimOp
-    STMMutableArray# s a
-    -> Word# -> State# s -> (# State# s, Word# #)
-   {Read contents of {\tt TArray\#}.}
-   with
-   out_of_line	= True
-   has_side_effects = True
-
-primop	WriteTArrayWordSTMOp "writeTArrayWordSTM#" GenPrimOp
     STMMutableArray# s a
     -> Word# -> Word# -> State# s -> State# s
    {Write contents of {\tt TArray\#}.}

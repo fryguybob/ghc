@@ -430,10 +430,8 @@ RTS_FUN_DECL(stg_catchSTMzh);
 RTS_FUN_DECL(stg_atomicallyzh);
 RTS_FUN_DECL(stg_newTVarzh);
 RTS_FUN_DECL(stg_readTVarzh);
-RTS_FUN_DECL(stg_readTVarSTMzh);
 RTS_FUN_DECL(stg_readTVarIOzh);
 RTS_FUN_DECL(stg_writeTVarzh);
-RTS_FUN_DECL(stg_writeTVarSTMzh);
 RTS_FUN_DECL(stg_checkzh);
 
 RTS_FUN_DECL(stg_unpackClosurezh);
