@@ -896,7 +896,7 @@ pop( StgClosure **c, StgClosure **cp, retainer *r )
         if (field_no == 0) {
             *c = (StgClosure *)entry->tarray;
         } else if (field_no == 1) {
-            if (entry->word_access) {
+            if (entry->offset < entry->tarray->ptrs) {
                 *c = NULL;
                 popOff();
                 return;

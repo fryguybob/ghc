@@ -335,7 +335,7 @@ typedef struct {
   StgClosure                *new_value; 
 } TRecEntry;
 
-#define TREC_CHUNK_NUM_ENTRIES 16
+#define TREC_CHUNK_NUM_ENTRIES 15
 
 typedef struct StgTRecChunk_ {
   StgHeader                  header;
@@ -349,11 +349,7 @@ typedef struct StgTRecChunk_ {
 
 typedef struct {
   StgStmMutArrPtrs          *tarray;
-  // TODO: we sould evaluate if it is better to store word accesses
-  // in a separate structure from pointer accesses to avoid some
-  // branches on word_access in the GC and elsewhere.
-  StgHalfWord                word_access;
-  StgHalfWord                index;
+  StgWord                    offset;
   union {
     StgClosure                *ptr;
     StgWord                    word;
@@ -364,12 +360,13 @@ typedef struct {
   } new_value;
 } TArrayRecEntry;
 
-#define TARRAY_REC_CHUNK_NUM_ENTRIES 16
+#define TARRAY_REC_CHUNK_NUM_ENTRIES 4
 
 typedef struct StgTArrayRecChunk_ {
   StgHeader                  header;
   struct StgTArrayRecChunk_ *prev_chunk;
   StgWord                    next_entry_idx;
+  StgWord                    padding;
   TArrayRecEntry             entries[TARRAY_REC_CHUNK_NUM_ENTRIES];
 } StgTArrayRecChunk;
 
@@ -389,6 +386,7 @@ struct StgTRecHeader_ {
   StgTArrayRecChunk         *current_array_chunk;
   StgHalfWord                state;
   StgHalfWord                retrying;
+  StgWord                    padding[3];
 };
 
 struct StgHTRecHeader_ {
@@ -398,9 +396,10 @@ struct StgHTRecHeader_ {
   StgHalfWord                state;
   StgHalfWord                retrying;
   StgWord                    read_set;
+  StgWord                    padding[3];
 };
 
-#define BLOOM_WAKEUP_CHUNK_NUM_ENTRIES 7  // TODO: Roundup to a multiple of cacheline size
+#define BLOOM_WAKEUP_CHUNK_NUM_ENTRIES 6  // TODO: Roundup to a multiple of cacheline size
 
 typedef StgWord StgBloom;
 
@@ -414,6 +413,7 @@ typedef struct StgBloomWakeupChunk_
     StgHeader                    header;
     struct StgBloomWakeupChunk_ *prev_chunk;
     StgWord                      next_entry_idx;
+    StgWord                      padding;
     BloomWakeupEntry             filters[BLOOM_WAKEUP_CHUNK_NUM_ENTRIES];
 } StgBloomWakeupChunk;
 

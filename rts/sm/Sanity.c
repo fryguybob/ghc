@@ -430,10 +430,11 @@ checkClosure( StgClosure* p )
         StgTArrayRecChunk *tc = (StgTArrayRecChunk *)p;
         ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->prev_chunk));
         for (i = 0; i < tc -> next_entry_idx; i ++) {
-          ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->entries[i].tarray));
-          if (!tc->entries[i].word_access) {
-              ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->entries[i].expected_value.ptr));
-              ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->entries[i].new_value.ptr));
+          TArrayRecEntry* e = &tc->entries[i];
+          ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->tarray));
+          if (e->offset < e->tarray->ptrs) {
+              ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->expected_value.ptr));
+              ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->new_value.ptr));          
           }
         }
         return sizeofW(StgTArrayRecChunk);
