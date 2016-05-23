@@ -135,6 +135,8 @@ struct Capability_ {
     StgTArrayRecChunk *free_tarray_rec_chunks;
     StgTRecHeader     *free_trec_headers;
 
+    nat transaction_tokens;
+
     struct stm_stats_ *stm_stats;
 } // typedef Capability is defined in RtsAPI.h
   // We never want a Capability to overlap a cache line with anything

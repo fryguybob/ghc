@@ -401,6 +401,7 @@ wanteds = concat
           ,closureField Both "StgStmMutArrPtrs" "ptrs"
           ,closureField Both "StgStmMutArrPtrs" "words"
           ,closureField Both "StgStmMutArrPtrs" "hash_id"
+          ,closureField Both "StgStmMutArrPtrs" "num_updates"
           ,closureField Both "StgStmMutArrPtrs" "lock_count"
           ,closurePayload C  "StgStmMutArrPtrs" "payload"
 
@@ -481,6 +482,7 @@ wanteds = concat
           ,closureSize  C "StgTVar"
           ,closureField C "StgTVar" "current_value"
           ,closureField C "StgTVar" "hash_id"
+          ,closureField C "StgTVar" "num_updates"
 
           ,closureSize  C "StgWeak"
           ,closureField C "StgWeak" "link"

@@ -169,7 +169,8 @@ typedef struct{
     StgWord          words;
     StgWord          hash_id;
     volatile StgWord lock_count;
-    StgWord          padding[2]; // TODO: assumes 64-byte cacheline
+    volatile StgInt  num_updates;
+    StgWord          padding[1]; // TODO: assumes 64-byte cacheline
                                  // Fill out 64-bytes assuming the
                                  // struct is already aligned.
     StgClosure      *payload[FLEXIBLE_ARRAY];
@@ -326,21 +327,24 @@ typedef struct {
   StgHeader                  header;
   StgClosure                *volatile current_value;
   StgWord                    hash_id;
+  StgInt                     volatile num_updates;
 } StgTVar;
 
 /* new_value == expected_value for read-only accesses */
 typedef struct {
   StgTVar                   *tvar;
   StgClosure                *expected_value;
-  StgClosure                *new_value; 
+  StgClosure                *new_value;
+  StgInt                     num_updates;
 } TRecEntry;
 
-#define TREC_CHUNK_NUM_ENTRIES 15
+#define TREC_CHUNK_NUM_ENTRIES 11
 
 typedef struct StgTRecChunk_ {
   StgHeader                  header;
   struct StgTRecChunk_      *prev_chunk;
   StgWord                    next_entry_idx;
+  StgWord                    padding;
   TRecEntry                  entries[TREC_CHUNK_NUM_ENTRIES];
 } StgTRecChunk;
 
@@ -358,15 +362,15 @@ typedef struct {
     StgClosure                *ptr;
     StgWord                    word;
   } new_value;
+  StgInt                       num_updates;
 } TArrayRecEntry;
 
-#define TARRAY_REC_CHUNK_NUM_ENTRIES 4
+#define TARRAY_REC_CHUNK_NUM_ENTRIES 9
 
 typedef struct StgTArrayRecChunk_ {
   StgHeader                  header;
   struct StgTArrayRecChunk_ *prev_chunk;
   StgWord                    next_entry_idx;
-  StgWord                    padding;
   TArrayRecEntry             entries[TARRAY_REC_CHUNK_NUM_ENTRIES];
 } StgTArrayRecChunk;
 

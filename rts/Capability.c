@@ -279,6 +279,7 @@ initCapability( Capability *cap, nat i )
     cap->free_trec_chunks = END_STM_CHUNK_LIST;
     cap->free_tarray_rec_chunks = END_STM_ARRAY_CHUNK_LIST;
     cap->free_trec_headers = NO_TREC;
+    cap->transaction_tokens = 0;
     cap->context_switch = 0;
     cap->pinned_object_block = NULL;
     cap->pinned_object_blocks = NULL;

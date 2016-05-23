@@ -356,6 +356,7 @@ stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
     StgStmMutArrPtrs_words(arr) = n;
 
     StgStmMutArrPtrs_hash_id(arr) = arr;
+    StgStmMutArrPtrs_num_updates(arr) = 0;
 
     // Initialise all elements of the the array with the value in R2
     p = arr + SIZEOF_StgStmMutArrPtrs;
@@ -1290,6 +1291,7 @@ stg_newTVarzh (P_ init)
     (W_ w) = call stg_bloom_add(0,tv);
 
     StgTVar_hash_id(tv) = w;
+    StgTVar_num_updates(tv) = 0;
 
     return (tv);
 }

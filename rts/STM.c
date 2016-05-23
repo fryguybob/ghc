@@ -1393,6 +1393,14 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
             result = FALSE;
             BREAK_FOR_EACH;
           }
+          e -> num_updates = s -> num_updates;
+          if (s -> current_value != e -> expected_value) {
+            TRACE("%p : doesn't match (race)", trec);
+            result = FALSE;
+            BREAK_FOR_EACH;
+          } else {
+            TRACE("%p : need to check version %ld", trec, e -> num_updates);
+          }
         });
       }
     });
@@ -1415,6 +1423,14 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
             TRACE("%p : doesn't match", trec);
             result = FALSE;
             BREAK_FOR_EACH;
+          }
+          e -> num_updates = s -> num_updates;
+          if (s -> payload[e -> offset] != e -> expected_value.ptr) {
+            TRACE("%p : doesn't match (race)", trec);
+            result = FALSE;
+            BREAK_FOR_EACH;
+          } else {
+            TRACE("%p : need to check version %ld", trec, e -> num_updates);
           }
         });
       }
@@ -1452,13 +1468,15 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) 
       StgTVar *s;
       s = e -> tvar;
       if (entry_is_read_only(e)) {
-        TRACE("%p : check_read_only for TVar %p", trec, s);
+        TRACE("%p : check_read_only for TVar %p, saw %ld", trec, s, e -> num_updates);
         
         // Note we need both checks and in this order as the TVar could be
         // locked by another transaction that is committing but has not yet
-        // incremented `num_updates` (See #7815).  This means `num_updates`
-        // does not achieve the desired optimization, so we have removed it.
-        if (s -> current_value != e -> expected_value) {
+        // incremented `num_updates` (See #7815).  We need both checks as
+        // we might have observed a partial commit when executing, and a 
+        // matching partial commit in this read-only check.
+        if (s -> current_value != e -> expected_value ||
+            s -> num_updates != e -> num_updates) {
           TRACE("%p : mismatch", trec);
           result = FALSE;
           cap->stm_stats->validate_fail++;
@@ -1469,6 +1487,7 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) 
 
     // Check that all the read only entrys are not in locked arrays (now
     // that we have all of our write locks).
+    // TODO: we may not need this given num_updates.
     FOR_EACH_ARRAY_ENTRY(trec, e, {
       StgTArray *s;
       s = e -> tarray;
@@ -1488,13 +1507,14 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) 
       StgTArray *s;
       s = e -> tarray;
       if (array_entry_is_read_only(e)) {
-        TRACE("%p : check_read_only for TArray %p", trec, s);
+        TRACE("%p : check_read_only for TArray %p, saw %ld", trec, s, e -> num_updates);
         
         // Note we need both checks and in this order as the TVar could be
         // locked by another transaction that is committing but has not yet
         // incremented `num_updates` (See #7815).  This means `num_updates`
         // does not achieve the desired optimization, so we have removed it.
-        if (s -> payload[e -> offset] != e -> expected_value.ptr) {
+        if (s -> payload[e -> offset] != e -> expected_value.ptr ||
+            s -> num_updates != e -> num_updates) {
           TRACE("%p : mismatch", trec);
           result = FALSE;
           cap->stm_stats->validate_fail++;
@@ -1521,12 +1541,50 @@ void stmPreGCHook (Capability *cap) {
 
 /************************************************************************/
 
+// check_read_only relies on version numbers held in TVars' "num_updates"
+// fields not wrapping around while a transaction is committed.  The version
+// number is incremented each time an update is committed to the TVar
+// This is unlikely to wrap around when 32-bit integers are used for the counts,
+// but to ensure correctness we maintain a shared count on the maximum
+// number of commit operations that may occur and check that this has
+// not increased by more than 2^32 during a commit.
+
+#define TOKEN_BATCH_SIZE 1024
+
+static volatile StgInt64 max_commits = 0;
+
+#if defined(THREADED_RTS)
+static volatile StgWord token_locked = FALSE;
+
+static void getTokenBatch(Capability *cap) {
+  while (cas((void *)&token_locked, FALSE, TRUE) == TRUE) { /* nothing */ }
+  max_commits += TOKEN_BATCH_SIZE;
+  TRACE("%p : cap got token batch, max_commits=%" FMT_Int64, cap, max_commits);
+  cap -> transaction_tokens = TOKEN_BATCH_SIZE;
+  token_locked = FALSE;
+}
+
+static void getToken(Capability *cap) {
+  if (cap -> transaction_tokens == 0) {
+    getTokenBatch(cap);
+  }
+  cap -> transaction_tokens --;
+}
+#else
+static void getToken(Capability *cap STG_UNUSED) {
+  // Nothing
+}
+#endif
+
+
 /*......................................................................*/
 
 StgTRecHeader *stmStartTransaction(Capability *cap,
                                    StgTRecHeader *outer) {
   StgTRecHeader *t;
   TRACE("%p : stmStartTransaction", outer);
+
+  getToken(cap);
 
   if (outer == NO_TREC)
   {
@@ -1735,6 +1793,7 @@ static TArrayRecEntry *get_array_entry_for(StgTRecHeader *trec, StgTArray *tarra
 
 StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   int result;
+  StgInt64 max_commits_at_start = max_commits;
 
   TRACE("%p : stmCommitTransaction()", trec);
   ASSERT (trec != NO_TREC);
@@ -1773,8 +1832,10 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       if (s -> current_value != e -> expected_value) // Check consistency
         XABORT(ABORT_STM_INCONSISTENT);
       
-      if (e -> expected_value != e -> new_value)
+      if (e -> expected_value != e -> new_value) {
         s -> current_value = e -> new_value; // Perform writes
+        s -> num_updates ++;
+      }
     });
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
@@ -1788,8 +1849,13 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       if (s -> payload[e -> offset] != e -> expected_value.ptr)
         XABORT(ABORT_STM_INCONSISTENT);
 
-      if (e -> expected_value.ptr != e -> new_value.ptr)
+      if (e -> expected_value.ptr != e -> new_value.ptr) {
         s -> payload[e -> offset] = e -> new_value.ptr;
+        if (s -> lock_count != 0) {
+          s -> num_updates ++;
+          s -> lock_count = 1; // Avoid double update counting.
+        }
+      }
     });
 
     XEND(); // Commit hardware transaction.
@@ -1857,9 +1923,18 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
     ASSERT (trec -> state == TREC_ACTIVE);
 
     if (config_use_read_phase) {
+      StgInt64 max_commits_at_end;
+      StgInt64 max_concurrent_commits;
       TRACE("%p : doing read check", trec);
       result = check_read_only(cap, trec);
       TRACE("%p : read-check %s", trec, result ? "succeeded" : "failed");
+
+      max_commits_at_end = max_commits;
+      max_concurrent_commits = ((max_commits_at_end - max_commits_at_start) +
+                                (n_capabilities * TOKEN_BATCH_SIZE));
+      if (((max_concurrent_commits >> 32) > 0) || shake()) {
+        result = FALSE;
+      }
     }
     
     if (result) {
@@ -1883,6 +1958,9 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           ACQ_ASSERT(tvar_is_locked(s, trec));
           TRACE("%p : writing %p to %p, waking waiters", trec, e -> new_value, s);
           unpark_waiters_on(cap, s -> hash_id);
+          IF_STM_FG_LOCKS({
+            s -> num_updates ++;
+          });
           unlock_tvar(cap, trec, s, e -> new_value, TRUE);
         } 
         ACQ_ASSERT(!tvar_is_locked(s, trec));
@@ -1904,6 +1982,10 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           TRACE("%p : writing %p to %p[%d], waking waiters", trec, e -> new_value.ptr, s, e -> offset);
           unpark_waiters_on(cap, bloom_add_array(0, s -> hash_id, e -> offset));
           // Perform write
+          IF_STM_FG_LOCKS({
+            if (s -> lock_count == 0)
+                s -> num_updates ++;
+          });
           s -> payload[e -> offset] = e -> new_value.ptr;
           unlock_tarray(cap, trec, s, TRUE); // May still be locked but with decremented counter.
         }
