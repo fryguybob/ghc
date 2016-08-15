@@ -173,7 +173,7 @@ typedef struct{
     StgWord          padding[1]; // TODO: assumes 64-byte cacheline
                                  // Fill out 64-bytes assuming the
                                  // struct is already aligned.
-    StgClosure      *payload[FLEXIBLE_ARRAY];
+    volatile StgClosure *payload[FLEXIBLE_ARRAY];
 } StgStmMutArrPtrs;
 
 typedef struct {

@@ -1488,7 +1488,11 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) 
     // Check that all the read only entrys are not in locked arrays (now
     // that we have all of our write locks).
     // TODO: we may not need this given num_updates.
-    FOR_EACH_ARRAY_ENTRY(trec, e, {
+/* This doesn't work because a transaction may have TRec entries
+ * for a read-only access as well as other write entries.  The
+ * write entries will take the lock.
+ *
+ * FOR_EACH_ARRAY_ENTRY(trec, e, {
       StgTArray *s;
       s = e -> tarray;
       if (array_entry_is_read_only(e)) {
@@ -1501,7 +1505,7 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) 
           BREAK_FOR_EACH;
         }
       }
-    });
+    }); */
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
       StgTArray *s;
@@ -1511,10 +1515,10 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) 
         
         // Note we need both checks and in this order as the TVar could be
         // locked by another transaction that is committing but has not yet
-        // incremented `num_updates` (See #7815).  This means `num_updates`
-        // does not achieve the desired optimization, so we have removed it.
+        // incremented `num_updates` (See #7815).
         if (s -> payload[e -> offset] != e -> expected_value.ptr ||
-            s -> num_updates != e -> num_updates) {
+            s -> num_updates != e -> num_updates ||
+            (s -> lock != (StgWord)trec && s -> lock != 0)) {
           TRACE("%p : mismatch", trec);
           result = FALSE;
           cap->stm_stats->validate_fail++;
@@ -1853,6 +1857,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
         s -> payload[e -> offset] = e -> new_value.ptr;
         if (s -> lock_count != 0) {
           s -> num_updates ++;
+          // TODO: This line or the if does not make sense.
           s -> lock_count = 1; // Avoid double update counting.
         }
       }
@@ -1983,7 +1988,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           unpark_waiters_on(cap, bloom_add_array(0, s -> hash_id, e -> offset));
           // Perform write
           IF_STM_FG_LOCKS({
-            if (s -> lock_count == 0)
+   //         if (s -> lock_count == 0)  // TODO: don't we always need to update version???
                 s -> num_updates ++;
           });
           s -> payload[e -> offset] = e -> new_value.ptr;
