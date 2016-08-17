@@ -204,10 +204,9 @@ static void unlock_tvar(Capability *cap,
 }
 
 static void unlock_tarray(Capability *cap,
-                        StgTRecHeader *trec STG_UNUSED,
+                        StgWord num_updates STG_UNUSED,
                         StgTArray *s,
                         StgBool was_update) {
-  TRACE("%p : unlock_tarray(%p)", trec, s);
   if (was_update) {
       dirty_TARRAY(cap,s); // unlocking is due to a write.
   }
@@ -323,10 +322,9 @@ static void unlock_tvar(Capability *cap,
 }
 
 static void unlock_tarray(Capability *cap,
-                        StgTRecHeader *trec STG_UNUSED,
+                        StgWord num_updates STG_UNUSED,
                         StgTArray *s,
                         StgBool was_update) {
-  TRACE("%p : unlock_tarray(%p)", trec, s);
   if (was_update) {
       dirty_TARRAY(cap,s); // unlocking is due to a write.
   }
@@ -390,15 +388,14 @@ static StgBool array_is_locked(StgTArray *s, StgTRecHeader *trec)
 #endif
 
 static void unlock_tarray(Capability *cap,
-                        StgTRecHeader *trec STG_UNUSED,
+                        StgWord num_updates,
                         StgTArray *s,
                         StgBool was_update) {
-  TRACE("%p : unlock_tarray(%p)", trec, s);
-  ASSERT(array_is_locked(s, trec));
-
   if (s -> lock_count == 0) {
-    s -> lock = 0;
     if (was_update) {
+        // Unlock and bump the version number up from the one stashed
+        // when the lock was acquired.
+        s -> lock = num_updates + 2;
         // TODO: we might be able to do better here by removing the
         // dirty out of the unlock and only dirtying if we made an update
         // to a pointer.  I think this implies yet another structure
@@ -406,6 +403,11 @@ static void unlock_tarray(Capability *cap,
         // already writing to the same cacheline as the header, so
         // a lot would have to change to get this benefit.
         dirty_TARRAY(cap,s); // Assume the unlocking is due to a write.
+    }
+    else {
+        // Nothing was changed, so unlock by simply putting back the
+        // version number.
+        s -> lock = num_updates;
     }
   } else {
     s -> lock_count = s -> lock_count - 1;
@@ -442,11 +444,12 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   // the lock and return FALSE.  If we already have the lock, we return
   // FALSE, but retain the lock.
   
-  StgWord w;
+  StgWord w, old;
+  StgWord thisLock = ((StgWord)trec) | 1;
   // Check to see if we hold the lock already.
   w = (StgWord)s -> lock;
 
-  if (w == (StgWord)trec)  { // Lock is already held, increment count.
+  if (w == thisLock)  { // Lock is already held, increment count.
     s -> lock_count = s -> lock_count + 1;
 
     result = s -> payload[e -> offset];
@@ -455,26 +458,35 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
     return (result == e -> expected_value.ptr);
   }
 
-  // Try to get the lock:
-  w = cas((void *)&(s -> lock), 0, (StgWord)trec);
-  if (w == 0) { // we got the lock
+  // Odd values are locks.
+  if ((w & 1) != 0)
+    return FALSE; // Already locked.
+
+  // At this point we have observed a version w in the lock, try to acquire
+  // the lock at that version:
+  old = cas((void *)&(s -> lock), w, thisLock);
+  if (old == w) { // we got the lock
     result = s -> payload[e -> offset];
     if (result == e -> expected_value.ptr) {
       TRACE("%p : %s", trec, "success");
       // Hold the lock.
       s -> lock_count = 0;
+      e -> num_updates = w; // Store the version here for unlocking.
       return TRUE;
     } else {
       TRACE("%p : %s", trec, "failure");
-      // Release the lock.
-      s -> lock = 0;
+      // Release the lock.  We successfully acquired it, but validation failed, so
+      // restore the old version number to unlock.
+      s -> lock = old; 
       return FALSE;
     }
   }
 
-  // Some other thead held the lock.
-  // TODO: we could spin for some time here under the expectation that we will 
-  // be able to avoid a false conflict.
+  // Some other thead one the race and has the lock.
+  // TODO: Both threads could be giving up here meaning that we can livelock!
+  // The original OSTM when this sort of conflict is discovered, one of the threads will
+  // win and spin while the other thread releases locks.
+
   TRACE("%p : failed to acquire lock (%p)", trec, s);
   return FALSE; 
 }
@@ -1305,7 +1317,7 @@ static StgBool tvar_is_locked(StgTVar *s, StgTRecHeader *h) {
 }
 
 static StgBool tarray_is_locked(StgTArray *s, StgTRecHeader *h) {
-  return (s -> lock == (StgWord)h);
+  return (s -> lock == (((StgWord)h) | 1));
 }
 #endif
 
@@ -1334,8 +1346,9 @@ static void revert_ownership(Capability *cap STG_UNUSED,
       StgTArray *s;
       s = e -> tarray;
       if ( tarray_is_locked(s, trec) ) {
-        // release array lock
-        s -> lock = 0;
+        // release array lock by writing the old version number.  We store this
+        // when acquiring the lock.
+        s -> lock = e -> num_updates;
       }
     }
   });
@@ -1424,8 +1437,11 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
             result = FALSE;
             BREAK_FOR_EACH;
           }
-          e -> num_updates = s -> num_updates;
-          if (s -> payload[e -> offset] != e -> expected_value.ptr) {
+          e -> num_updates = s -> lock;
+          if (s -> payload[e -> offset] != e -> expected_value.ptr
+               || ((e -> num_updates & 1) != 0)) {
+            // If we we see the lock is taken or we don't get a consistent
+            // read of the value, then we have a conflict.
             TRACE("%p : doesn't match (race)", trec);
             result = FALSE;
             BREAK_FOR_EACH;
@@ -1459,8 +1475,9 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 // Keir Fraser's PhD dissertation "Practical lock-free programming" discuss
 // this kind of algorithm.
 
-static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) {
+static StgBool check_read_only(Capability* cap, StgTRecHeader *trec) {
   StgBool result = TRUE;
+  StgWord thisLock = ((StgWord)trec) | 1;
 
   ASSERT (config_use_read_phase);
   IF_STM_FG_LOCKS({
@@ -1513,12 +1530,9 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec STG_UNUSED) 
       if (array_entry_is_read_only(e)) {
         TRACE("%p : check_read_only for TArray %p, saw %ld", trec, s, e -> num_updates);
         
-        // Note we need both checks and in this order as the TVar could be
-        // locked by another transaction that is committing but has not yet
-        // incremented `num_updates` (See #7815).
-        if (s -> payload[e -> offset] != e -> expected_value.ptr ||
-            s -> num_updates != e -> num_updates ||
-            (s -> lock != (StgWord)trec && s -> lock != 0)) {
+        StgWord l = s -> lock;
+        if (s -> payload[e -> offset] != e -> expected_value.ptr
+            || ((l != e -> num_updates) && (l != thisLock))) {
           TRACE("%p : mismatch", trec);
           result = FALSE;
           cap->stm_stats->validate_fail++;
@@ -1846,7 +1860,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       StgTArray *s;
       s = e -> tarray;
       
-      if (s -> lock != 0)
+      if ((s -> lock & 1) != 0) // if is locked
         XABORT(ABORT_STM_INCONSISTENT);
 
       // Equality is same on .ptr as .word.
@@ -1855,11 +1869,13 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
       if (e -> expected_value.ptr != e -> new_value.ptr) {
         s -> payload[e -> offset] = e -> new_value.ptr;
-        if (s -> lock_count != 0) {
-          s -> num_updates ++;
-          // TODO: This line or the if does not make sense.
-          s -> lock_count = 1; // Avoid double update counting.
-        }
+        s -> lock = s -> lock + 2;  // increment version.
+        // There is little penalty to incrementing extra as we already have it in our
+        // cache, it is a conflict regardless and other mechenisms to track it would
+        // cost more.  No other transaction cares about the value except that it is
+        // different.  Overflow for ABA is not an issue with our 63-bit version number
+        // at least until we are running computations where an OS can block a thread for
+        // 60-years and we thing that is normal... or we have really fast processors.
       }
     });
 
@@ -1987,12 +2003,8 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           TRACE("%p : writing %p to %p[%d], waking waiters", trec, e -> new_value.ptr, s, e -> offset);
           unpark_waiters_on(cap, bloom_add_array(0, s -> hash_id, e -> offset));
           // Perform write
-          IF_STM_FG_LOCKS({
-   //         if (s -> lock_count == 0)  // TODO: don't we always need to update version???
-                s -> num_updates ++;
-          });
           s -> payload[e -> offset] = e -> new_value.ptr;
-          unlock_tarray(cap, trec, s, TRUE); // May still be locked but with decremented counter.
+          unlock_tarray(cap, e -> num_updates, s, TRUE); // May still be locked but with decremented counter.
         }
       });
 
@@ -2061,7 +2073,7 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
         // Merge each entry into the enclosing transaction record, release all
         // locks.
         if (array_entry_is_update(e)) {
-            unlock_tarray(cap, trec, e -> tarray, FALSE);
+            unlock_tarray(cap, e -> num_updates, e -> tarray, FALSE);
         }
         merge_array_update_into(cap, et, e);
       });

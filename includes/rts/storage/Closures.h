@@ -164,13 +164,18 @@ typedef struct {
 
 typedef struct{
     StgHeader        header;
+    // Where in the TVar structure we have conflated lock and value
+    // here we conflate lock and num_updates.  There are multiple
+    // values and word values so we can't do the same as TVars.  The
+    // scheme is, the least significant bit indicates locked status.
+    // When locked, the value (with the lock bit unset) points to the
+    // owning TRec.  Whe unlocked the value is a version number.
     volatile StgWord lock;
     StgWord          ptrs;
     StgWord          words;
     StgWord          hash_id;
     volatile StgWord lock_count;
-    volatile StgInt  num_updates;
-    StgWord          padding[1]; // TODO: assumes 64-byte cacheline
+    StgWord          padding[2]; // TODO: assumes 64-byte cacheline
                                  // Fill out 64-bytes assuming the
                                  // struct is already aligned.
     volatile StgClosure *payload[FLEXIBLE_ARRAY];
@@ -335,7 +340,7 @@ typedef struct {
   StgTVar                   *tvar;
   StgClosure                *expected_value;
   StgClosure                *new_value;
-  StgInt                     num_updates;
+  StgWord                    num_updates;
 } TRecEntry;
 
 #define TREC_CHUNK_NUM_ENTRIES 11
