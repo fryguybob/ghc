@@ -175,7 +175,8 @@ typedef struct{
     StgWord          words;
     StgWord          hash_id;
     volatile StgWord lock_count;
-    StgWord          padding[2]; // TODO: assumes 64-byte cacheline
+    StgWord          num_updates;
+    StgWord          padding[1]; // TODO: assumes 64-byte cacheline
                                  // Fill out 64-bytes assuming the
                                  // struct is already aligned.
     volatile StgClosure *payload[FLEXIBLE_ARRAY];
@@ -367,7 +368,7 @@ typedef struct {
     StgClosure                *ptr;
     StgWord                    word;
   } new_value;
-  StgInt                       num_updates;
+  StgWord                     num_updates;
 } TArrayRecEntry;
 
 #define TARRAY_REC_CHUNK_NUM_ENTRIES 9

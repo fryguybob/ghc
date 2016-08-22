@@ -204,7 +204,6 @@ static void unlock_tvar(Capability *cap,
 }
 
 static void unlock_tarray(Capability *cap,
-                        StgWord num_updates STG_UNUSED,
                         StgTArray *s,
                         StgBool was_update) {
   if (was_update) {
@@ -231,7 +230,7 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
        , e -> offset, e -> expected_value.ptr);
   // No other threads can be committing, so we simply check that the expected
   // value holds.
-  result = s -> payload[e -> offset];
+  result = (StgClosure*)s -> payload[e -> offset];
   TRACE("%p : %s", trec, (result == e -> expected_value.ptr) ? "success" : "failure");
   return (result == e -> expected_value.ptr);
 }
@@ -322,7 +321,6 @@ static void unlock_tvar(Capability *cap,
 }
 
 static void unlock_tarray(Capability *cap,
-                        StgWord num_updates STG_UNUSED,
                         StgTArray *s,
                         StgBool was_update) {
   if (was_update) {
@@ -380,22 +378,17 @@ static void unlock_tvar(Capability *cap,
   dirty_TVAR(cap,s);
 }
 
-#ifdef DEBUG
-static StgBool array_is_locked(StgTArray *s, StgTRecHeader *trec)
-{
-    return (s -> lock == (StgWord)trec);
-}
-#endif
-
 static void unlock_tarray(Capability *cap,
-                        StgWord num_updates,
                         StgTArray *s,
                         StgBool was_update) {
+  TRACE("Unlocking %p old version %ld was_update %s", s,
+      s -> num_updates, was_update ? "true" : "false");
+  ASSERT((s -> num_updates & 1) == 0);
   if (s -> lock_count == 0) {
     if (was_update) {
         // Unlock and bump the version number up from the one stashed
         // when the lock was acquired.
-        s -> lock = num_updates + 2;
+        s -> lock = s -> num_updates + 2;
         // TODO: we might be able to do better here by removing the
         // dirty out of the unlock and only dirtying if we made an update
         // to a pointer.  I think this implies yet another structure
@@ -407,7 +400,7 @@ static void unlock_tarray(Capability *cap,
     else {
         // Nothing was changed, so unlock by simply putting back the
         // version number.
-        s -> lock = num_updates;
+        s -> lock = s -> num_updates;
     }
   } else {
     s -> lock_count = s -> lock_count - 1;
@@ -452,29 +445,32 @@ static StgBool cond_lock_tarray(StgTRecHeader *trec STG_UNUSED,
   if (w == thisLock)  { // Lock is already held, increment count.
     s -> lock_count = s -> lock_count + 1;
 
-    result = s -> payload[e -> offset];
+    result = (StgClosure*)s -> payload[e -> offset];
     TRACE("%p : %s", trec, (result == e -> expected_value.ptr) ? "success" : "failure");
     // Don't release the lock if already held
     return (result == e -> expected_value.ptr);
   }
 
   // Odd values are locks.
-  if ((w & 1) != 0)
+  if ((w & 1) != 0) {
     return FALSE; // Already locked.
+  }
+
+  TRACE("%p : Attempting to lock at version %ld with lock %p", trec, w, thisLock);
 
   // At this point we have observed a version w in the lock, try to acquire
   // the lock at that version:
   old = cas((void *)&(s -> lock), w, thisLock);
   if (old == w) { // we got the lock
-    result = s -> payload[e -> offset];
+    result = (StgClosure*)s -> payload[e -> offset];
     if (result == e -> expected_value.ptr) {
-      TRACE("%p : %s", trec, "success");
+      TRACE("%p : success (saw version %ld)", trec, w);
       // Hold the lock.
       s -> lock_count = 0;
-      e -> num_updates = w; // Store the version here for unlocking.
+      s -> num_updates = w; // Store the version here for unlocking.
       return TRUE;
     } else {
-      TRACE("%p : %s", trec, "failure");
+      TRACE("%p : failure", trec);
       // Release the lock.  We successfully acquired it, but validation failed, so
       // restore the old version number to unlock.
       s -> lock = old; 
@@ -707,16 +703,6 @@ static void lock_bloom(void) {
       _mm_pause();
   }
 }
-
-#ifdef HTM_RETRY_COMMIT_WITH_LOCK
-static void lock_bloom_in_htm(void) {
-  if (smp_locked_bloom != 0)
-  {
-    XABORT(ABORT_RESTART);
-  }
-  smp_locked_bloom = 1;
-}
-#endif
 
 static void lock_bloom_hle(void) {
   int i,s,status;
@@ -1348,7 +1334,8 @@ static void revert_ownership(Capability *cap STG_UNUSED,
       if ( tarray_is_locked(s, trec) ) {
         // release array lock by writing the old version number.  We store this
         // when acquiring the lock.
-        s -> lock = e -> num_updates;
+        ASSERT((s -> num_updates & 1) == 0);
+        s -> lock = s -> num_updates;
       }
     }
   });
@@ -1375,6 +1362,9 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
                                                int acquire_all,
                                                int retain_ownership) {
   StgBool result;
+#ifdef STM_FG_LOCKS 
+  StgWord thisLock = ((StgWord)trec) | 1;
+#endif
 
   if (shake()) {
     TRACE("%p : shake, pretending trec is invalid when it may not be", trec);
@@ -1437,16 +1427,23 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
             result = FALSE;
             BREAK_FOR_EACH;
           }
-          e -> num_updates = s -> lock;
-          if (s -> payload[e -> offset] != e -> expected_value.ptr
-               || ((e -> num_updates & 1) != 0)) {
-            // If we we see the lock is taken or we don't get a consistent
-            // read of the value, then we have a conflict.
-            TRACE("%p : doesn't match (race)", trec);
-            result = FALSE;
-            BREAK_FOR_EACH;
+          StgWord l = s -> lock;
+          if (l == thisLock) {
+            // We already hold the lock on this TArray, we don't need to
+            // worry about checking the value again.
+            TRACE("%p : we hold the lock %p version %ld", trec, s, s -> num_updates);
           } else {
-            TRACE("%p : need to check version %ld", trec, e -> num_updates);
+              e -> num_updates = l;
+              if (s -> payload[e -> offset] != e -> expected_value.ptr
+                   || ((l & 1) != 0)) {
+                // If we we see the lock is taken or we don't get a consistent
+                // read of the value, then we have a conflict.
+                TRACE("%p : doesn't match or is locked. version=%ld", trec, l);
+                result = FALSE;
+                BREAK_FOR_EACH;
+              } else {
+                TRACE("%p : need to check version %ld", trec, e -> num_updates);
+              }
           }
         });
       }
@@ -1477,10 +1474,10 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 
 static StgBool check_read_only(Capability* cap, StgTRecHeader *trec) {
   StgBool result = TRUE;
-  StgWord thisLock = ((StgWord)trec) | 1;
 
   ASSERT (config_use_read_phase);
   IF_STM_FG_LOCKS({
+    StgWord thisLock = ((StgWord)trec) | 1;
     FOR_EACH_ENTRY(trec, e, {
       StgTVar *s;
       s = e -> tvar;
@@ -1501,28 +1498,6 @@ static StgBool check_read_only(Capability* cap, StgTRecHeader *trec) {
         }
       }
     });
-
-    // Check that all the read only entrys are not in locked arrays (now
-    // that we have all of our write locks).
-    // TODO: we may not need this given num_updates.
-/* This doesn't work because a transaction may have TRec entries
- * for a read-only access as well as other write entries.  The
- * write entries will take the lock.
- *
- * FOR_EACH_ARRAY_ENTRY(trec, e, {
-      StgTArray *s;
-      s = e -> tarray;
-      if (array_entry_is_read_only(e)) {
-        TRACE("%p : check_read_only lock for TArray %p", trec, s);
-
-        if (s -> lock != 0) {
-          TRACE("%p : locked TArray", trec);
-          result = FALSE;
-          cap->stm_stats->validate_fail++;
-          BREAK_FOR_EACH;
-        }
-      }
-    }); */
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
       StgTArray *s;
@@ -1786,7 +1761,7 @@ static TArrayRecEntry *get_array_entry_for(StgTRecHeader *trec, StgTArray *tarra
                                            StgTRecHeader **in) {
   TArrayRecEntry *result = NULL;
 
-  TRACE("%p : get_array_entry_for TVar %p[%d]", trec, tarray, index);
+  TRACE("%p : get_array_entry_for TArray %p[%d]", trec, tarray, index);
   ASSERT(trec != NO_TREC);
 
   StgWord offset = access * tarray -> ptrs + index;
@@ -2000,11 +1975,12 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           // write the value back to the TVar, unlocking it if necessary.
 
           ACQ_ASSERT(tarray_is_locked(s, trec));
-          TRACE("%p : writing %p to %p[%d], waking waiters", trec, e -> new_value.ptr, s, e -> offset);
+          TRACE("%p : writing 0x%012x to %p[%d], waking waiters, version: %ld", trec,
+                        e -> new_value.ptr, s, e -> offset, s -> num_updates);
           unpark_waiters_on(cap, bloom_add_array(0, s -> hash_id, e -> offset));
           // Perform write
           s -> payload[e -> offset] = e -> new_value.ptr;
-          unlock_tarray(cap, e -> num_updates, s, TRUE); // May still be locked but with decremented counter.
+          unlock_tarray(cap, s, TRUE); // May still be locked but with decremented counter.
         }
       });
 
@@ -2073,7 +2049,8 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec) {
         // Merge each entry into the enclosing transaction record, release all
         // locks.
         if (array_entry_is_update(e)) {
-            unlock_tarray(cap, e -> num_updates, e -> tarray, FALSE);
+            ACQ_ASSERT(tarray_is_locked(e -> tarray, trec));
+            unlock_tarray(cap, e -> tarray, FALSE);
         }
         merge_array_update_into(cap, et, e);
       });
@@ -2201,7 +2178,7 @@ static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
   ASSERT (index < tarray -> ptrs);
   
   StgClosure *result;
-  result = tarray -> payload[index];
+  result = (StgClosure*)tarray -> payload[index];
   // TODO: bounds check?
   // TODO: Fence?  
 
@@ -2239,7 +2216,7 @@ static StgWord read_array_current_value_word(StgTRecHeader *trec STG_UNUSED,
 //  }
 #endif
 
-  TRACE("%p : read_array_current_value_word(%p[%d])=%p", trec, tarray, index, result);
+  TRACE("%p : read_array_current_value_word(%p[%d])=%ld", trec, tarray, index, result);
   return result;
 }
 
@@ -2452,7 +2429,7 @@ StgWord stmReadTArrayWord(Capability *cap,
     result = current_value;
   }
 
-  TRACE("%p : stmReadTArray(%p[%d])=%ld", trec, tarray, index, result);
+  TRACE("%p : stmReadTArrayWord(%p[%d])=%ld", trec, tarray, index, result);
   return result;
 }
 
