@@ -3648,6 +3648,7 @@ xFlagsDeps = [
   flagSpec "MonomorphismRestriction"          LangExt.MonomorphismRestriction,
   flagSpec "MultiParamTypeClasses"            LangExt.MultiParamTypeClasses,
   flagSpec "MultiWayIf"                       LangExt.MultiWayIf,
+  flagSpec "MutableFields"                    LangExt.MutableFields,
   flagSpec "NPlusKPatterns"                   LangExt.NPlusKPatterns,
   flagSpec "NamedFieldPuns"                   LangExt.RecordPuns,
   flagSpec "NamedWildCards"                   LangExt.NamedWildCards,
@@ -3779,6 +3780,8 @@ impliedXFlags
     , (LangExt.TypeFamilyDependencies,    turnOn, LangExt.TypeFamilies)
 
     , (LangExt.RebindableSyntax, turnOff, LangExt.ImplicitPrelude)      -- NB: turn off!
+
+    , (LangExt.MutableFields,    turnOn, LangExt.GADTSyntax)
 
     , (LangExt.GADTs,            turnOn, LangExt.GADTSyntax)
     , (LangExt.GADTs,            turnOn, LangExt.MonoLocalBinds)

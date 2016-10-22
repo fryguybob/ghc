@@ -484,6 +484,10 @@ rnHsTyKi env (HsBangTy b ty)
   = do { (ty', fvs) <- rnLHsTyKi env ty
        ; return (HsBangTy b ty', fvs) }
 
+rnHsTyKi env (HsMutableTy b ty)
+  = do { (ty', fvs) <- rnLHsTyKi env ty
+       ; return (HsMutableTy b ty', fvs) }
+
 rnHsTyKi env ty@(HsRecTy flds)
   = do { let ctxt = rtke_ctxt env
        ; fls          <- get_fields ctxt
@@ -1030,6 +1034,7 @@ collectAnonWildCards lty = go lty
       HsKindSig ty kind            -> go ty `mappend` go kind
       HsDocTy ty _                 -> go ty
       HsBangTy _ ty                -> go ty
+      HsMutableTy _ ty             -> go ty
       HsRecTy flds                 -> gos $ map (cd_fld_type . unLoc) flds
       HsExplicitListTy _ tys       -> gos tys
       HsExplicitTupleTy _ tys      -> gos tys
@@ -1597,6 +1602,7 @@ extract_lty t_or_k (L _ ty) acc
   = case ty of
       HsTyVar ltv               -> extract_tv t_or_k ltv acc
       HsBangTy _ ty             -> extract_lty t_or_k ty acc
+      HsMutableTy _ ty          -> extract_lty t_or_k ty acc
       HsRecTy flds              -> foldrM (extract_lty t_or_k
                                            . cd_fld_type . unLoc) acc
                                          flds

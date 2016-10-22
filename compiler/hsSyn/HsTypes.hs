@@ -28,6 +28,7 @@ module HsTypes (
         HsTyLit(..),
         HsIPName(..), hsIPNameFS,
         HsAppType(..),LHsAppType,
+        HsMutableInfo(..),
 
         LBangType, BangType,
         HsSrcBang(..), HsImplBang(..),
@@ -580,6 +581,10 @@ data HsType name
       -- ^ - 'ApiAnnotation.AnnKeywordId' : None
 
       -- For details on above see note [Api annotations] in ApiAnnotation
+
+  | HsMutableTy         -- A mutable field type
+        HsMutableInfo
+        (LHsType name)
 deriving instance (DataId name) => Data (HsType name)
 
 -- Note [Literal source text] in BasicTypes for SourceText fields in
@@ -595,6 +600,16 @@ newtype HsWildCardInfo name      -- See Note [The wildcard story for types]
       -- A anonymous wild card ('_'). A fresh Name is generated for
       -- each individual anonymous wildcard during renaming
 deriving instance (DataId name) => Data (HsWildCardInfo name)
+
+data HsMutableInfo
+  = HsMutable
+  | HsMutableArray
+  -- TODO: Atomics?
+    deriving Data
+
+instance Outputable HsMutableInfo where
+    ppr HsMutable      = text "mutable"
+    ppr HsMutableArray = text "mutableArray"
 
 -- | Located Haskell Application Type
 type LHsAppType name = Located (HsAppType name)
@@ -1256,6 +1271,7 @@ ppr_mono_ty ctxt_prec (HsQualTy { hst_ctxt = L _ ctxt, hst_body = ty })
     sep [pprHsContext ctxt, ppr_mono_lty TopPrec ty]
 
 ppr_mono_ty _    (HsBangTy b ty)     = ppr b <> ppr_mono_lty TyConPrec ty
+ppr_mono_ty _    (HsMutableTy m ty)  = ppr m <> ppr_mono_lty TyConPrec ty
 ppr_mono_ty _    (HsRecTy flds)      = pprConDeclFields flds
 ppr_mono_ty _    (HsTyVar (L _ name))= pprPrefixOcc name
 ppr_mono_ty prec (HsFunTy ty1 ty2)   = ppr_fun_ty prec ty1 ty2

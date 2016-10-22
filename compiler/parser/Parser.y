@@ -377,6 +377,9 @@ output it generates.
  'signature'    { L _ ITsignature }
  'dependency'   { L _ ITdependency }
 
+ 'mutable'      { L _ ITmutable }
+ 'mutableArray' { L _ ITmutableArray }
+
  '{-# INLINE'             { L _ (ITinline_prag _ _ _) } -- INLINE or INLINABLE
  '{-# SPECIALISE'         { L _ (ITspec_prag _) }
  '{-# SPECIALISE_INLINE'  { L _ (ITspec_inline_prag _ _) }
@@ -1742,7 +1745,17 @@ is connected to the first type too.
 
 type :: { LHsType RdrName }
         : btype                        { $1 }
-        | btype '->' ctype             {% ams $1 [mu AnnRarrow $2] -- See note [GADT decl discards annotations]
+        | 'mutable'
+          btype '->' ctype             {% ams $2 [mu AnnRarrow $3] -- See note [GADT decl discards annotations]
+                                       >> ams (sLL $2 $> (HsFunTy 
+                                                (L (getLoc $2) (HsMutableTy HsMutable $2)) $4))
+                                              [mu AnnRarrow $3] }
+        | 'mutableArray'
+          btype '->' ctype             {% ams $2 [mu AnnRarrow $3]
+                                       >> ams (sLL $2 $> (HsFunTy 
+                                                (L (getLoc $2) (HsMutableTy HsMutableArray $2)) $4))
+                                              [mu AnnRarrow $3] }
+        | btype '->' ctype             {% ams $1 [mu AnnRarrow $2]
                                        >> ams (sLL $1 $> $ HsFunTy $1 $3)
                                               [mu AnnRarrow $2] }
 
@@ -3161,6 +3174,8 @@ varid :: { Located RdrName }
         | 'forall'         { sL1 $1 $! mkUnqual varName (fsLit "forall") }
         | 'family'         { sL1 $1 $! mkUnqual varName (fsLit "family") }
         | 'role'           { sL1 $1 $! mkUnqual varName (fsLit "role") }
+        | 'mutable'        { sL1 $1 $! mkUnqual varName (fsLit "mutable") }
+        | 'mutableArray'   { sL1 $1 $! mkUnqual varName (fsLit "mutableArray") }
 
 qvarsym :: { Located RdrName }
         : varsym                { $1 }

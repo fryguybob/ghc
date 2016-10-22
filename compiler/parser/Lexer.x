@@ -615,6 +615,9 @@ data Token
   | ITstock
   | ITanyclass
 
+  | ITmutable
+  | ITmutableArray
+
   -- Backpack tokens
   | ITunit
   | ITsignature
@@ -837,7 +840,10 @@ reservedWordsFM = listToUFM $
 
          ( "rec",            ITrec,           xbit ArrowsBit .|.
                                               xbit RecursiveDoBit),
-         ( "proc",           ITproc,          xbit ArrowsBit)
+         ( "proc",           ITproc,          xbit ArrowsBit),
+
+         ( "mutable",        ITmutable,       xbit MutableFieldsBit),
+         ( "mutableArray",   ITmutableArray,  xbit MutableFieldsBit)
      ]
 
 {-----------------------------------
@@ -2138,6 +2144,7 @@ data ExtBits
   | NegativeLiteralsBit
   | TypeApplicationsBit
   | StaticPointersBit
+  | MutableFieldsBit
   deriving Enum
 
 
@@ -2205,6 +2212,9 @@ typeApplicationEnabled = xtest TypeApplicationsBit
 staticPointersEnabled :: ExtsBitmap -> Bool
 staticPointersEnabled = xtest StaticPointersBit
 
+mutableFieldsEnabled :: ExtsBitmap -> Bool
+mutableFieldsEnabled = xtest MutableFieldsBit
+
 -- PState for parsing options pragmas
 --
 pragState :: DynFlags -> StringBuffer -> RealSrcLoc -> PState
@@ -2258,6 +2268,7 @@ mkParserFlags flags =
                .|. PatternSynonymsBit          `setBitIf` xopt LangExt.PatternSynonyms          flags
                .|. TypeApplicationsBit         `setBitIf` xopt LangExt.TypeApplications         flags
                .|. StaticPointersBit           `setBitIf` xopt LangExt.StaticPointers           flags
+               .|. MutableFieldsBit            `setBitIf` xopt LangExt.MutableFields            flags
 
       setBitIf :: ExtBits -> Bool -> ExtsBitmap
       b `setBitIf` cond | cond      = xbit b

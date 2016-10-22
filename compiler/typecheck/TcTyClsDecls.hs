@@ -2274,9 +2274,10 @@ checkValidDataCon dflags existential_ok tc con
               , ppr orig_res_ty <+> dcolon <+> ppr (typeKind orig_res_ty)])
 
 
-        ; checkTc (isJust (tcMatchTy res_ty_tmpl
-                                     orig_res_ty))
-                  (badDataConTyCon con res_ty_tmpl orig_res_ty)
+            -- Check for datacon defining mutable fields in some context.
+        ; b <- matchTyWithContext res_ty_tmpl orig_res_ty
+
+        ; checkTc b (badDataConTyCon con res_ty_tmpl orig_res_ty)
             -- Note that checkTc aborts if it finds an error. This is
             -- critical to avoid panicking when we call dataConUserType
             -- on an un-rejiggable datacon!
@@ -2333,6 +2334,20 @@ checkValidDataCon dflags existential_ok tc con
     bad_bang n herald
       = hang herald 2 (text "on the" <+> speakNth n
                        <+> text "argument of" <+> quotes (ppr con))
+
+    -- match result type with original type or original type in some context
+    matchTyWithContext res orig
+      | isJust (tcMatchTy res orig) = return True
+      | otherwise                   = do
+          let star_star_kind = liftedTypeKind `mkFunTy` liftedTypeKind
+          m <- newFlexiTyVarTy star_star_kind
+          let ret = isJust (tcMatchTy (mkAppTy m res) orig)
+          if ret
+            then return ret
+            else do
+              checkTc False $ ppr ((mkAppTy m res), orig)
+              return False
+
 -------------------------------
 checkNewDataCon :: DataCon -> TcM ()
 -- Further checks for the data constructor of a newtype
