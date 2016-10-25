@@ -512,7 +512,8 @@ pcDataConWithFixity' declared_infix dc_name wrk_key rri tyvars ex_tyvars arg_tys
   = data_con
   where
     data_con = mkDataCon dc_name declared_infix prom_info
-                (map (const no_bang) arg_tys)
+                (map (const no_bang)     arg_tys)
+                (map (const HsImmutable) arg_tys)
                 []      -- No labelled fields
                 (mkTyVarBinders Specified tyvars)
                 (mkTyVarBinders Specified ex_tyvars)

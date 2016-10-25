@@ -1452,7 +1452,7 @@ tcConDecl new_or_data rep_tycon tmpl_bndrs res_tmpl
                Nothing -> ([], [])
                Just (HsQTvs { hsq_implicit = kvs, hsq_explicit = tvs })
                        -> (kvs, tvs)
-       ; (imp_tvs, (exp_tvs, ctxt, arg_tys, field_lbls, stricts))
+       ; (imp_tvs, (exp_tvs, ctxt, arg_tys, field_lbls, stricts, muts))
            <- solveEqualities $
               tcImplicitTKBndrs hs_kvs $
               tcExplicitTKBndrs hs_tvs $ \ exp_tvs ->
@@ -1460,10 +1460,10 @@ tcConDecl new_or_data rep_tycon tmpl_bndrs res_tmpl
                  ; ctxt <- tcHsContext (fromMaybe (noLoc []) hs_ctxt)
                  ; btys <- tcConArgs new_or_data hs_details
                  ; field_lbls <- lookupConstructorFields (unLoc name)
-                 ; let (arg_tys, stricts) = unzip btys
+                 ; let (arg_tys, stricts, muts) = unzip3 btys
                        bound_vars  = allBoundVariabless ctxt `unionVarSet`
                                      allBoundVariabless arg_tys
-                 ; return ((exp_tvs, ctxt, arg_tys, field_lbls, stricts), bound_vars)
+                 ; return ((exp_tvs, ctxt, arg_tys, field_lbls, stricts, muts), bound_vars)
                  }
          -- imp_tvs are user-written kind variables, without an explicit binding site
          -- exp_tvs have binding sites
@@ -1503,7 +1503,7 @@ tcConDecl new_or_data rep_tycon tmpl_bndrs res_tmpl
              ; rep_nm   <- newTyConRepName name
 
              ; buildDataCon fam_envs name is_infix rep_nm
-                            stricts Nothing field_lbls
+                            stricts muts Nothing field_lbls
                             (mkDataConUnivTyVarBinders tmpl_bndrs)
                             ex_tvs
                             [{- no eq_preds -}] ctxt arg_tys
@@ -1520,7 +1520,7 @@ tcConDecl _new_or_data rep_tycon tmpl_bndrs res_tmpl
           (ConDeclGADT { con_names = names, con_type = ty })
   = addErrCtxt (dataConCtxtName names) $
     do { traceTc "tcConDecl 1" (ppr names)
-       ; (user_tvs, ctxt, stricts, field_lbls, arg_tys, res_ty,hs_details)
+       ; (user_tvs, ctxt, stricts, muts, field_lbls, arg_tys, res_ty, hs_details)
            <- tcGadtSigType (ppr names) (unLoc $ head names) ty
 
        ; vars <- zonkTcTypeAndSplitDepVars (mkSpecForAllTys user_tvs $
@@ -1556,7 +1556,7 @@ tcConDecl _new_or_data rep_tycon tmpl_bndrs res_tmpl
 
              ; buildDataCon fam_envs name is_infix
                             rep_nm
-                            stricts Nothing field_lbls
+                            stricts muts Nothing field_lbls
                             univ_bndrs ex_bndrs eq_preds
                             (substTys arg_subst ctxt)
                             (substTys arg_subst arg_tys)
@@ -1572,13 +1572,14 @@ tcConDecl _new_or_data rep_tycon tmpl_bndrs res_tmpl
 
 
 tcGadtSigType :: SDoc -> Name -> LHsSigType Name
-              -> TcM ( [TcTyVar], [PredType],[HsSrcBang], [FieldLabel], [Type], Type
+              -> TcM ( [TcTyVar], [PredType], [HsSrcBang], [HsMutableInfo]
+                     , [FieldLabel], [Type], Type
                      , HsConDetails (LHsType Name)
                                     (Located [LConDeclField Name]) )
 tcGadtSigType doc name ty@(HsIB { hsib_vars = vars })
   = do { let (hs_details', res_ty', cxt, gtvs) = gadtDeclDetails ty
        ; (hs_details, res_ty) <- updateGadtResult failWithTc doc hs_details' res_ty'
-       ; (imp_tvs, (exp_tvs, ctxt, arg_tys, res_ty, field_lbls, stricts))
+       ; (imp_tvs, (exp_tvs, ctxt, arg_tys, res_ty, field_lbls, stricts, muts))
            <- solveEqualities $
               tcImplicitTKBndrs vars $
               tcExplicitTKBndrs gtvs $ \ exp_tvs ->
@@ -1586,13 +1587,13 @@ tcGadtSigType doc name ty@(HsIB { hsib_vars = vars })
                  ; btys <- tcConArgs DataType hs_details
                  ; ty' <- tcHsLiftedType res_ty
                  ; field_lbls <- lookupConstructorFields name
-                 ; let (arg_tys, stricts) = unzip btys
+                 ; let (arg_tys, stricts, muts) = unzip3 btys
                        bound_vars = allBoundVariabless ctxt `unionVarSet`
                                     allBoundVariabless arg_tys
 
-                 ; return ((exp_tvs, ctxt, arg_tys, ty', field_lbls, stricts), bound_vars)
+                 ; return ((exp_tvs, ctxt, arg_tys, ty', field_lbls, stricts, muts), bound_vars)
                  }
-       ; return (imp_tvs ++ exp_tvs, ctxt, stricts, field_lbls, arg_tys, res_ty, hs_details)
+       ; return (imp_tvs ++ exp_tvs, ctxt, stricts, muts, field_lbls, arg_tys, res_ty, hs_details)
        }
 
 tcConIsInfixH98 :: Name
@@ -1618,7 +1619,7 @@ tcConIsInfixGADT con details
                | otherwise -> return False
 
 tcConArgs :: NewOrData -> HsConDeclDetails Name
-          -> TcM [(TcType, HsSrcBang)]
+          -> TcM [(TcType, HsSrcBang, HsMutableInfo)]
 tcConArgs new_or_data (PrefixCon btys)
   = mapM (tcConArg new_or_data) btys
 tcConArgs new_or_data (InfixCon bty1 bty2)
@@ -1635,12 +1636,12 @@ tcConArgs new_or_data (RecCon fields)
     (_,btys) = unzip exploded
 
 
-tcConArg :: NewOrData -> LHsType Name -> TcM (TcType, HsSrcBang)
+tcConArg :: NewOrData -> LHsType Name -> TcM (TcType, HsSrcBang, HsMutableInfo)
 tcConArg new_or_data bty
   = do  { traceTc "tcConArg 1" (ppr bty)
         ; arg_ty <- tcHsConArgType new_or_data bty
         ; traceTc "tcConArg 2" (ppr bty)
-        ; return (arg_ty, getBangStrictness bty) }
+        ; return (arg_ty, getBangStrictness bty, getMutable bty) }
 
 {-
 Note [Wrong visibility for GADTs]
@@ -2268,6 +2269,7 @@ checkValidDataCon dflags existential_ok tc con
           let tc_tvs      = tyConTyVars tc
               res_ty_tmpl = mkFamilyTyConApp tc (mkTyVarTys tc_tvs)
               orig_res_ty = dataConOrigResTy con
+              hasMutableFields = any (/= HsImmutable) (dataConMutableFields con)
         ; traceTc "checkValidDataCon" (vcat
               [ ppr con, ppr tc, ppr tc_tvs
               , ppr res_ty_tmpl <+> dcolon <+> ppr (typeKind res_ty_tmpl)
@@ -2275,12 +2277,16 @@ checkValidDataCon dflags existential_ok tc con
 
 
             -- Check for datacon defining mutable fields in some context.
-        ; b <- matchTyWithContext res_ty_tmpl orig_res_ty
+        ; (b, allowMutable) <- matchTyWithContext res_ty_tmpl orig_res_ty
 
         ; checkTc b (badDataConTyCon con res_ty_tmpl orig_res_ty)
             -- Note that checkTc aborts if it finds an error. This is
             -- critical to avoid panicking when we call dataConUserType
             -- on an un-rejiggable datacon!
+
+            -- Check that mutable fields have the required context.
+        ; checkTc (allowMutable || not hasMutableFields)
+            (text "Mutable fields require a context.")
 
         ; traceTc "checkValidDataCon 2" (ppr (dataConUserType con))
 
@@ -2337,16 +2343,16 @@ checkValidDataCon dflags existential_ok tc con
 
     -- match result type with original type or original type in some context
     matchTyWithContext res orig
-      | isJust (tcMatchTy res orig) = return True
+      | isJust (tcMatchTy res orig) = return (True, False)
       | otherwise                   = do
           let star_star_kind = liftedTypeKind `mkFunTy` liftedTypeKind
           m <- newFlexiTyVarTy star_star_kind
           let ret = isJust (tcMatchTy (mkAppTy m res) orig)
           if ret
-            then return ret
+            then return (ret, True)
             else do
               checkTc False $ ppr ((mkAppTy m res), orig)
-              return False
+              return (False, True)
 
 -------------------------------
 checkNewDataCon :: DataCon -> TcM ()

@@ -79,6 +79,7 @@ buildPDataDataCon orig_name vect_tc repr_tc repr
                             False                  -- not infix
                             rep_nm
                             (map (const no_bang) comp_tys)
+                            (map (const HsImmutable) comp_tys)
                             (Just $ map (const HsLazy) comp_tys)
                             []                     -- no field labels
                             (mkTyVarBinders Specified tvs)
@@ -123,6 +124,7 @@ buildPDatasDataCon orig_name vect_tc repr_tc repr
                             False                  -- not infix
                             rep_nm
                             (map (const no_bang) comp_tys)
+                            (map (const HsImmutable) comp_tys)
                             (Just $ map (const HsLazy) comp_tys)
                             []                     -- no field labels
                             (mkTyVarBinders Specified tvs)

@@ -108,6 +108,7 @@ buildDataCon :: FamInstEnvs
             -> Bool                     -- Declared infix
             -> TyConRepName
             -> [HsSrcBang]
+            -> [HsMutableInfo]
             -> Maybe [HsImplBang]
                 -- See Note [Bangs on imported data constructors] in MkId
            -> [FieldLabel]             -- Field labels
@@ -124,7 +125,7 @@ buildDataCon :: FamInstEnvs
 --   b) makes the wrapper Id if necessary, including
 --      allocating its unique (hence monadic)
 --   c) Sorts out the TyVarBinders. See mkDataConUnivTyBinders
-buildDataCon fam_envs src_name declared_infix prom_info src_bangs impl_bangs field_lbls
+buildDataCon fam_envs src_name declared_infix prom_info src_bangs mut_fields impl_bangs field_lbls
              univ_tvs ex_tvs eq_spec ctxt arg_tys res_ty rep_tycon
   = do  { wrap_name <- newImplicitBinder src_name mkDataConWrapperOcc
         ; work_name <- newImplicitBinder src_name mkDataConWorkerOcc
@@ -137,7 +138,7 @@ buildDataCon fam_envs src_name declared_infix prom_info src_bangs impl_bangs fie
         ; dflags <- getDynFlags
         ; let stupid_ctxt = mkDataConStupidTheta rep_tycon arg_tys univ_tvs
               data_con = mkDataCon src_name declared_infix prom_info
-                                   src_bangs field_lbls
+                                   src_bangs mut_fields field_lbls
                                    univ_tvs ex_tvs eq_spec ctxt
                                    arg_tys res_ty NoRRI rep_tycon
                                    stupid_ctxt dc_wrk dc_rep
@@ -351,6 +352,7 @@ buildClass tycon_name binders roles sc_theta
                                    False        -- Not declared infix
                                    rep_nm
                                    (map (const no_bang) args)
+                                   (map (const HsImmutable) args)
                                    (Just (map (const HsLazy) args))
                                    [{- No fields -}]
                                    univ_bndrs

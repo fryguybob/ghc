@@ -17,6 +17,7 @@ module IfaceSyn (
         IfaceClsInst(..), IfaceFamInst(..), IfaceTickish(..),
         IfaceBang(..),
         IfaceSrcBang(..), SrcUnpackedness(..), SrcStrictness(..),
+        IfaceMutable(..),
         IfaceAxBranch(..),
         IfaceTyConParent(..),
 
@@ -240,7 +241,8 @@ data IfaceConDecl
           -- Empty (meaning all lazy),
           -- or 1-1 corresp with arg tys
           -- See Note [Bangs on imported data constructors] in MkId
-        ifConSrcStricts :: [IfaceSrcBang] } -- empty meaning no src stricts
+        ifConSrcStricts :: [IfaceSrcBang], -- empty meaning no src stricts
+        ifConMutFields  :: [IfaceMutable] }
 
 type IfaceEqSpec = [(IfLclName,IfaceType)]
 
@@ -252,6 +254,10 @@ data IfaceBang
 -- | This corresponds to HsSrcBang
 data IfaceSrcBang
   = IfSrcBang SrcUnpackedness SrcStrictness
+
+-- | This corresponds to HsMutableInfo
+data IfaceMutable
+  = IfImmutable | IfMutable | IfMutableArray
 
 data IfaceClsInst
   = IfaceClsInst { ifInstCls  :: IfExtName,                -- See comments with
@@ -887,10 +893,11 @@ pprIfaceDeclHead context ss tc_occ bndrs m_res_kind
         , maybe empty (\res_kind -> dcolon <+> pprIfaceType res_kind) m_res_kind ]
 
 isVanillaIfaceConDecl :: IfaceConDecl -> Bool
-isVanillaIfaceConDecl (IfCon { ifConExTvs  = ex_tvs
-                             , ifConEqSpec = eq_spec
-                             , ifConCtxt   = ctxt })
-  = (null ex_tvs) && (null eq_spec) && (null ctxt)
+isVanillaIfaceConDecl (IfCon { ifConExTvs     = ex_tvs
+                             , ifConEqSpec    = eq_spec
+                             , ifConCtxt      = ctxt
+                             , ifConMutFields = mut})
+  = (null ex_tvs) && (null eq_spec) && (null ctxt) && (null mut)
 
 pprIfaceConDecl :: ShowSub -> Bool
                 -> [FieldLbl OccName]
@@ -902,15 +909,15 @@ pprIfaceConDecl ss gadt_style fls tycon tc_binders parent
         (IfCon { ifConName = name, ifConInfix = is_infix,
                  ifConExTvs = ex_tvs,
                  ifConEqSpec = eq_spec, ifConCtxt = ctxt, ifConArgTys = arg_tys,
-                 ifConStricts = stricts, ifConFields = fields })
+                 ifConStricts = stricts, ifConFields = fields, ifConMutFields = muts })
   | gadt_style            = pp_prefix_con <+> dcolon <+> ppr_ty
   | not (null fields)     = pp_prefix_con <+> pp_field_args
   | is_infix
   , [ty1, ty2] <- pp_args = sep [ty1, pprInfixIfDeclBndr ss (occName name), ty2]
   | otherwise             = pp_prefix_con <+> sep pp_args
   where
-    tys_w_strs :: [(IfaceBang, IfaceType)]
-    tys_w_strs = zip stricts arg_tys
+    tys_w_strs :: [(IfaceMutable, IfaceBang, IfaceType)]
+    tys_w_strs = zip3 muts stricts arg_tys
     pp_prefix_con = pprPrefixIfDeclBndr ss (occName name)
 
     (univ_tvs, pp_res_ty) = mk_user_con_res_ty eq_spec
@@ -932,19 +939,24 @@ pprIfaceConDecl ss gadt_style fls tycon tc_binders parent
     ppr_bang (IfUnpackCo co) = text "! {-# UNPACK #-}" <>
                                pprParendIfaceCoercion co
 
-    pprParendBangTy (bang, ty) = ppr_bang bang <> pprParendIfaceType ty
-    pprBangTy       (bang, ty) = ppr_bang bang <> ppr ty
+    ppr_mut IfImmutable    = ppWhen opt_PprStyle_Debug $ char '_'
+    ppr_mut IfMutable      = text "mutable"
+    ppr_mut IfMutableArray = text "mutableArray"
+
+    pprParend    (mut, bang, ty) = ppr_mut mut <+> (ppr_bang bang <> pprParendIfaceType ty)
+    pprMutBangTy (mut, bang, ty) = ppr_mut mut <+> (ppr_bang bang <> ppr ty)
+
 
     pp_args :: [SDoc]  -- With parens, e.g  (Maybe a)  or  !(Maybe a)
-    pp_args = map pprParendBangTy tys_w_strs
+    pp_args = map pprParend $ tys_w_strs
 
     pp_field_args :: SDoc  -- Braces form:  { x :: !Maybe a, y :: Int }
     pp_field_args = braces $ sep $ punctuate comma $ ppr_trim $
                     zipWith maybe_show_label fields tys_w_strs
 
-    maybe_show_label :: IfaceTopBndr -> (IfaceBang, IfaceType) -> Maybe SDoc
+    maybe_show_label :: IfaceTopBndr -> (IfaceMutable, IfaceBang, IfaceType) -> Maybe SDoc
     maybe_show_label sel bty
-      | showSub ss sel = Just (pprPrefixIfDeclBndr ss lbl <+> dcolon <+> pprBangTy bty)
+      | showSub ss sel = Just (pprPrefixIfDeclBndr ss lbl <+> dcolon <+> pprMutBangTy bty)
       | otherwise      = Nothing
       where
         -- IfaceConDecl contains the name of the selector function, so
@@ -1676,7 +1688,7 @@ instance Binary IfaceConDecls where
             _ -> error "Binary(IfaceConDecls).get: Invalid IfaceConDecls"
 
 instance Binary IfaceConDecl where
-    put_ bh (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10) = do
+    put_ bh (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11) = do
         putIfaceTopBndr bh a1
         put_ bh a2
         put_ bh a3
@@ -1688,6 +1700,7 @@ instance Binary IfaceConDecl where
         mapM_ (putIfaceTopBndr bh) a8
         put_ bh a9
         put_ bh a10
+        put_ bh a11
     get bh = do
         a1 <- getIfaceTopBndr bh
         a2 <- get bh
@@ -1700,7 +1713,8 @@ instance Binary IfaceConDecl where
         a8 <- replicateM n_fields (getIfaceTopBndr bh)
         a9 <- get bh
         a10 <- get bh
-        return (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10)
+        a11 <- get bh
+        return (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11)
 
 instance Binary IfaceBang where
     put_ bh IfNoBang        = putByte bh 0
@@ -1725,6 +1739,18 @@ instance Binary IfaceSrcBang where
       do a1 <- get bh
          a2 <- get bh
          return (IfSrcBang a1 a2)
+
+instance Binary IfaceMutable where
+    put_ bh IfImmutable    = putByte bh 0
+    put_ bh IfMutable      = putByte bh 1
+    put_ bh IfMutableArray = putByte bh 2
+
+    get bh = do
+            h <- getByte bh
+            case h of
+              0 -> return IfImmutable
+              1 -> return IfMutable
+              _ -> return IfMutableArray
 
 instance Binary IfaceClsInst where
     put_ bh (IfaceClsInst cls tys dfun flag orph) = do

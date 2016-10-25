@@ -195,6 +195,7 @@ vectDataCon dc
                     (dataConIsInfix dc)            -- infix if the original is
                     rep_nm
                     (dataConSrcBangs dc)           -- strictness as original constructor
+                    (dataConMutableFields dc)
                     (Just $ dataConImplBangs dc)
                     []                             -- no labelled fields for now
                     univ_bndrs                     -- universally quantified vars

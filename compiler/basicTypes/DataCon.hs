@@ -13,6 +13,7 @@ module DataCon (
         SrcStrictness(..), SrcUnpackedness(..),
         HsSrcBang(..), HsImplBang(..),
         StrictnessMark(..),
+        HsMutableInfo(..),
         ConTag,
 
         -- ** Equality specs
@@ -39,6 +40,7 @@ module DataCon (
         dataConInstOrigArgTys, dataConRepArgTys,
         dataConFieldLabels, dataConFieldType,
         dataConSrcBangs,
+        dataConMutableFields,
         dataConSourceArity, dataConRepArity,
         dataConIsInfix,
         dataConWorkId, dataConWrapId, dataConWrapId_maybe,
@@ -369,6 +371,9 @@ data DataCon
                 -- Matches 1-1 with dcOrigArgTys
                 -- Hence length = dataConSourceArity dataCon
 
+        dcMutFields :: [HsMutableInfo],
+                -- Matches 1-1 with dcOrigArgTys
+
         dcFields  :: [FieldLabel],
                 -- Field labels for this constructor, in the
                 -- same order as the dcOrigArgTys;
@@ -534,6 +539,19 @@ data SrcUnpackedness = SrcUnpack -- ^ {-# UNPACK #-} specified
 -- StrictnessMark is internal only, used to indicate strictness
 -- of the DataCon *worker* fields
 data StrictnessMark = MarkedStrict | NotMarkedStrict
+
+-- Mutable fields
+data HsMutableInfo
+  = HsImmutable
+  | HsMutable
+  | HsMutableArray
+  -- TODO: Atomics?
+    deriving (Eq, Data.Data)
+
+instance Outputable HsMutableInfo where
+    ppr HsImmutable    = empty
+    ppr HsMutable      = text "mutable"
+    ppr HsMutableArray = text "mutableArray"
 
 -- | An 'EqSpec' is a tyvar/type pair representing an equality made in
 -- rejigging a GADT constructor
@@ -748,6 +766,7 @@ mkDataCon :: Name
           -> Bool           -- ^ Is the constructor declared infix?
           -> TyConRepName   -- ^  TyConRepName for the promoted TyCon
           -> [HsSrcBang]    -- ^ Strictness/unpack annotations, from user
+          -> [HsMutableInfo]    -- ^ Mutable fields, from user
           -> [FieldLabel]   -- ^ Field labels for the constructor,
                             -- if it is a record, otherwise empty
           -> [TyVarBinder]  -- ^ Universals. See Note [TyVarBinders in DataCons]
@@ -767,7 +786,8 @@ mkDataCon :: Name
   -- Can get the tag from the TyCon
 
 mkDataCon name declared_infix prom_info
-          arg_stricts   -- Must match orig_arg_tys 1-1
+          arg_stricts    -- Must match orig_arg_tys 1-1
+          mutable_fields -- Must match orig_arg_tys 1-1
           fields
           univ_tvs ex_tvs
           eq_spec theta
@@ -794,6 +814,7 @@ mkDataCon name declared_infix prom_info
                   dcOrigArgTys = orig_arg_tys, dcOrigResTy = orig_res_ty,
                   dcRepTyCon = rep_tycon,
                   dcSrcBangs = arg_stricts,
+                  dcMutFields = mutable_fields,
                   dcFields = fields, dcTag = tag, dcRepType = rep_ty,
                   dcWorkId = work_id,
                   dcRep = rep,
@@ -984,6 +1005,10 @@ dataConFieldType con label
 
 dataConSrcBangs :: DataCon -> [HsSrcBang]
 dataConSrcBangs = dcSrcBangs
+
+-- | Mutable field annotations, from user.
+dataConMutableFields :: DataCon -> [HsMutableInfo]
+dataConMutableFields = dcMutFields
 
 -- | Source-level arity of the data constructor
 dataConSourceArity :: DataCon -> Arity
