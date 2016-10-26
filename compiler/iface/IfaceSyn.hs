@@ -242,7 +242,9 @@ data IfaceConDecl
           -- or 1-1 corresp with arg tys
           -- See Note [Bangs on imported data constructors] in MkId
         ifConSrcStricts :: [IfaceSrcBang], -- empty meaning no src stricts
-        ifConMutFields  :: [IfaceMutable] }
+        ifConMutFields  :: [IfaceMutable],
+        ifConWrapperActionTy :: Maybe IfaceTopBndr
+        }
 
 type IfaceEqSpec = [(IfLclName,IfaceType)]
 
@@ -896,8 +898,9 @@ isVanillaIfaceConDecl :: IfaceConDecl -> Bool
 isVanillaIfaceConDecl (IfCon { ifConExTvs     = ex_tvs
                              , ifConEqSpec    = eq_spec
                              , ifConCtxt      = ctxt
-                             , ifConMutFields = mut})
-  = (null ex_tvs) && (null eq_spec) && (null ctxt) && (null mut)
+                             , ifConMutFields = mut
+                             , ifConWrapperActionTy = wrap_act})
+  = (null ex_tvs) && (null eq_spec) && (null ctxt) && (null mut) && (wrap_act == Nothing)
 
 pprIfaceConDecl :: ShowSub -> Bool
                 -> [FieldLbl OccName]
@@ -909,7 +912,8 @@ pprIfaceConDecl ss gadt_style fls tycon tc_binders parent
         (IfCon { ifConName = name, ifConInfix = is_infix,
                  ifConExTvs = ex_tvs,
                  ifConEqSpec = eq_spec, ifConCtxt = ctxt, ifConArgTys = arg_tys,
-                 ifConStricts = stricts, ifConFields = fields, ifConMutFields = muts })
+                 ifConStricts = stricts, ifConFields = fields,
+                 ifConMutFields = muts, ifConWrapperActionTy = wrap_act })
   | gadt_style            = pp_prefix_con <+> dcolon <+> ppr_ty
   | not (null fields)     = pp_prefix_con <+> pp_field_args
   | is_infix
@@ -978,11 +982,16 @@ pprIfaceConDecl ss gadt_style fls tycon tc_binders parent
         con_univ_tvs = filterOut done_univ_tv (map ifTyConBinderTyVar tc_binders)
 
     ppr_tc_app gadt_subst dflags
-       = pprPrefixIfDeclBndr ss (occName tycon)
-         <+> sep [ pprParendIfaceType (substIfaceTyVar gadt_subst tv)
-                 | (tv,_kind)
-                     <- map ifTyConBinderTyVar $
-                        suppressIfaceInvisibles dflags tc_binders tc_binders ]
+       | Just act_ty <- wrap_act
+       = pprPrefixIfDeclBndr ss (occName act_ty) <+> parens t
+       | otherwise
+       = t
+       where
+         t = pprPrefixIfDeclBndr ss (occName tycon)
+             <+> sep [ pprParendIfaceType (substIfaceTyVar gadt_subst tv)
+                     | (tv,_kind)
+                         <- map ifTyConBinderTyVar $
+                            suppressIfaceInvisibles dflags tc_binders tc_binders ]
 
 instance Outputable IfaceRule where
   ppr (IfaceRule { ifRuleName = name, ifActivation = act, ifRuleBndrs = bndrs,
@@ -1688,7 +1697,7 @@ instance Binary IfaceConDecls where
             _ -> error "Binary(IfaceConDecls).get: Invalid IfaceConDecls"
 
 instance Binary IfaceConDecl where
-    put_ bh (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11) = do
+    put_ bh (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12) = do
         putIfaceTopBndr bh a1
         put_ bh a2
         put_ bh a3
@@ -1701,6 +1710,9 @@ instance Binary IfaceConDecl where
         put_ bh a9
         put_ bh a10
         put_ bh a11
+        case a12 of
+            Nothing -> putByte bh 0
+            Just a  -> putByte bh 1 >> putIfaceTopBndr bh a
     get bh = do
         a1 <- getIfaceTopBndr bh
         a2 <- get bh
@@ -1714,7 +1726,11 @@ instance Binary IfaceConDecl where
         a9 <- get bh
         a10 <- get bh
         a11 <- get bh
-        return (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11)
+        b <- getByte bh
+        a12 <- case b of
+          0 -> return Nothing
+          _ -> Just <$> getIfaceTopBndr bh
+        return (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12)
 
 instance Binary IfaceBang where
     put_ bh IfNoBang        = putByte bh 0

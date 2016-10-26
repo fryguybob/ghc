@@ -41,6 +41,7 @@ module DataCon (
         dataConFieldLabels, dataConFieldType,
         dataConSrcBangs,
         dataConMutableFields,
+        dataConWrapperAction,
         dataConSourceArity, dataConRepArity,
         dataConIsInfix,
         dataConWorkId, dataConWrapId, dataConWrapId_maybe,
@@ -64,6 +65,7 @@ module DataCon (
 
 import {-# SOURCE #-} MkId( DataConBoxer )
 import Type
+import TyCoRep ( Type(..) )
 import ForeignCall ( CType )
 import Coercion
 import Unify
@@ -373,6 +375,8 @@ data DataCon
 
         dcMutFields :: [HsMutableInfo],
                 -- Matches 1-1 with dcOrigArgTys
+
+        dcWrapperAction :: Maybe Name,
 
         dcFields  :: [FieldLabel],
                 -- Field labels for this constructor, in the
@@ -815,6 +819,7 @@ mkDataCon name declared_infix prom_info
                   dcRepTyCon = rep_tycon,
                   dcSrcBangs = arg_stricts,
                   dcMutFields = mutable_fields,
+                  dcWrapperAction = wrap_act,
                   dcFields = fields, dcTag = tag, dcRepType = rep_ty,
                   dcWorkId = work_id,
                   dcRep = rep,
@@ -832,6 +837,11 @@ mkDataCon name declared_infix prom_info
     rep_ty = mkForAllTys univ_tvs $ mkForAllTys ex_tvs $
              mkFunTys rep_arg_tys $
              mkTyConApp rep_tycon (mkTyVarTys (binderVars univ_tvs))
+
+    wrap_act =
+        case orig_res_ty of
+          TyConApp tc _ | tyConName tc /= name -> Just (tyConName tc)
+          _ -> Nothing
 
       -- See Note [Promoted data constructors] in TyCon
     prom_tv_bndrs = [ mkNamedTyConBinder vis tv
@@ -894,6 +904,11 @@ dataConOrigTyCon :: DataCon -> TyCon
 dataConOrigTyCon dc
   | Just (tc, _) <- tyConFamInst_maybe (dcRepTyCon dc) = tc
   | otherwise                                          = dcRepTyCon dc
+
+-- | The type of the action that the wrapper will create.  Mutable fields
+-- must be constructed in the context of some action such as IO, ST, or STM.
+dataConWrapperAction :: DataCon -> Maybe Name
+dataConWrapperAction dc = dcWrapperAction dc
 
 -- | The representation type of the data constructor, i.e. the sort
 -- type that will represent values of this type at runtime
