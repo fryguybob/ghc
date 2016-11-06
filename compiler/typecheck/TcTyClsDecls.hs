@@ -1502,7 +1502,7 @@ tcConDecl new_or_data rep_tycon tmpl_bndrs res_tmpl
              { is_infix <- tcConIsInfixH98 name hs_details
              ; rep_nm   <- newTyConRepName name
 
-             ; buildDataCon fam_envs name is_infix rep_nm
+             ; buildDataCon fam_envs (tyConName rep_tycon) name is_infix rep_nm
                             stricts muts Nothing field_lbls
                             (mkDataConUnivTyVarBinders tmpl_bndrs)
                             ex_tvs
@@ -1554,7 +1554,7 @@ tcConDecl _new_or_data rep_tycon tmpl_bndrs res_tmpl
              { is_infix <- tcConIsInfixGADT name hs_details
              ; rep_nm   <- newTyConRepName name
 
-             ; buildDataCon fam_envs name is_infix
+             ; buildDataCon fam_envs (tyConName rep_tycon) name is_infix
                             rep_nm
                             stricts muts Nothing field_lbls
                             univ_bndrs ex_bndrs eq_preds

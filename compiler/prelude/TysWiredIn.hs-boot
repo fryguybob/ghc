@@ -1,9 +1,12 @@
 module TysWiredIn where
 
 import Var( TyVar, ArgFlag )
+import BasicTypes( Boxity )
 import {-# SOURCE #-} TyCon      ( TyCon )
 import {-# SOURCE #-} TyCoRep    (Type, Kind)
 
+intTy :: Type
+mkTupleTy :: Boxity -> [Type] -> Type
 
 mkFunKind :: Kind -> Kind -> Kind
 mkForAllKind :: TyVar -> ArgFlag -> Kind -> Kind

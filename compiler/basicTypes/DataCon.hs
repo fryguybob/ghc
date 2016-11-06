@@ -66,6 +66,7 @@ module DataCon (
 import {-# SOURCE #-} MkId( DataConBoxer )
 import Type
 import TyCoRep ( Type(..) )
+import {-# SOURCE #-} TysWiredIn ( intTy, mkTupleTy )
 import ForeignCall ( CType )
 import Coercion
 import Unify
@@ -90,6 +91,7 @@ import qualified Data.Data as Data
 import Data.Char
 import Data.Word
 import Data.List( mapAccumL, find )
+import Data.Maybe( isJust )
 
 {-
 Data constructor representation
@@ -376,7 +378,7 @@ data DataCon
         dcMutFields :: [HsMutableInfo],
                 -- Matches 1-1 with dcOrigArgTys
 
-        dcWrapperAction :: Maybe Name,
+        dcWrapperAction :: Maybe Type,
 
         dcFields  :: [FieldLabel],
                 -- Field labels for this constructor, in the
@@ -465,7 +467,6 @@ data DataConRep
         , dcr_bangs :: [HsImplBang]  -- The actual decisions made (including failures)
                                      -- about the original arguments; 1-1 with orig_arg_tys
                                      -- See Note [Bangs on data constructor arguments]
-
     }
 -- Algebraic data types always have a worker, and
 -- may or may not have a wrapper, depending on whether
@@ -767,6 +768,7 @@ isMarkedStrict _               = True   -- All others are strict
 
 -- | Build a new data constructor
 mkDataCon :: Name
+          -> Name
           -> Bool           -- ^ Is the constructor declared infix?
           -> TyConRepName   -- ^  TyConRepName for the promoted TyCon
           -> [HsSrcBang]    -- ^ Strictness/unpack annotations, from user
@@ -789,7 +791,7 @@ mkDataCon :: Name
           -> DataCon
   -- Can get the tag from the TyCon
 
-mkDataCon name declared_infix prom_info
+mkDataCon tycon_name name declared_infix prom_info
           arg_stricts    -- Must match orig_arg_tys 1-1
           mutable_fields -- Must match orig_arg_tys 1-1
           fields
@@ -808,6 +810,8 @@ mkDataCon name declared_infix prom_info
   = con
   where
     is_vanilla = null ex_tvs && null eq_spec && null theta
+              && all (== HsImmutable) mutable_fields
+              -- && (not $ isJust wrap_act) -- TODO: See the comment on the definition of wrap_act
     con = MkData {dcName = name, dcUnique = nameUnique name,
                   dcVanilla = is_vanilla, dcInfix = declared_infix,
                   dcUnivTyVars = univ_tvs,
@@ -838,9 +842,15 @@ mkDataCon name declared_infix prom_info
              mkFunTys rep_arg_tys $
              mkTyConApp rep_tycon (mkTyVarTys (binderVars univ_tvs))
 
+    -- TODO: I think we want to allow data constructors that do not have mutable
+    -- fields, but do require construction in a context.  It is hard to tell if
+    -- we have one of these outside of typechecking.  So we are not going to do
+    -- that for now.  For now we will just check for mutable fields and allow 
+    -- any wrapping action, but only use it when there are mutable fields.
     wrap_act =
         case orig_res_ty of
-          TyConApp tc _ | tyConName tc /= name -> Just (tyConName tc)
+          TyConApp tc tys | tyConName tc /= tycon_name -> pprTrace "wrap_act = " (ppr (tc, tycon_name, tys, name, tyConName tc))
+                $ Just (TyConApp tc (take (length tys - 1) tys))
           _ -> Nothing
 
       -- See Note [Promoted data constructors] in TyCon
@@ -907,7 +917,7 @@ dataConOrigTyCon dc
 
 -- | The type of the action that the wrapper will create.  Mutable fields
 -- must be constructed in the context of some action such as IO, ST, or STM.
-dataConWrapperAction :: DataCon -> Maybe Name
+dataConWrapperAction :: DataCon -> Maybe Type
 dataConWrapperAction dc = dcWrapperAction dc
 
 -- | The representation type of the data constructor, i.e. the sort
@@ -1143,14 +1153,31 @@ dataConUserType :: DataCon -> Type
 dataConUserType (MkData { dcUnivTyVars = univ_tvs,
                           dcExTyVars = ex_tvs, dcEqSpec = eq_spec,
                           dcOtherTheta = theta, dcOrigArgTys = arg_tys,
-                          dcOrigResTy = res_ty })
+                          dcOrigResTy = res_ty,
+                          dcMutFields = mut_fields,
+                          dcWrapperAction = mwrap_act })
+  | Just wrap_act <- mwrap_act
+  , any (/= HsImmutable) mut_fields
+  = mkForAllTys (filterEqSpec eq_spec univ_tvs) $
+    mkForAllTys ex_tvs $
+    mkFunTys theta $
+    mkFunTys (map (uncurry translateMutableType) $ zip mut_fields arg_tys) $
+--    mkAppTy wrap_act $ -- TODO: The result type is already wrapped.  Should we remove
+--                       -- it when we make the data constructor and put it back here?
+    res_ty
+  | otherwise
   = mkForAllTys (filterEqSpec eq_spec univ_tvs) $
     mkForAllTys ex_tvs $
     mkFunTys theta $
     mkFunTys arg_tys $
     res_ty
-  where
 
+
+translateMutableType :: HsMutableInfo -> Type -> Type
+translateMutableType HsImmutable    ty = ty
+translateMutableType HsMutable      ty = ty
+translateMutableType HsMutableArray ty = mkTupleTy Boxed [intTy, ty]
+ 
 -- | Finds the instantiated types of the arguments required to construct a 'DataCon' representation
 -- NB: these INCLUDE any dictionary args
 --     but EXCLUDE the data-declaration context, which is discarded

@@ -1556,7 +1556,7 @@ tyConToIfaceDecl env tycon
                                           (dataConSrcBangs data_con),
                     ifConMutFields = map toIfaceMutable
                                           (dataConMutableFields data_con),
-                    ifConWrapperActionTy = dataConWrapperAction data_con }
+                    ifConWrapperActionTy = tidyToIfaceType con_env2 <$> dataConWrapperAction data_con }
         where
           (univ_tvs, _ex_tvs, eq_spec, theta, arg_tys, _)
             = dataConFullSig data_con

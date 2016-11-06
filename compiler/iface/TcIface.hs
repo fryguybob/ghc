@@ -779,6 +779,7 @@ tcIfaceDataCons tycon_name tycon tc_tybinders if_cons
         ; prom_rep_name <- newTyConRepName dc_name
 
         ; con <- buildDataCon (pprPanic "tcIfaceDataCons: FamInstEnvs" (ppr dc_name))
+                       tycon_name
                        dc_name is_infix prom_rep_name
                        (map src_strict if_src_stricts)
                        (map src_mut if_muts)

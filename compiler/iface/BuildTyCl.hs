@@ -55,6 +55,8 @@ mkDataTyConRhs cons
        | (_univ_tvs, ex_tvs, eq_spec, theta, arg_tys, _res)
            <- dataConFullSig con
        = null ex_tvs && null eq_spec && null theta && null arg_tys
+       -- TODO: it could be the case that we have mutable fields and no arguments but 
+       -- different return values.  We wouldn't catch that here.
 
 
 mkNewTyConRhs :: Name -> TyCon -> DataCon -> TcRnIf m n AlgTyConRhs
@@ -104,6 +106,7 @@ mkNewTyConRhs tycon_name tycon con
 
 ------------------------------------------------------
 buildDataCon :: FamInstEnvs
+            -> Name                     -- Type constructor name
             -> Name
             -> Bool                     -- Declared infix
             -> TyConRepName
@@ -125,7 +128,8 @@ buildDataCon :: FamInstEnvs
 --   b) makes the wrapper Id if necessary, including
 --      allocating its unique (hence monadic)
 --   c) Sorts out the TyVarBinders. See mkDataConUnivTyBinders
-buildDataCon fam_envs src_name declared_infix prom_info src_bangs mut_fields impl_bangs field_lbls
+buildDataCon fam_envs tycon_name src_name declared_infix prom_info src_bangs
+             mut_fields impl_bangs field_lbls
              univ_tvs ex_tvs eq_spec ctxt arg_tys res_ty rep_tycon
   = do  { wrap_name <- newImplicitBinder src_name mkDataConWrapperOcc
         ; work_name <- newImplicitBinder src_name mkDataConWorkerOcc
@@ -137,7 +141,7 @@ buildDataCon fam_envs src_name declared_infix prom_info src_bangs mut_fields imp
         ; us <- newUniqueSupply
         ; dflags <- getDynFlags
         ; let stupid_ctxt = mkDataConStupidTheta rep_tycon arg_tys univ_tvs
-              data_con = mkDataCon src_name declared_infix prom_info
+              data_con = mkDataCon tycon_name src_name declared_infix prom_info
                                    src_bangs mut_fields field_lbls
                                    univ_tvs ex_tvs eq_spec ctxt
                                    arg_tys res_ty NoRRI rep_tycon
@@ -348,6 +352,7 @@ buildClass tycon_name binders roles sc_theta
 
         ; rep_nm   <- newTyConRepName datacon_name
         ; dict_con <- buildDataCon (panic "buildClass: FamInstEnvs")
+                                   tycon_name
                                    datacon_name
                                    False        -- Not declared infix
                                    rep_nm
