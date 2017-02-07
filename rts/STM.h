@@ -139,18 +139,6 @@ StgBool stmValidateNestOfTransactions(Capability *cap, StgTRecHeader *trec);
 */
 
 /*
- * Fill in the trec's list of invariants that might be violated by the current
- * transaction.  
- */
-
-StgInvariantCheckQueue *stmGetInvariantsToCheck(Capability *cap, 
-                                                StgTRecHeader *trec);
-
-void stmAddInvariantToCheck(Capability *cap, 
-                            StgTRecHeader *trec,
-                            StgClosure *code);
-
-/*
  * Test whether the current transaction context is valid and, if so,
  * commit its memory accesses to the heap.  stmCommitTransaction must
  * unblock any threads which are waiting on tvars that updates have
@@ -170,6 +158,22 @@ StgBool stmCommitNestedTransaction(Capability *cap, StgTRecHeader *trec);
 StgBool stmWait(Capability *cap, StgTSO *tso, StgTRecHeader *trec);
 
 void stmWaitUnlock(Capability *cap, StgTRecHeader *trec);
+
+#ifdef THREADED_RTS
+
+// Abort reason codes:
+#define ABORT_FALLBACK         1
+#define ABORT_RESTART          2
+#define ABORT_GC               3
+#define ABORT_STM_INCONSISTENT 4
+
+
+/*
+ * End a hardware transaction and add it's read set to the
+ * wakeup bloom filters.
+ */
+
+#endif
 
 /*
  * Test whether the current transaction context is valid and, if so,
@@ -204,14 +208,61 @@ void stmWriteTVar(Capability *cap,
                   StgTRecHeader *trec,
                   StgTVar *tvar, 
                   StgClosure *new_value);
+/* ----- TArray ----- */
+
+typedef StgStmMutArrPtrs StgTArray;
+
+/*
+ * Return the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+StgClosure *stmReadTArray(Capability *cap,
+                          StgTRecHeader *trec,
+                          StgTArray *tarray,
+                          StgHalfWord index);
+
+/* Update the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+void stmWriteTArray(Capability *cap,
+                    StgTRecHeader *trec,
+                    StgTArray *tarray,
+                    StgHalfWord index,
+                    StgClosure *new_value);
+
+
+/*
+ * Return the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+StgWord stmReadTArrayWord(Capability *cap,
+                          StgTRecHeader *trec,
+                          StgTArray *tarray,
+                          StgHalfWord index);
+
+/* Update the logical contents of 'tvar' within the context of the
+ * thread's current transaction.
+ */
+
+void stmWriteTArrayWord(Capability *cap,
+                        StgTRecHeader *trec,
+                        StgTArray *tarray,
+                        StgHalfWord index,
+                        StgWord new_value);
+
+
+void markWakeupSTM (evac_fn evac, void *user);
 
 /*----------------------------------------------------------------------*/
 
 /* NULLs */
 
-#define END_STM_WATCH_QUEUE ((StgTVarWatchQueue *)(void *)&stg_END_STM_WATCH_QUEUE_closure)
-#define END_INVARIANT_CHECK_QUEUE ((StgInvariantCheckQueue *)(void *)&stg_END_INVARIANT_CHECK_QUEUE_closure)
 #define END_STM_CHUNK_LIST ((StgTRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
+#define END_STM_ARRAY_CHUNK_LIST ((StgTArrayRecChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
+#define END_BLOOM_WAKEUP_CHUNK_LIST ((StgBloomWakeupChunk *)(void *)&stg_END_STM_CHUNK_LIST_closure)
 
 #define NO_TREC ((StgTRecHeader *)(void *)&stg_NO_TREC_closure)
 

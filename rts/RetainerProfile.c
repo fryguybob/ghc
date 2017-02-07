@@ -539,6 +539,16 @@ push( StgClosure *c, retainer c_child_r, StgClosure **first_child )
             return;
         break;
 
+		// StgStmMutArrPtr.ptrs, no SRT
+	case STM_MUT_ARR_PTRS_CLEAN:
+	case STM_MUT_ARR_PTRS_DIRTY:
+		init_ptrs(&se.info, ((StgStmMutArrPtrs *)c)->ptrs,
+			      (StgPtr)(((StgStmMutArrPtrs *)c)->payload));
+		*first_child = find_ptrs(&se.info);
+		if (*first_child == NULL)
+		    return;
+		break;
+
     // layout.payload.ptrs, SRT
     case FUN:           // *c is a heap object.
     case FUN_2_0:
@@ -601,6 +611,16 @@ push( StgClosure *c, retainer c_child_r, StgClosure **first_child )
         *first_child = (StgClosure *)((StgTRecChunk *)c)->prev_chunk;
         se.info.next.step = 0;  // entry no.
         break;
+
+	case TARRAY_REC_CHUNK:
+    	*first_child = (StgClosure *)((StgTArrayRecChunk *)c)->prev_chunk;
+    	se.info.next.step = 0;  // entry no.
+		break;
+
+	case BLOOM_WAKEUP_CHUNK:
+		*first_child = (StgClosure *)((StgBloomWakeupChunk *)c)->prev_chunk;
+		se.info.next.step = 0;  // entry no.
+		break;
 
         // cannot appear
     case PAP:
@@ -854,6 +874,57 @@ pop( StgClosure **c, StgClosure **cp, retainer *r )
             return;
         }
 
+		case TARRAY_REC_CHUNK: {
+		     // These are pretty complicated: we have N entries, each
+		     // of which contains 3 fields that we want to follow.  So
+		     // we divide the step counter: the 2 low bits indicate
+		     // which field, and the rest of the bits indicate the
+		     // entry number (starting from zero).
+		     TArrayRecEntry *entry;
+		     uint32_t entry_no = se->info.next.step >> 2;
+		     uint32_t field_no = se->info.next.step & 3;
+		     if (entry_no == ((StgTArrayRecChunk *)se->c)->next_entry_idx) {
+		         *c = NULL;
+		         popOff();
+		         return;
+		     }
+		     entry = &((StgTArrayRecChunk *)se->c)->entries[entry_no];
+		     if (field_no == 0) {
+		         *c = (StgClosure *)entry->tarray;
+		     } else if (field_no == 1) {
+		         if (entry->offset < entry->tarray->ptrs) {
+		             *c = NULL;
+		             popOff();
+		             return;
+		         }
+		         *c = entry->expected_value.ptr;
+		     } else {
+		         *c = entry->new_value.ptr;
+		     }
+		     *cp = se->c;
+		     *r = se->c_child_r;
+		     se->info.next.step++;
+		     return;
+		 }
+
+		case BLOOM_WAKEUP_CHUNK: {
+		    // We have N entries, each of which contains one field that
+		     // we want to follow.
+		    BloomWakeupEntry *entry;
+		    uint32_t entry_no = se->info.next.step;
+		    if (entry_no == ((StgBloomWakeupChunk *)se->c)->next_entry_idx) {
+		    *c = NULL;
+		    popOff();
+		    return;
+		    }
+		    entry = &((StgBloomWakeupChunk *)se->c)->filters[entry_no];
+		    *c = (StgClosure *)entry->tso;
+		    *cp = se->c;
+		    *r = se->c_child_r;
+		    se->info.next.step++;
+		    return;
+		}
+
         case TVAR:
         case CONSTR:
         case PRIM:
@@ -1079,6 +1150,7 @@ isRetainer( StgClosure *c )
     case ARR_WORDS:
         // STM
     case TREC_CHUNK:
+	case TARRAY_REC_CHUNK:
         // immutable arrays
     case MUT_ARR_PTRS_FROZEN:
     case MUT_ARR_PTRS_FROZEN0:

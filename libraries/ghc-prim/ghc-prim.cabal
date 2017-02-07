@@ -79,6 +79,7 @@ Library
         cbits/longlong.c
         cbits/popcnt.c
         cbits/word2float.c
+        cbits/xtest.c
 
     -- We need to set the unit ID to ghc-prim (without a version number)
     -- as it's magic.

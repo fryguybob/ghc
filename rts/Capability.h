@@ -154,11 +154,13 @@ struct Capability_ {
 #endif
 
     // Per-capability STM-related data
-    StgTVarWatchQueue *free_tvar_watch_queues;
-    StgInvariantCheckQueue *free_invariant_check_queues;
-    StgTRecChunk *free_trec_chunks;
-    StgTRecHeader *free_trec_headers;
+    StgTRecChunk      *free_trec_chunks;
+    StgTArrayRecChunk *free_tarray_rec_chunks;
+    StgTRecHeader     *free_trec_headers;
+
     uint32_t transaction_tokens;
+
+    struct stm_stats_ *stm_stats;
 } // typedef Capability is defined in RtsAPI.h
   // We never want a Capability to overlap a cache line with anything
   // else, so round it up to a cache line size:

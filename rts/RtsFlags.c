@@ -7,6 +7,12 @@
  *
  * ---------------------------------------------------------------------------*/
 
+#if defined(__linux__) || defined(__GLIBC__)
+/* We want GNU extensions in DEBUG mode for mutex error checking */
+/* We also want the affinity API, which requires _GNU_SOURCE */
+#define _GNU_SOURCE
+#endif
+
 #include "PosixSource.h"
 #include "Rts.h"
 
@@ -19,6 +25,10 @@
 
 #ifdef HAVE_CTYPE_H
 #include <ctype.h>
+#endif
+
+#if defined(HAVE_SCHED_H)
+#include <sched.h>
 #endif
 
 #include <string.h>
@@ -106,6 +116,10 @@ static rtsBool read_heap_profiling_flag(const char *arg);
 
 #ifdef TRACING
 static void read_trace_flags(const char *arg);
+#endif
+
+#if defined(THREADED_RTS) && defined(HAVE_SCHED_H)
+static rtsBool readAffinityTopology(const char* file);
 #endif
 
 static void errorUsage (void) GNU_ATTRIBUTE(__noreturn__);
@@ -216,6 +230,9 @@ void initRtsFlagsDefaults(void)
     RtsFlags.MiscFlags.tickInterval     = DEFAULT_TICK_INTERVAL;
 #endif
     RtsFlags.ConcFlags.ctxtSwitchTime   = USToTime(20000); // 20ms
+    RtsFlags.ConcFlags.stmStats         = rtsFalse;
+    RtsFlags.ConcFlags.htmRetryCount    = 5;
+    RtsFlags.ConcFlags.hleRetryCount    = 5;
 
     RtsFlags.MiscFlags.install_signal_handlers = rtsTrue;
     RtsFlags.MiscFlags.machineReadable = rtsFalse;
@@ -231,6 +248,9 @@ void initRtsFlagsDefaults(void)
     RtsFlags.ParFlags.parGcNoSyncWithIdle   = 0;
     RtsFlags.ParFlags.parGcThreads      = 0; /* defaults to -N */
     RtsFlags.ParFlags.setAffinity       = 0;
+    RtsFlags.ParFlags.setAffinityTopology = NULL;
+    RtsFlags.ParFlags.setAffinityTopologySize = 0;
+    RtsFlags.ParFlags.setAffinityTopologyCount = 0;
 #endif
 
 #if defined(THREADED_RTS)
@@ -399,7 +419,12 @@ usage_text[] = {
 "            (default: 1 for -A < 32M, 0 otherwise;"
 "             -qb alone turns off load-balancing)",
 "  -qn<n>    Use <n> threads for parallel GC (defaults to value of -N)",
-"  -qa       Use the OS to set thread affinity (experimental)",
+#if defined(HAVE_SCHED_H)
+"  -qa[<file>] Use the OS to set thread affinity (experimental)",
+"              (optional file specifies affinity masks)",
+#else
+"  -qa         Use the OS to set thread affinity (experimental)",
+#endif
 "  -qm       Don't automatically migrate threads between CPUs",
 "  -qi<n>    If a processor has been idle for the last <n> GCs, do not",
 "            wake it up for a non-load-balancing parallel GC.",
@@ -805,6 +830,52 @@ error = rtsTrue;
                       }
                   }
 #endif
+                  else if (strequal("stm-stats", &rts_argv[arg][2])) {
+                      OPTION_SAFE;
+                      RtsFlags.ConcFlags.stmStats = rtsTrue;
+                  }
+                  else if (strncmp("htm-retry=", &rts_argv[arg][2], 10) == 0) {
+                      OPTION_SAFE;
+                      if (rts_argv[arg][12] == '\0') {
+                        errorBelch("missing value for --htm-retry=<n>");
+                        error = rtsTrue;
+                        // Count needed.
+                      } else {
+                        int count;
+                        count = strtol(rts_argv[arg]+12, (char **) NULL, 10);
+                        if (count < 0 || count > 100) {
+                           errorBelch("bad value for --htm-retry");
+                           error = rtsTrue;
+                        }
+                        RtsFlags.ConcFlags.htmRetryCount = count;
+                      }
+                  }
+                  else if (strequal("htm-retry", &rts_argv[arg][2])) {
+                    OPTION_SAFE;
+                    errorBelch("missing value for --htm-retry=<n>");
+                    error = rtsTrue;
+                  }
+                  else if (strncmp("hle-retry=", &rts_argv[arg][2], 10) == 0) {
+                      OPTION_SAFE;
+                      if (rts_argv[arg][12] == '\0') {
+                        errorBelch("missing value for --hle-retry=<n>");
+                        error = rtsTrue;
+                        // Count needed.
+                      } else {
+                        int count;
+                        count = strtol(rts_argv[arg]+12, (char **) NULL, 10);
+                        if (count < 0 || count > 100) {
+                           errorBelch("bad value for --hle-retry");
+                           error = rtsTrue;
+                        }
+                        RtsFlags.ConcFlags.hleRetryCount = count;
+                      }
+                  }
+                  else if (strequal("hle-retry", &rts_argv[arg][2])) {
+                    OPTION_SAFE;
+                    errorBelch("missing value for --hle-retry=<n>");
+                    error = rtsTrue;
+                  }
                   else {
                       OPTION_SAFE;
                       errorBelch("unknown RTS option: %s",rts_argv[arg]);
@@ -1215,6 +1286,14 @@ error = rtsTrue;
                     }
                     case 'a':
                         RtsFlags.ParFlags.setAffinity = rtsTrue;
+#if defined(HAVE_SCHED_H)
+                        if (rts_argv[arg][3] != '\0') {
+                            if (!readAffinityTopology(rts_argv[arg]+3)) {
+                                errorBelch("failed to parse topology: %s", rts_argv[arg]+3);
+                                error = rtsTrue;
+                            }
+                        }
+#endif
                         break;
                     case 'm':
                         RtsFlags.ParFlags.migrate = rtsFalse;
@@ -1870,6 +1949,78 @@ static void read_trace_flags(const char *arg)
             break;
         }
     }
+}
+#endif
+
+#if defined(THREADED_RTS) && defined(HAVE_SCHED_H)
+static rtsBool readAffinityTopology(const char* file)
+{
+    FILE *topo;
+
+    if ((topo = fopen(file, "r")) == NULL) {
+        errorBelch("failed to open file '%s'.", file);
+        return rtsFalse;
+    }
+
+    char line[1000];
+    char *save, *token, *p;
+    int r = 0;
+    int lines = 0;
+    int n = 0;
+    int x;
+    int procs = getNumberOfProcessors();
+
+    unsigned char* temp;
+    size_t size = CPU_ALLOC_SIZE(procs);
+
+    temp = (unsigned char*)malloc(size*procs);
+    if (temp == NULL) {
+        errorBelch("Failed to allocate cpu set.");
+        return rtsFalse;
+    }
+
+    while (fgets(line, sizeof(line), topo) != NULL) {
+        lines++;
+
+        cpu_set_t* set = (cpu_set_t*)(temp + (n++ * size));
+
+        CPU_ZERO_S(size, set);
+
+        for (p = line;; p = NULL) {
+            token = strtok_r(p, " ", &save);
+            if (token == NULL)
+                break;
+
+            r = sscanf(token, "0x%x", &x);
+            if (r != 1)
+                r = sscanf(token, "%d", &x);
+
+            if (r != 1) {
+                errorBelch("Failed to parse affinity topology line %d char %d: %s\n",
+                           lines, (int)(token - line + 1), token);
+                free(temp);
+                return rtsFalse;
+            }
+
+            if (x < 0 || x > CPU_SETSIZE) {
+                errorBelch("CPU given is out of range line %d char %d: %s\n",
+                           lines, (int)(token - line + 1), token);
+                free(temp);
+                return rtsFalse;
+            }
+
+            CPU_SET_S(x, size, set);
+        }
+
+        if (n >= procs)
+            break;
+    }
+
+    RtsFlags.ParFlags.setAffinityTopology = realloc(temp, n*size);
+    RtsFlags.ParFlags.setAffinityTopologySize = size;
+    RtsFlags.ParFlags.setAffinityTopologyCount = n;
+
+    return rtsTrue;
 }
 #endif
 

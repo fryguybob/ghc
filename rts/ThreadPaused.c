@@ -15,6 +15,10 @@
 #include "RaiseAsync.h"
 #include "Trace.h"
 #include "Threads.h"
+#ifdef THREADED_RTS
+#include "STM.h"
+#include "rtm-goto.h"
+#endif
 
 #include <string.h> // for memmove()
 
@@ -202,6 +206,12 @@ threadPaused(Capability *cap, StgTSO *tso)
     uint32_t weight_pending   = 0;
     rtsBool prev_was_update_frame = rtsFalse;
     StgWord heuristic_says_squeeze;
+
+#ifdef THREADED_RTS
+    if (XTEST()) {
+      XABORT(ABORT_GC);
+    }
+#endif
 
     // Check to see whether we have threads waiting to raise
     // exceptions, and we're not blocking exceptions, or are blocked

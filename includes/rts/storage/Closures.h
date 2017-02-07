@@ -155,6 +155,26 @@ typedef struct {
     StgClosure *payload[];
 } StgSmallMutArrPtrs;
 
+typedef struct{
+    StgHeader        header;
+    // Where in the TVar structure we have conflated lock and value
+    // here we conflate lock and num_updates.  There are multiple
+    // values and word values so we can't do the same as TVars.  The
+    // scheme is, the least significant bit indicates locked status.
+    // When locked, the value (with the lock bit unset) points to the
+    // owning TRec.  Whe unlocked the value is a version number.
+    volatile StgWord lock;
+    StgWord          ptrs;
+    StgWord          words;
+    StgWord          hash_id;
+    volatile StgWord lock_count;
+    StgWord          num_updates;
+    StgWord          padding[1]; // TODO: assumes 64-byte cacheline
+                                 // Fill out 64-bytes assuming the
+                                 // struct is already aligned.
+    volatile StgClosure *payload[];
+} StgStmMutArrPtrs;
+
 typedef struct {
     StgHeader   header;
     StgClosure *var;
@@ -289,10 +309,6 @@ typedef struct {
  *  space for these data structures at the cost of more complexity in the
  *  implementation:
  *
- *   - In StgTVar, current_value and first_watch_queue_entry could be held in
- *     the same field: if any thread is waiting then its expected_value for
- *     the tvar is the current value.
- *
  *   - In StgTRecHeader, it might be worthwhile having separate chunks
  *     of read-only and read-write locations.  This would save a
  *     new_value field in the read-only locations.
@@ -305,46 +321,57 @@ typedef struct {
 
 typedef struct StgTRecHeader_ StgTRecHeader;
 
-typedef struct StgTVarWatchQueue_ {
-  StgHeader                  header;
-  StgClosure                *closure; // StgTSO or StgAtomicInvariant
-  struct StgTVarWatchQueue_ *next_queue_entry;
-  struct StgTVarWatchQueue_ *prev_queue_entry;
-} StgTVarWatchQueue;
+typedef struct StgHTRecHeader_ StgHTRecHeader;
 
 typedef struct {
   StgHeader                  header;
   StgClosure                *volatile current_value;
-  StgTVarWatchQueue         *volatile first_watch_queue_entry;
+  StgWord                    hash_id;
   StgInt                     volatile num_updates;
 } StgTVar;
 
-typedef struct {
-  StgHeader      header;
-  StgClosure    *code;
-  StgTRecHeader *last_execution;
-  StgWord        lock;
-} StgAtomicInvariant;
-
 /* new_value == expected_value for read-only accesses */
-/* new_value is a StgTVarWatchQueue entry when trec in state TREC_WAITING */
 typedef struct {
   StgTVar                   *tvar;
   StgClosure                *expected_value;
   StgClosure                *new_value;
-#if defined(THREADED_RTS)
-  StgInt                     num_updates;
-#endif
+  StgWord                    num_updates;
 } TRecEntry;
 
-#define TREC_CHUNK_NUM_ENTRIES 16
+#define TREC_CHUNK_NUM_ENTRIES 11
 
 typedef struct StgTRecChunk_ {
   StgHeader                  header;
   struct StgTRecChunk_      *prev_chunk;
   StgWord                    next_entry_idx;
+  StgWord                    padding;
   TRecEntry                  entries[TREC_CHUNK_NUM_ENTRIES];
 } StgTRecChunk;
+
+/* Transactional array entries */
+
+typedef struct {
+  StgStmMutArrPtrs          *tarray;
+  StgWord                    offset;
+  union {
+    StgClosure                *ptr;
+    StgWord                    word;
+  } expected_value;
+  union {
+    StgClosure                *ptr;
+    StgWord                    word;
+  } new_value;
+  StgWord                     num_updates;
+} TArrayRecEntry;
+
+#define TARRAY_REC_CHUNK_NUM_ENTRIES 9
+
+typedef struct StgTArrayRecChunk_ {
+  StgHeader                  header;
+  struct StgTArrayRecChunk_ *prev_chunk;
+  StgWord                    next_entry_idx;
+  TArrayRecEntry             entries[TARRAY_REC_CHUNK_NUM_ENTRIES];
+} StgTArrayRecChunk;
 
 typedef enum {
   TREC_ACTIVE,        /* Transaction in progress, outcome undecided */
@@ -354,25 +381,47 @@ typedef enum {
   TREC_WAITING,       /* Transaction currently waiting */
 } TRecState;
 
-typedef struct StgInvariantCheckQueue_ {
-  StgHeader                       header;
-  StgAtomicInvariant             *invariant;
-  StgTRecHeader                  *my_execution;
-  struct StgInvariantCheckQueue_ *next_queue_entry;
-} StgInvariantCheckQueue;
-
 struct StgTRecHeader_ {
   StgHeader                  header;
   struct StgTRecHeader_     *enclosing_trec;
   StgTRecChunk              *current_chunk;
-  StgInvariantCheckQueue    *invariants_to_check;
-  TRecState                  state;
+  StgTArrayRecChunk         *current_array_chunk;
+  StgHalfWord                state;
+  StgHalfWord                retrying;
+  StgWord                    padding[3];
 };
+
+struct StgHTRecHeader_ {
+  StgHeader                  header;
+  struct StgHTRecHeader_    *enclosing_trec;
+  StgWord                    write_set;
+  StgHalfWord                state;
+  StgHalfWord                retrying;
+  StgWord                    read_set;
+  StgWord                    padding[3];
+};
+
+#define BLOOM_WAKEUP_CHUNK_NUM_ENTRIES 6  // TODO: Roundup to a multiple of cacheline size
+
+typedef StgWord StgBloom;
+
+typedef struct {
+    StgBloom     filter;
+    StgTSO      *tso;
+} BloomWakeupEntry;
+
+typedef struct StgBloomWakeupChunk_
+{
+    StgHeader                    header;
+    struct StgBloomWakeupChunk_ *prev_chunk;
+    StgWord                      next_entry_idx;
+    StgWord                      padding;
+    BloomWakeupEntry             filters[BLOOM_WAKEUP_CHUNK_NUM_ENTRIES];
+} StgBloomWakeupChunk;
 
 typedef struct {
   StgHeader   header;
   StgClosure *code;
-  StgTVarWatchQueue *next_invariant_to_check;
   StgClosure *result;
 } StgAtomicallyFrame;
 

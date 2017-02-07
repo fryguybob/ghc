@@ -328,6 +328,18 @@ printClosure( const StgClosure *obj )
                    (W_)((StgSmallMutArrPtrs *)obj)->ptrs);
         break;
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+	    debugBelch("STM_MUT_ARR_PTRS_CLEAN(size=%" FMT_Word ")\n",
+                   (W_)((StgStmMutArrPtrs *)obj)->ptrs+
+                   (W_)((StgStmMutArrPtrs *)obj)->words);
+	    break;
+
+    case STM_MUT_ARR_PTRS_DIRTY:
+	    debugBelch("STM_MUT_ARR_PTRS_DIRTY(size=%" FMT_Word ")\n",
+                   (W_)((StgStmMutArrPtrs *)obj)->ptrs+
+                   (W_)((StgStmMutArrPtrs *)obj)->words);
+	    break;
+
     case MVAR_CLEAN:
     case MVAR_DIRTY:
         {
@@ -339,7 +351,7 @@ printClosure( const StgClosure *obj )
     case TVAR:
         {
           StgTVar* tv = (StgTVar*)obj;
-          debugBelch("TVAR(value=%p, wq=%p, num_updates=%" FMT_Word ")\n", tv->current_value, tv->first_watch_queue_entry, tv->num_updates);
+		  debugBelch("TVAR(value=%p)\n", tv->current_value);
           break;
         }
 
@@ -876,10 +888,18 @@ const char *closure_type_names[] = {
  [TSO]                   = "TSO",
  [STACK]                 = "STACK",
  [TREC_CHUNK]            = "TREC_CHUNK",
+ [TARRAY_REC_CHUNK]      = "TARRAY_REC_CHUNK",
+ [BLOOM_WAKEUP_CHUNK]    = "BLOOM_WAKEUP_CHUNK",
  [ATOMICALLY_FRAME]      = "ATOMICALLY_FRAME",
  [CATCH_RETRY_FRAME]     = "CATCH_RETRY_FRAME",
  [CATCH_STM_FRAME]       = "CATCH_STM_FRAME",
  [WHITEHOLE]             = "WHITEHOLE",
+ [SMALL_MUT_ARR_PTRS_CLEAN]   = "SMALL_MUT_ARR_PTRS_CLEAN",
+ [SMALL_MUT_ARR_PTRS_DIRTY]   = "SMALL_MUT_ARR_PTRS_DIRTY",
+ [SMALL_MUT_ARR_PTRS_FROZEN0] = "SMALL_MUT_ARR_PTRS_FROZEN0",
+ [SMALL_MUT_ARR_PTRS_FROZEN]  = "SMALL_MUT_ARR_PTRS_FROZEN",
+ [STM_MUT_ARR_PTRS_CLEAN]     = "STM_MUT_ARR_PTRS_CLEAN",
+ [STM_MUT_ARR_PTRS_DIRTY]     = "STM_MUT_ARR_PTRS_DIRTY",
  [COMPACT_NFDATA]        = "COMPACT_NFDATA"
 };
 

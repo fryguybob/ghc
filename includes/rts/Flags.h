@@ -163,6 +163,9 @@ typedef struct _TRACE_FLAGS {
 typedef struct _CONCURRENT_FLAGS {
     Time ctxtSwitchTime;         /* units: TIME_RESOLUTION */
     int ctxtSwitchTicks;         /* derived */
+    rtsBool stmStats;            /* show stm stats at end */
+    int htmRetryCount;           /* how many times to attempt htm per transaction */
+    int hleRetryCount;           /* how many times to attempt hle per lock acquisition */
 } CONCURRENT_FLAGS;
 
 /*
@@ -210,6 +213,11 @@ typedef struct _PAR_FLAGS {
                                   * GC (default: use all nNodes). */
 
   rtsBool        setAffinity;    /* force thread affinity with CPUs */
+  char*          setAffinityTopology;
+                                 /* Allow the user to specify a particular
+                                  * assignment of capabilites to CPUs */
+  uint32_t       setAffinityTopologySize;
+  uint32_t       setAffinityTopologyCount;
 } PAR_FLAGS;
 
 /* See Note [Synchronization of flags and base APIs] */

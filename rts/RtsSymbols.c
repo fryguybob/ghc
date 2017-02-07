@@ -492,6 +492,9 @@
       SymI_HasProto(stg_gc_prim_p)                                      \
       SymI_HasProto(stg_gc_prim_pp)                                     \
       SymI_HasProto(stg_gc_prim_n)                                      \
+      SymI_HasProto(stg_gc_prim_pn)                                     \
+      SymI_HasProto(stg_gc_prim_pnp)                                    \
+      SymI_HasProto(stg_gc_prim_pnn)                                    \
       SymI_HasProto(stg_enter_info)                                     \
       SymI_HasProto(__stg_gc_enter_1)                                   \
       SymI_HasProto(stg_gc_unpt_r1)                                     \
@@ -553,6 +556,7 @@
       SymI_HasProto(stg_deRefStablePtrzh)                               \
       SymI_HasProto(dirty_MUT_VAR)                                      \
       SymI_HasProto(dirty_TVAR)                                         \
+      SymI_HasProto(dirty_TARRAY)                                       \
       SymI_HasProto(stg_forkzh)                                         \
       SymI_HasProto(stg_forkOnzh)                                       \
       SymI_HasProto(forkProcess)                                        \
@@ -731,6 +735,7 @@
       SymI_HasProto(stg_SMALL_MUT_ARR_PTRS_DIRTY_info)                  \
       SymI_HasProto(stg_SMALL_MUT_ARR_PTRS_FROZEN_info)                 \
       SymI_HasProto(stg_SMALL_MUT_ARR_PTRS_FROZEN0_info)                \
+      SymI_HasProto(stg_STM_MUT_ARR_PTRS_DIRTY_info)                    \
       SymI_HasProto(stg_MUT_VAR_CLEAN_info)                             \
       SymI_HasProto(stg_MUT_VAR_DIRTY_info)                             \
       SymI_HasProto(stg_WEAK_info)                                      \

@@ -1827,6 +1827,11 @@ genCCall dflags is32Bit (PrimTarget (MO_PopCnt width)) dest_regs@[dst]
     format = intFormat width
     lbl = mkCmmCodeLabel primUnitId (fsLit (popCntLabel width))
 
+genCCall dflags is32Bit (PrimTarget MO_XTest) [dst] _
+    = return $ unitOL (XTEST format (getRegisterReg (targetPlatform dflags) False (CmmLocal dst)))
+  where
+    format = archWordFormat is32Bit
+
 genCCall dflags is32Bit (PrimTarget (MO_Clz width)) dest_regs@[dst] args@[src]
   | is32Bit && width == W64 = do
     -- Fallback to `hs_clz64` on i386
@@ -2617,6 +2622,8 @@ outOfLineCmmOp mop res args
               MO_AtomicRead _  -> fsLit "atomicread"
               MO_AtomicWrite _ -> fsLit "atomicwrite"
               MO_Cmpxchg _     -> fsLit "cmpxchg"
+
+              MO_XTest -> fsLit "xtest"
 
               MO_UF_Conv _ -> unsupported
 

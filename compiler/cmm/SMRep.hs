@@ -23,7 +23,7 @@ module SMRep (
 
         -- ** Construction
         mkHeapRep, blackHoleRep, indStaticRep, mkStackRep, mkRTSRep, arrPtrsRep,
-        smallArrPtrsRep, arrWordsRep,
+        smallArrPtrsRep, arrWordsRep, stmArrPtrsRep,
 
         -- ** Predicates
         isStaticRep, isConRep, isThunkRep, isFunRep, isStaticNoCafCon,
@@ -34,7 +34,7 @@ module SMRep (
         fixedHdrSizeW, arrWordsHdrSize, arrWordsHdrSizeW, arrPtrsHdrSize,
         arrPtrsHdrSizeW, profHdrSize, thunkHdrSize, nonHdrSize, nonHdrSizeW,
         smallArrPtrsHdrSize, smallArrPtrsHdrSizeW, hdrSize, hdrSizeW,
-        fixedHdrSize,
+        fixedHdrSize, stmArrPtrsHdrSize,
 
         -- ** RTS closure types
         rtsClosureType, rET_SMALL, rET_BIG,
@@ -168,6 +168,10 @@ data SMRep
   | ArrayWordsRep
         !WordOff        -- # bytes expressed in words, rounded up
 
+  | STMArrayPtrsRep
+        !WordOff        -- # non-ptr words
+        !WordOff        -- # ptr words
+
   | StackRep            -- Stack frame (RET_SMALL or RET_BIG)
         Liveness
 
@@ -254,6 +258,9 @@ arrPtrsRep dflags elems = ArrayPtrsRep elems (cardTableSizeW dflags elems)
 
 smallArrPtrsRep :: WordOff -> SMRep
 smallArrPtrsRep elems = SmallArrayPtrsRep elems
+
+stmArrPtrsRep :: WordOff -> WordOff -> SMRep
+stmArrPtrsRep ptrs words = STMArrayPtrsRep ptrs words
 
 arrWordsRep :: DynFlags -> ByteOff -> SMRep
 arrWordsRep dflags bytes = ArrayWordsRep (bytesToWordsRoundUp dflags bytes)
@@ -342,6 +349,15 @@ smallArrPtrsHdrSizeW dflags =
     fixedHdrSizeW dflags +
     (sIZEOF_StgSmallMutArrPtrs_NoHdr dflags `quot` wORD_SIZE dflags)
 
+stmArrPtrsHdrSize :: DynFlags -> ByteOff
+stmArrPtrsHdrSize dflags
+ = fixedHdrSize dflags + sIZEOF_StgStmMutArrPtrs_NoHdr dflags
+
+stmArrPtrsHdrSizeW :: DynFlags -> WordOff
+stmArrPtrsHdrSizeW dflags =
+    fixedHdrSizeW dflags +
+    (sIZEOF_StgStmMutArrPtrs_NoHdr dflags `quot` wORD_SIZE dflags)
+
 -- Thunks have an extra header word on SMP, so the update doesn't
 -- splat the payload.
 thunkHdrSize :: DynFlags -> WordOff
@@ -356,6 +372,7 @@ hdrSizeW dflags (HeapRep _ _ _ ty)    = closureTypeHdrSize dflags ty
 hdrSizeW dflags (ArrayPtrsRep _ _)    = arrPtrsHdrSizeW dflags
 hdrSizeW dflags (SmallArrayPtrsRep _) = smallArrPtrsHdrSizeW dflags
 hdrSizeW dflags (ArrayWordsRep _)     = arrWordsHdrSizeW dflags
+hdrSizeW dflags (STMArrayPtrsRep _ _) = stmArrPtrsHdrSizeW dflags
 hdrSizeW _ _                          = panic "SMRep.hdrSizeW"
 
 nonHdrSize :: DynFlags -> SMRep -> ByteOff
@@ -366,6 +383,7 @@ nonHdrSizeW (HeapRep _ p np _) = p + np
 nonHdrSizeW (ArrayPtrsRep elems ct) = elems + ct
 nonHdrSizeW (SmallArrayPtrsRep elems) = elems
 nonHdrSizeW (ArrayWordsRep words) = words
+nonHdrSizeW (STMArrayPtrsRep ptrs words) = ptrs + words
 nonHdrSizeW (StackRep bs)      = length bs
 nonHdrSizeW (RTSRep _ rep)     = nonHdrSizeW rep
 
@@ -379,6 +397,8 @@ heapClosureSizeW dflags (SmallArrayPtrsRep elems)
  = smallArrPtrsHdrSizeW dflags + elems
 heapClosureSizeW dflags (ArrayWordsRep words)
  = arrWordsHdrSizeW dflags + words
+heapClosureSizeW dflags (STMArrayPtrsRep ptrs words)
+ = stmArrPtrsHdrSizeW dflags + ptrs + words
 heapClosureSizeW _ _ = panic "SMRep.heapClosureSize"
 
 closureTypeHdrSize :: DynFlags -> ClosureTypeInfo -> WordOff
@@ -510,6 +530,8 @@ instance Outputable SMRep where
    ppr (SmallArrayPtrsRep size) = text "SmallArrayPtrsRep" <+> ppr size
 
    ppr (ArrayWordsRep words) = text "ArrayWordsRep" <+> ppr words
+
+   ppr (STMArrayPtrsRep ptrs words) = ptext (sLit "STMArrayPtrsRep") <+> ppr ptrs <+> ppr words
 
    ppr (StackRep bs) = text "StackRep" <+> ppr bs
 

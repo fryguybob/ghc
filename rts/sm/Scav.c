@@ -459,9 +459,9 @@ scavenge_block (bdescr *bd)
     case TVAR:
     {
         StgTVar *tvar = ((StgTVar *)p);
+        debugTrace(DEBUG_gc,"scavenging block TVAR %p value %p",p,tvar->current_value);
         gct->eager_promotion = rtsFalse;
         evacuate((StgClosure **)&tvar->current_value);
-        evacuate((StgClosure **)&tvar->first_watch_queue_entry);
         gct->eager_promotion = saved_eager_promotion;
 
         if (gct->failed_to_evac) {
@@ -739,6 +739,35 @@ scavenge_block (bdescr *bd)
         break;
     }
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+        // follow every pointer
+    {
+        StgPtr next;
+
+        // We don't eagerly promote objects pointed to by a mutable
+        // array, but if we find the array only points to objects in
+        // the same or an older generation, we mark it "clean" and
+        // avoid traversing it during minor GCs.
+        gct->eager_promotion = rtsFalse;
+        next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
+        for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
+            evacuate((StgClosure **)p);
+        }
+        gct->eager_promotion = saved_eager_promotion;
+
+        if (gct->failed_to_evac) {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
+        } else {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
+        }
+
+        gct->failed_to_evac = rtsTrue; // always put it on the mutable list.
+
+        p = p + ((StgStmMutArrPtrs*)q)->words;
+        break;
+    }
+
     case TSO:
     {
         scavengeTSO((StgTSO *)p);
@@ -792,6 +821,45 @@ scavenge_block (bdescr *bd)
         gct->eager_promotion = saved_eager_promotion;
         gct->failed_to_evac = rtsTrue; // mutable
         p += sizeofW(StgTRecChunk);
+        break;
+      }
+
+    case TARRAY_REC_CHUNK:
+      {
+        StgWord i;
+        StgTArrayRecChunk *tc = ((StgTArrayRecChunk *) p);
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        gct->eager_promotion = rtsFalse;
+        evacuate((StgClosure **)&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          evacuate((StgClosure **)&e->tarray);
+          if (e->offset < e->tarray->ptrs) {
+            evacuate((StgClosure **)&e->expected_value.ptr);
+            evacuate((StgClosure **)&e->new_value.ptr);
+          }
+        }
+        gct->eager_promotion = saved_eager_promotion;
+        gct->failed_to_evac = rtsTrue; // mutable
+        p += sizeofW(StgTArrayRecChunk);
+        break;
+      }
+
+    case BLOOM_WAKEUP_CHUNK:
+      {
+        StgWord i;
+        StgBloomWakeupChunk *tc = ((StgBloomWakeupChunk *) p);
+        BloomWakeupEntry *e = &(tc -> filters[0]);
+        debugTrace(DEBUG_gc,"scavenging block BloomWakeupChunk %p count %d",p,tc->next_entry_idx);
+        gct->eager_promotion = rtsFalse;
+        evacuate((StgClosure **)&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i++, e++ ) {
+            if (e->filter != 0) {
+                evacuate((StgClosure **)&e->tso);
+            }
+        }
+        gct->eager_promotion = saved_eager_promotion;
+        gct->failed_to_evac = rtsTrue; // mutable
+        p += sizeofW(StgBloomWakeupChunk);
         break;
       }
 
@@ -889,9 +957,9 @@ scavenge_mark_stack(void)
         case TVAR:
         {
             StgTVar *tvar = ((StgTVar *)p);
+            debugTrace(DEBUG_gc,"scavenging mark TVAR %p value %p",p,tvar->current_value);
             gct->eager_promotion = rtsFalse;
             evacuate((StgClosure **)&tvar->current_value);
-            evacuate((StgClosure **)&tvar->first_watch_queue_entry);
             gct->eager_promotion = saved_eager_promotion;
 
             if (gct->failed_to_evac) {
@@ -1145,6 +1213,35 @@ scavenge_mark_stack(void)
             break;
         }
 
+        case STM_MUT_ARR_PTRS_CLEAN:
+        case STM_MUT_ARR_PTRS_DIRTY:
+            // follow every pointer
+        {
+            StgPtr next;
+            rtsBool saved_eager;
+
+            // We don't eagerly promote objects pointed to by a mutable
+            // array, but if we find the array only points to objects in
+            // the same or an older generation, we mark it "clean" and
+            // avoid traversing it during minor GCs.
+            saved_eager = gct->eager_promotion;
+            gct->eager_promotion = rtsFalse;
+            next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
+            for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
+                evacuate((StgClosure **)p);
+            }
+            gct->eager_promotion = saved_eager;
+
+            if (gct->failed_to_evac) {
+                ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
+            } else {
+                ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
+            }
+
+            gct->failed_to_evac = rtsTrue; // mutable anyhow.
+            break;
+        }
+
         case TSO:
         {
             scavengeTSO((StgTSO*)p);
@@ -1196,6 +1293,43 @@ scavenge_mark_stack(void)
             gct->failed_to_evac = rtsTrue; // mutable
             break;
           }
+
+        case TARRAY_REC_CHUNK:
+          {
+            StgWord i;
+            StgTArrayRecChunk *tc = ((StgTArrayRecChunk *) p);
+            TArrayRecEntry *e = &(tc -> entries[0]);
+            gct->eager_promotion = rtsFalse;
+            evacuate((StgClosure **)&tc->prev_chunk);
+            for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+              evacuate((StgClosure **)&e->tarray);
+              if (e->offset < e->tarray->ptrs) {
+                evacuate((StgClosure **)&e->expected_value.ptr);
+                evacuate((StgClosure **)&e->new_value.ptr);
+              }
+            }
+            gct->eager_promotion = saved_eager_promotion;
+            gct->failed_to_evac = rtsTrue; // mutable
+            break;
+          }
+    
+       case BLOOM_WAKEUP_CHUNK:
+         {
+           StgWord i;
+           StgBloomWakeupChunk *tc = ((StgBloomWakeupChunk *) p);
+           debugTrace(DEBUG_gc,"scavenging mark BloomWakeupChunk %p count %d",p,tc->next_entry_idx);
+           BloomWakeupEntry *e = &(tc -> filters[0]);
+           gct->eager_promotion = rtsFalse;
+           evacuate((StgClosure **)&tc->prev_chunk);
+            for (i = 0; i < tc -> next_entry_idx; i++, e++ ) {
+              if (e->filter != 0) {
+                  evacuate((StgClosure **)&e->tso);
+              }
+            }
+           gct->eager_promotion = saved_eager_promotion;
+           gct->failed_to_evac = rtsTrue; // mutable
+           break;
+         }
 
         default:
             barf("scavenge_mark_stack: unimplemented/strange closure type %d @ %p",
@@ -1254,9 +1388,9 @@ scavenge_one(StgPtr p)
     case TVAR:
     {
         StgTVar *tvar = ((StgTVar *)p);
+        debugTrace(DEBUG_gc,"scavenging one TVAR %p value %p",p,tvar->current_value);
         gct->eager_promotion = rtsFalse;
         evacuate((StgClosure **)&tvar->current_value);
-        evacuate((StgClosure **)&tvar->first_watch_queue_entry);
         gct->eager_promotion = saved_eager_promotion;
 
         if (gct->failed_to_evac) {
@@ -1466,6 +1600,35 @@ scavenge_one(StgPtr p)
         break;
     }
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+    {
+        StgPtr next, q;
+        rtsBool saved_eager;
+
+        // We don't eagerly promote objects pointed to by a mutable
+        // array, but if we find the array only points to objects in
+        // the same or an older generation, we mark it "clean" and
+        // avoid traversing it during minor GCs.
+        saved_eager = gct->eager_promotion;
+        gct->eager_promotion = rtsFalse;
+        q = p;
+        next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
+        for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
+            evacuate((StgClosure **)p);
+        }
+        gct->eager_promotion = saved_eager;
+
+        if (gct->failed_to_evac) {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
+        } else {
+            ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
+        }
+
+        gct->failed_to_evac = rtsTrue;
+        break;
+    }
+
     case TSO:
     {
         scavengeTSO((StgTSO*)p);
@@ -1513,6 +1676,43 @@ scavenge_one(StgPtr p)
           evacuate((StgClosure **)&e->tvar);
           evacuate((StgClosure **)&e->expected_value);
           evacuate((StgClosure **)&e->new_value);
+        }
+        gct->eager_promotion = saved_eager_promotion;
+        gct->failed_to_evac = rtsTrue; // mutable
+        break;
+      }
+
+    case TARRAY_REC_CHUNK:
+      {
+        StgWord i;
+        StgTArrayRecChunk *tc = ((StgTArrayRecChunk *) p);
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        gct->eager_promotion = rtsFalse;
+        evacuate((StgClosure **)&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          evacuate((StgClosure **)&e->tarray);
+          if (e->offset < e->tarray->ptrs) {
+            evacuate((StgClosure **)&e->expected_value.ptr);
+            evacuate((StgClosure **)&e->new_value.ptr);
+          }
+        }
+        gct->eager_promotion = saved_eager_promotion;
+        gct->failed_to_evac = rtsTrue; // mutable
+        break;
+      }
+
+    case BLOOM_WAKEUP_CHUNK:
+      {
+        StgWord i;
+        StgBloomWakeupChunk *tc = ((StgBloomWakeupChunk *) p);
+        debugTrace(DEBUG_gc,"scavenging one BloomWakeupChunk %p count %d",p,tc->next_entry_idx);
+        BloomWakeupEntry *e = &(tc -> filters[0]);
+        gct->eager_promotion = rtsFalse;
+        evacuate((StgClosure **)&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i++, e++ ) {
+            if (e->filter != 0) {
+                evacuate((StgClosure **)&e->tso);
+            }
         }
         gct->eager_promotion = saved_eager_promotion;
         gct->failed_to_evac = rtsTrue; // mutable
@@ -1594,6 +1794,12 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
             case MUT_ARR_PTRS_DIRTY:
             case MUT_ARR_PTRS_FROZEN:
             case MUT_ARR_PTRS_FROZEN0:
+            case SMALL_MUT_ARR_PTRS_CLEAN:
+            case SMALL_MUT_ARR_PTRS_DIRTY:
+            case SMALL_MUT_ARR_PTRS_FROZEN:
+            case SMALL_MUT_ARR_PTRS_FROZEN0:
+            case STM_MUT_ARR_PTRS_CLEAN:
+            case STM_MUT_ARR_PTRS_DIRTY:
                 mutlist_MUTARRS++; break;
             case MVAR_CLEAN:
                 barf("MVAR_CLEAN on mutable list");
@@ -1603,15 +1809,13 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
                 mutlist_TVAR++; break;
             case TREC_CHUNK:
                 mutlist_TREC_CHUNK++; break;
+            case TARRAY_REC_CHUNK:
+                mutlist_TREC_CHUNK++; break;
+            case BLOOM_WAKEUP_CHUNK:
+                mutlist_WAKEUP_CHUNK++; break;
             case MUT_PRIM:
-                if (((StgClosure*)p)->header.info == &stg_TVAR_WATCH_QUEUE_info)
-                    mutlist_TVAR_WATCH_QUEUE++;
-                else if (((StgClosure*)p)->header.info == &stg_TREC_HEADER_info)
+                if (((StgClosure*)p)->header.info == &stg_TREC_HEADER_info)
                     mutlist_TREC_HEADER++;
-                else if (((StgClosure*)p)->header.info == &stg_ATOMIC_INVARIANT_info)
-                    mutlist_ATOMIC_INVARIANT++;
-                else if (((StgClosure*)p)->header.info == &stg_INVARIANT_CHECK_QUEUE_info)
-                    mutlist_INVARIANT_CHECK_QUEUE++;
                 else
                     mutlist_OTHERS++;
                 break;

@@ -504,6 +504,20 @@ update_fwd_large( bdescr *bd )
           continue;
       }
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+      // follow every pointer
+      {
+          StgStmMutArrPtrs *a;
+
+          a = (StgStmMutArrPtrs*)p;
+          for (p = (P_)a->payload; p < (P_)&a->payload[a->ptrs]; p++) {
+              thread((StgClosure **)p);
+          }
+          continue;
+      }
+
+
     case STACK:
     {
         StgStack *stack = (StgStack*)p;
@@ -529,6 +543,35 @@ update_fwd_large( bdescr *bd )
           thread_(&e->tvar);
           thread(&e->expected_value);
           thread(&e->new_value);
+        }
+        continue;
+    }
+
+    case TARRAY_REC_CHUNK:
+    {
+        StgWord i;
+        StgTArrayRecChunk *tc = (StgTArrayRecChunk *)p;
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        thread_(&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          thread_(&e->tarray);
+          if (e->offset < e->tarray->ptrs) {
+            thread(&e->expected_value.ptr);
+            thread(&e->new_value.ptr);
+          }
+        }
+        continue;
+    }
+
+    case BLOOM_WAKEUP_CHUNK:
+    {
+        StgWord i;
+        StgBloomWakeupChunk *tc = (StgBloomWakeupChunk *)p;
+        BloomWakeupEntry *e = &(tc -> filters[0]);
+        thread_(&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+            if (e->filter != 0)
+                thread_(&e->tso);
         }
         continue;
     }
@@ -705,6 +748,20 @@ thread_obj (const StgInfoTable *info, StgPtr p)
         return (StgPtr)a + small_mut_arr_ptrs_sizeW(a);
     }
 
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+        // follow every pointer
+    {
+        StgStmMutArrPtrs *a;
+
+        a = (StgStmMutArrPtrs *)p;
+        for (p = (P_)a->payload; p < (P_)&a->payload[a->ptrs]; p++) {
+            thread((StgClosure **)p);
+        }
+
+        return (StgPtr)a + stm_mut_arr_ptrs_sizeW(a);
+    }
+
     case TSO:
         return thread_TSO((StgTSO *)p);
 
@@ -727,6 +784,35 @@ thread_obj (const StgInfoTable *info, StgPtr p)
           thread(&e->new_value);
         }
         return p + sizeofW(StgTRecChunk);
+    }
+
+    case TARRAY_REC_CHUNK:
+    {
+        StgWord i;
+        StgTArrayRecChunk *tc = (StgTArrayRecChunk *)p;
+        TArrayRecEntry *e = &(tc -> entries[0]);
+        thread_(&tc->prev_chunk);
+        for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+          thread_(&e->tarray);
+          if (e->offset < e->tarray->ptrs) {
+            thread(&e->expected_value.ptr);
+            thread(&e->new_value.ptr);
+          }
+        }
+        return p + sizeofW(StgTArrayRecChunk);
+    }
+
+    case BLOOM_WAKEUP_CHUNK:
+    {
+        StgWord i;
+        StgBloomWakeupChunk *tc = (StgBloomWakeupChunk *)p;
+		BloomWakeupEntry *e = &(tc -> filters[0]);
+	    thread_(&tc->prev_chunk);
+	    for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
+     	    if (e->filter != 0)
+         		thread_(&e->tso);
+   		}
+   		return p + sizeofW(StgBloomWakeupChunk);
     }
 
     default:

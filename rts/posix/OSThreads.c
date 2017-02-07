@@ -273,16 +273,28 @@ getNumberOfProcessors (void)
 void
 setThreadAffinity (uint32_t n, uint32_t m)
 {
-    uint32_t nproc;
-    cpu_set_t cs;
-    uint32_t i;
+    if (RtsFlags.ParFlags.setAffinityTopology != NULL)
+    {
+        uint32_t s = RtsFlags.ParFlags.setAffinityTopologySize;
+        uint32_t c = RtsFlags.ParFlags.setAffinityTopologyCount;
+        char* p = RtsFlags.ParFlags.setAffinityTopology;
 
-    nproc = getNumberOfProcessors();
-    CPU_ZERO(&cs);
-    for (i = n; i < nproc; i+=m) {
-        CPU_SET(i, &cs);
+        cpu_set_t* set = (cpu_set_t*)(p + (n % c) * s);
+        sched_setaffinity(0, s, set);
     }
-    sched_setaffinity(0, sizeof(cpu_set_t), &cs);
+    else
+    {
+        uint32_t nproc;
+        cpu_set_t cs;
+        uint32_t i;
+
+        nproc = getNumberOfProcessors();
+        CPU_ZERO(&cs);
+        for (i = n; i < nproc; i+=m) {
+            CPU_SET(i, &cs);
+        }
+        sched_setaffinity(0, sizeof(cpu_set_t), &cs);
+    }
 }
 
 #elif defined(darwin_HOST_OS) && defined(THREAD_AFFINITY_POLICY)

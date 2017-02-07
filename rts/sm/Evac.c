@@ -816,6 +816,12 @@ loop:
       copy(p,info,q,small_mut_arr_ptrs_sizeW((StgSmallMutArrPtrs *)q),gen_no);
       return;
 
+  case STM_MUT_ARR_PTRS_CLEAN:
+  case STM_MUT_ARR_PTRS_DIRTY:
+      // just copy the block
+      copy(p,info,q,stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs *)q),gen_no);
+      return;
+
   case TSO:
       copy(p,info,q,sizeofW(StgTSO),gen_no);
       return;
@@ -855,6 +861,15 @@ loop:
       // block size) and never copied by value
       barf("evacuate: compact nfdata is not large");
       return;
+
+  case TARRAY_REC_CHUNK:
+      copy(p,info,q,sizeofW(StgTArrayRecChunk),gen_no);
+      return;
+
+  case BLOOM_WAKEUP_CHUNK:
+      copy(p,info,q,sizeofW(StgBloomWakeupChunk),gen_no);
+      return;
+
   default:
     barf("evacuate: strange closure type %d", (int)(INFO_PTR_TO_STRUCT(info)->type));
   }

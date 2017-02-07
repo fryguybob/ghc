@@ -74,15 +74,19 @@
 #define TSO                     53
 #define STACK                   54
 #define TREC_CHUNK              55
-#define ATOMICALLY_FRAME        56
-#define CATCH_RETRY_FRAME       57
-#define CATCH_STM_FRAME         58
-#define WHITEHOLE               59
-#define SMALL_MUT_ARR_PTRS_CLEAN      60
-#define SMALL_MUT_ARR_PTRS_DIRTY      61
-#define SMALL_MUT_ARR_PTRS_FROZEN0    62
-#define SMALL_MUT_ARR_PTRS_FROZEN     63
-#define COMPACT_NFDATA          64
-#define N_CLOSURE_TYPES         65
+#define TARRAY_REC_CHUNK        56
+#define BLOOM_WAKEUP_CHUNK      57
+#define ATOMICALLY_FRAME        58
+#define CATCH_RETRY_FRAME       59
+#define CATCH_STM_FRAME         60
+#define WHITEHOLE               61
+#define SMALL_MUT_ARR_PTRS_CLEAN      62
+#define SMALL_MUT_ARR_PTRS_DIRTY      63
+#define SMALL_MUT_ARR_PTRS_FROZEN0    64
+#define SMALL_MUT_ARR_PTRS_FROZEN     65
+#define STM_MUT_ARR_PTRS_CLEAN  66
+#define STM_MUT_ARR_PTRS_DIRTY  67
+#define COMPACT_NFDATA          68
+#define N_CLOSURE_TYPES         69
 
 #endif /* RTS_STORAGE_CLOSURETYPES_H */

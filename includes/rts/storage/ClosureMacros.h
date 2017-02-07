@@ -347,6 +347,10 @@ EXTERN_INLINE StgOffset small_mut_arr_ptrs_sizeW( StgSmallMutArrPtrs* x );
 EXTERN_INLINE StgOffset small_mut_arr_ptrs_sizeW( StgSmallMutArrPtrs* x )
 { return sizeofW(StgSmallMutArrPtrs) + x->ptrs; }
 
+EXTERN_INLINE StgOffset stm_mut_arr_ptrs_sizeW( StgStmMutArrPtrs* x );
+EXTERN_INLINE StgOffset stm_mut_arr_ptrs_sizeW( StgStmMutArrPtrs* x )
+{ return sizeofW(StgStmMutArrPtrs) + x->ptrs + x->words; }
+
 EXTERN_INLINE StgWord stack_sizeW ( StgStack *stack );
 EXTERN_INLINE StgWord stack_sizeW ( StgStack *stack )
 { return sizeofW(StgStack) + stack->stack_size; }
@@ -413,6 +417,9 @@ closure_sizeW_ (const StgClosure *p, const StgInfoTable *info)
     case SMALL_MUT_ARR_PTRS_FROZEN:
     case SMALL_MUT_ARR_PTRS_FROZEN0:
         return small_mut_arr_ptrs_sizeW((StgSmallMutArrPtrs*)p);
+    case STM_MUT_ARR_PTRS_CLEAN:
+    case STM_MUT_ARR_PTRS_DIRTY:
+	    return stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs*)p);
     case TSO:
         return sizeofW(StgTSO);
     case STACK:
@@ -421,6 +428,10 @@ closure_sizeW_ (const StgClosure *p, const StgInfoTable *info)
         return bco_sizeW((StgBCO *)p);
     case TREC_CHUNK:
         return sizeofW(StgTRecChunk);
+    case TARRAY_REC_CHUNK:
+        return sizeofW(StgTArrayRecChunk);
+    case BLOOM_WAKEUP_CHUNK:
+        return sizeofW(StgBloomWakeupChunk);
     case COMPACT_NFDATA:
         // Nothing should ever call closure_sizeW() on a StgCompactNFData
         // because CompactNFData is a magical object/list-of-objects that

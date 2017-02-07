@@ -427,6 +427,13 @@ primop   BSwapOp     "byteSwap#"     Monadic   Word# -> Word#
     {Swap bytes in a word.}
 
 ------------------------------------------------------------------------
+section "TSX"
+    {Support for Transactional Synchronization Extensions.}
+------------------------------------------------------------------------
+
+primop  XTestOp   "xTest#"      GenPrimOp   () -> Word#
+
+------------------------------------------------------------------------
 section "Narrowings"
         {Explicit narrowing of native-sized ints or words.}
 ------------------------------------------------------------------------
@@ -1042,6 +1049,68 @@ primop CasSmallArrayOp  "casSmallArray#" GenPrimOp
    with
    out_of_line = True
    has_side_effects = True
+
+------------------------------------------------------------------------
+section "STM Arrays"
+
+   {Efficient small STM arrays.
+        }
+
+------------------------------------------------------------------------
+
+primtype STMMutableArray# s a
+
+primop  NewSTMArrayOp "newSTMArray#" GenPrimOp
+   Int# -> Int# -> a -> State# s -> (# State# s, STMMutableArray# s a #)
+   {Create a new STM mutable array
+    in the specified state thread.
+    The number of pointers elements followed by number of non-pointer
+    words with each pointer containing the specified initial value and
+    each non-pointer has its bits set to zero.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop  SameSTMMutableArrayOp "sameSTMMutableArray#" GenPrimOp
+   STMMutableArray# s a -> STMMutableArray# s a -> Int#
+
+primop  ReadSTMArrayOp "readSTMArray#" GenPrimOp
+   STMMutableArray# s a -> Int# -> State# s -> (# State# s, a #)
+   {Read heap object pointer from specified index of an STM mutable
+    array. Result is not yet evaluated.}
+   with
+   has_side_effects = True
+   can_fail         = True
+
+primop  WriteSTMArrayOp "writeSTMArray#" GenPrimOp
+   STMMutableArray# s a -> Int# -> a -> State# s -> State# s
+   {Write heap object pointer to specified index of an STM mutable array.}
+   with
+   has_side_effects = True
+   can_fail         = True
+
+primop  ReadSTMArrayWordOp "readSTMArrayWord#" GenPrimOp
+   STMMutableArray# s a -> Int# -> State# s -> (# State# s, Word# #)
+   {Read word from specified index of an STM mutable array. Result is not yet evaluated.}
+   with
+   has_side_effects = True
+   can_fail         = True
+
+primop  WriteSTMArrayWordOp "writeSTMArrayWord#" GenPrimOp
+   STMMutableArray# s a -> Int# -> Word# -> State# s -> State# s
+   {Write word to specified index of an STM mutable array.}
+   with
+   has_side_effects = True
+   can_fail         = True
+
+primop  SizeofSTMMutableArrayOp "sizeofSTMMutableArray#" GenPrimOp
+   STMMutableArray# s a -> Int#
+   {Return the number of pointer elements in the array.}
+
+primop  SizeofSTMMutableArrayWordsOp "sizeofSTMMutableArrayWords#" GenPrimOp
+   STMMutableArray# s a -> Int#
+   {Return the number of word elements in the array.}
+
 
 ------------------------------------------------------------------------
 section "Byte Arrays"
@@ -2133,6 +2202,37 @@ primop  WriteTVarOp "writeTVar#" GenPrimOp
 primop  SameTVarOp "sameTVar#" GenPrimOp
    TVar# s a -> TVar# s a -> Int#
 
+primop ReadTArrayOp "readTArray#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> State# s -> (# State# s, a #)
+   {Read contents of {\tt TArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop WriteTArrayOp "writeTArray#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> a -> State# s -> State# s
+   {Write contents of {\tt TArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop ReadTArrayWordOp "readTArrayWord#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> State# s -> (# State# s, Word# #)
+   {Read contents of {\tt TArray\#}.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop WriteTArrayWordOp "writeTArrayWord#" GenPrimOp
+    STMMutableArray# s a
+    -> Word# -> Word# -> State# s -> State# s
+   {Write contents of {\tt TArray\#}.}
+   with
+   out_of_line = True
+   has_side_effects = True
 
 ------------------------------------------------------------------------
 section "Synchronized Mutable Variables"

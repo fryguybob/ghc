@@ -238,6 +238,34 @@ shouldInlinePrimOp dflags ThawSmallArrayOp [src, src_off, (CmmLit (CmmInt n w))]
   | wordsToBytes dflags (asUnsigned w n) <= fromIntegral (maxInlineAllocSize dflags) =
       Just $ \ [res] -> emitCloneSmallArray mkSMAP_DIRTY_infoLabel res src src_off (fromInteger n)
 
+{-
+-- TODO: I don't think this code is right, I took it out a long time ago, but it could be 
+--  a sensible thing to inline TStruct creation.
+shouldInlinePrimOp dflags NewSTMArrayOp [ (CmmLit (CmmInt ptrs _))
+                                        , (CmmLit (CmmInt words _)), init]
+  | wordsToBytes dflags (fromInteger (ptrs+words)) <= maxInlineAllocSize dflags =
+      Just $ \ [res] -> do
+      emit (mkComment $ mkFastString "NewSTMArray")
+      doNewArrayOp res (stmArrPtrsRep (fromInteger ptrs) (fromInteger words))
+            mkSTMMAP_DIRTY_infoLabel
+        [ (mkIntExpr dflags 0, -- Lock
+           fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_lock  dflags)
+        , (mkIntExpr dflags (fromInteger ptrs), -- ptrs
+           fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_ptrs  dflags)
+        , (mkIntExpr dflags (fromInteger words), -- words
+           fixedHdrSize dflags + oFFSET_StgStmMutArrPtrs_words dflags)
+        ]
+        (fromInteger (ptrs+words)) init
+
+      -- Use the inital array address as the hash_id
+      let base = CmmReg (CmmLocal res)
+          offset = fixedHdrSizeW dflags
+                 + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_hash_id dflags)
+      emit (mkComment $ mkFastString "NewSTMArray record hash")
+      emitStore (cmmOffsetW dflags base offset) base
+      emit (mkComment $ mkFastString "NewSTMArray done")
+ -}
+
 shouldInlinePrimOp dflags primop args
   | primOpOutOfLine primop = Nothing
   | otherwise = Just $ \ regs -> emitPrimOp dflags regs primop args
@@ -438,6 +466,25 @@ emitPrimOp dflags [res] SizeofSmallArrayOp [arg] =
         (bWord dflags))
 emitPrimOp dflags [res] SizeofSmallMutableArrayOp [arg] =
     emitPrimOp dflags [res] SizeofSmallArrayOp [arg]
+
+-- STM arrays
+
+emitPrimOp _ [res] ReadSTMArrayOp      [obj,ix]   = doReadSTMArrayOp  res obj ix
+emitPrimOp _ []    WriteSTMArrayOp     [obj,ix,v] = doWriteSTMArrayOp obj ix v
+emitPrimOp _ [res] ReadSTMArrayWordOp  [obj,ix]   = doReadSTMArrayWordOp  res obj ix
+emitPrimOp _ []    WriteSTMArrayWordOp [obj,ix,v] = doWriteSTMArrayWordOp obj ix v
+
+emitPrimOp dflags [res] SizeofSTMMutableArrayOp [arg] =
+    emit $ mkAssign (CmmLocal res)
+    (cmmLoadIndexW dflags arg
+     (fixedHdrSizeW dflags + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_ptrs dflags))
+        (bWord dflags))
+emitPrimOp dflags [res] SizeofSTMMutableArrayWordsOp [arg] =
+    emit $ mkAssign (CmmLocal res)
+    (cmmLoadIndexW dflags arg
+     (fixedHdrSizeW dflags + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_words dflags))
+        (bWord dflags))
+
 
 -- IndexXXXoffAddr
 
@@ -786,6 +833,9 @@ emitPrimOp dflags [] AtomicWriteByteArrayOp_Int [mba, ix, val] =
     doAtomicWriteByteArray mba ix (bWord dflags) val
 emitPrimOp dflags [res] CasByteArrayOp_Int [mba, ix, old, new] =
     doCasByteArray res mba ix (bWord dflags) old new
+
+-- Hardware Transactional Memory (Intel TSX)
+emitPrimOp _      [res] XTestOp    [_] = emitXTestCall res
 
 -- The rest just translate straightforwardly
 emitPrimOp dflags [res] op [arg]
@@ -1228,6 +1278,7 @@ translateOp dflags SameMutableArrayOp     = Just (mo_wordEq dflags)
 translateOp dflags SameMutableByteArrayOp = Just (mo_wordEq dflags)
 translateOp dflags SameMutableArrayArrayOp= Just (mo_wordEq dflags)
 translateOp dflags SameSmallMutableArrayOp= Just (mo_wordEq dflags)
+translateOp dflags SameSTMMutableArrayOp  = Just (mo_wordEq dflags)
 translateOp dflags SameTVarOp             = Just (mo_wordEq dflags)
 translateOp dflags EqStablePtrOp          = Just (mo_wordEq dflags)
 
@@ -2058,6 +2109,57 @@ doWriteSmallPtrArrayOp addr idx val = do
     emit (setInfo addr (CmmLit (CmmLabel mkSMAP_DIRTY_infoLabel)))
 
 ------------------------------------------------------------------------------
+-- STMArray PrimOp implementations
+-- TODO: Synchronization! STM!
+doReadSTMArrayOp :: LocalReg
+                      -> CmmExpr
+                      -> CmmExpr
+                      -> FCode ()
+doReadSTMArrayOp res addr idx = do
+    dflags <- getDynFlags
+    mkBasicIndexedRead (stmArrPtrsHdrSize dflags) Nothing (gcWord dflags) res addr
+        (gcWord dflags) idx
+
+doWriteSTMArrayOp :: CmmExpr
+                       -> CmmExpr
+                       -> CmmExpr
+                       -> FCode ()
+doWriteSTMArrayOp addr idx val = do
+    dflags <- getDynFlags
+    let ty = cmmExprType dflags val
+    mkBasicIndexedWrite (stmArrPtrsHdrSize dflags) Nothing addr ty idx val
+    emit (setInfo addr (CmmLit (CmmLabel mkSTMMAP_DIRTY_infoLabel)))
+
+stmArrayWordIndex :: DynFlags -> CmmExpr -> CmmExpr -> CmmExpr
+stmArrayWordIndex dflags addr idx =
+    CmmMachOp (MO_Add (wordWidth dflags))
+      [ cmmLoadIndexW dflags addr
+         (fixedHdrSizeW dflags + bytesToWordsRoundUp dflags (oFFSET_StgStmMutArrPtrs_ptrs dflags))
+            (bWord dflags)
+      , idx
+      ]
+doReadSTMArrayWordOp :: LocalReg
+                      -> CmmExpr
+                      -> CmmExpr
+                      -> FCode ()
+doReadSTMArrayWordOp res addr idx = do
+    dflags <- getDynFlags
+    mkBasicIndexedRead (stmArrPtrsHdrSize dflags) Nothing (gcWord dflags) res addr
+        (gcWord dflags) (stmArrayWordIndex dflags addr idx)
+
+doWriteSTMArrayWordOp :: CmmExpr
+                       -> CmmExpr
+                       -> CmmExpr
+                       -> FCode ()
+doWriteSTMArrayWordOp addr idx val = do
+    dflags <- getDynFlags
+    let ty = cmmExprType dflags val
+    emit (mkComment $ mkFastString "WriteSTMArrayWord")
+    mkBasicIndexedWrite (stmArrPtrsHdrSize dflags) Nothing addr ty
+        (stmArrayWordIndex dflags addr idx) val
+    emit (mkComment $ mkFastString "WriteSTMArrayWord done")
+
+------------------------------------------------------------------------------
 -- Atomic read-modify-write
 
 -- | Emit an atomic modification to a byte array element. The result
@@ -2173,6 +2275,13 @@ emitPopCntCall res x width = do
         [ res ]
         (MO_PopCnt width)
         [ x ]
+
+emitXTestCall :: LocalReg -> FCode ()
+emitXTestCall res = do
+    emitPrimCall
+        [ res ]
+        MO_XTest
+        []
 
 emitClzCall :: LocalReg -> CmmExpr -> Width -> FCode ()
 emitClzCall res x width = do

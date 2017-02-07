@@ -431,6 +431,14 @@ wanteds os = concat
           ,closureSize  Both "StgSmallMutArrPtrs"
           ,closureField Both "StgSmallMutArrPtrs" "ptrs"
 
+          ,closureSize  Both "StgStmMutArrPtrs"
+          ,closureField Both "StgStmMutArrPtrs" "lock"
+          ,closureField Both "StgStmMutArrPtrs" "ptrs"
+          ,closureField Both "StgStmMutArrPtrs" "words"
+          ,closureField Both "StgStmMutArrPtrs" "hash_id"
+          ,closureField Both "StgStmMutArrPtrs" "lock_count"
+          ,closurePayload C  "StgStmMutArrPtrs" "payload"
+
           ,closureSize    Both "StgArrBytes"
           ,closureField   Both "StgArrBytes" "bytes"
           ,closurePayload C    "StgArrBytes" "payload"
@@ -489,16 +497,13 @@ wanteds os = concat
 
           ,closureSize  C "StgAtomicallyFrame"
           ,closureField C "StgAtomicallyFrame" "code"
-          ,closureField C "StgAtomicallyFrame" "next_invariant_to_check"
           ,closureField C "StgAtomicallyFrame" "result"
 
-          ,closureField C "StgInvariantCheckQueue" "invariant"
-          ,closureField C "StgInvariantCheckQueue" "my_execution"
-          ,closureField C "StgInvariantCheckQueue" "next_queue_entry"
-
-          ,closureField C "StgAtomicInvariant" "code"
-
           ,closureField C "StgTRecHeader" "enclosing_trec"
+          ,closureField C "StgTRecHeader" "retrying"
+          ,closureField C "StgHTRecHeader" "enclosing_trec"
+          ,closureField C "StgHTRecHeader" "write_set"
+          ,closureField C "StgHTRecHeader" "read_set"
 
           ,closureSize  C "StgCatchSTMFrame"
           ,closureField C "StgCatchSTMFrame" "handler"
@@ -509,13 +514,9 @@ wanteds os = concat
           ,closureField C "StgCatchRetryFrame" "first_code"
           ,closureField C "StgCatchRetryFrame" "alt_code"
 
-          ,closureField C "StgTVarWatchQueue" "closure"
-          ,closureField C "StgTVarWatchQueue" "next_queue_entry"
-          ,closureField C "StgTVarWatchQueue" "prev_queue_entry"
-
           ,closureSize  C "StgTVar"
           ,closureField C "StgTVar" "current_value"
-          ,closureField C "StgTVar" "first_watch_queue_entry"
+          ,closureField C "StgTVar" "hash_id"
           ,closureField C "StgTVar" "num_updates"
 
           ,closureSize  C "StgWeak"
