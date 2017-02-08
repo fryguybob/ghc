@@ -345,6 +345,9 @@ data Instr
         | CMPXCHG     Format Operand Operand -- src (r), dst (r/m), eax implicit
         | MFENCE
 
+    -- TSX
+        | XTEST       Format Reg   -- dst
+
 data PrefetchVariant = NTA | Lvl0 | Lvl1 | Lvl2
 
 
@@ -460,6 +463,8 @@ x86_regUsageOfInstr platform instr
     CMPXCHG _ src dst   -> usageRMM src dst (OpReg eax)
     MFENCE -> noUsage
 
+    XTEST _ dst         -> mkRU [] [dst]
+    
     _other              -> panic "regUsage: unrecognised instr"
  where
     -- # Definitions
@@ -636,8 +641,10 @@ x86_patchRegsOfInstr instr env
     XADD fmt src dst     -> patch2 (XADD fmt) src dst
     CMPXCHG fmt src dst  -> patch2 (CMPXCHG fmt) src dst
     MFENCE               -> instr
+    
+    XTEST sz dst         -> XTEST sz (env dst)
 
-    _other              -> panic "patchRegs: unrecognised instr"
+    _other               -> panic "patchRegs: unrecognised instr"
 
   where
     patch1 :: (Operand -> a) -> Operand -> a

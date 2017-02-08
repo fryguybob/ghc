@@ -424,6 +424,57 @@ checkClosure( StgClosure* p )
         return sizeofW(StgTRecChunk);
       }
 
+    case TARRAY_REC_CHUNK:
+      {
+        nat i;
+        StgTArrayRecChunk *tc = (StgTArrayRecChunk *)p;
+        ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->prev_chunk));
+        for (i = 0; i < tc -> next_entry_idx; i ++) {
+          TArrayRecEntry* e = &tc->entries[i];
+          ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->tarray));
+          if (e->offset < e->tarray->ptrs) {
+              ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->expected_value.ptr));
+              ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->new_value.ptr));
+          }
+        }
+        return sizeofW(StgTArrayRecChunk);
+      }
+
+     case BLOOM_WAKEUP_CHUNK:
+      {
+        nat i;
+        StgBloomWakeupChunk *tc = (StgBloomWakeupChunk *)p;
+        ASSERT(LOOKS_LIKE_CLOSURE_PTR(tc->prev_chunk));
+        for (i = 0; i < tc -> next_entry_idx; i ++) {
+          ASSERT(tc->filters[i].filter == 0 || LOOKS_LIKE_CLOSURE_PTR(tc->filters[i].tso));
+        }
+        return sizeofW(StgBloomWakeupChunk);
+      }
+
+     case SMALL_MUT_ARR_PTRS_CLEAN:
+     case SMALL_MUT_ARR_PTRS_DIRTY:
+     case SMALL_MUT_ARR_PTRS_FROZEN0:
+     case SMALL_MUT_ARR_PTRS_FROZEN:
+      {
+        nat i;
+        StgSmallMutArrPtrs* a = (StgSmallMutArrPtrs*)p;
+        for (i = 0; i < a -> ptrs; i ++) {
+          ASSERT(LOOKS_LIKE_CLOSURE_PTR(a->payload[i]));
+        }
+        return small_mut_arr_ptrs_sizeW(a);
+      }
+
+     case STM_MUT_ARR_PTRS_CLEAN:
+     case STM_MUT_ARR_PTRS_DIRTY:
+      {
+        nat i;
+        StgStmMutArrPtrs* a = (StgStmMutArrPtrs*)p;
+        for (i = 0; i < a -> ptrs; i ++) {
+          ASSERT(LOOKS_LIKE_CLOSURE_PTR(a->payload[i]));
+        }
+        return stm_mut_arr_ptrs_sizeW(a);
+      }
+
     default:
             barf("checkClosure (closure type %d)", info->type);
     }

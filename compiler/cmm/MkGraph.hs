@@ -185,7 +185,9 @@ mkComment    :: FastString -> CmmAGraph
 -- SDM: generating all those comments takes time, this saved about 4% for me
 mkComment fs  = mkMiddle $ CmmComment fs
 #else
-mkComment _   = nilOL
+-- TODO: I NEED THESE IN PRODUCTION!!
+mkComment fs  = mkMiddle $ CmmComment fs
+--mkComment _   = nilOL
 #endif
 
 ---------- Assignment and store

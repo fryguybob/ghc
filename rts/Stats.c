@@ -20,6 +20,10 @@
 #include "sm/GCThread.h"
 #include "sm/BlockAlloc.h"
 
+#if defined(THREADED_RTS)
+#include "immintrin.h"
+#endif
+
 /* huh? */
 #define BIG_STRING_LEN              512
 
@@ -70,6 +74,136 @@ static Time *GC_coll_max_pause = NULL;
 static void statsPrintf( char *s, ... ) GNUC3_ATTRIBUTE(format (PRINTF, 1, 2));
 static void statsFlush( void );
 static void statsClose( void );
+
+/* -----------------------------------------------------------------------------
+   STM stats
+   ------------------------------------------------------------------------- */
+
+#if defined(THREADED_RTS)
+static volatile int smp_locked_stm_stats = 0;
+
+static void lock_stm_stats(void) {
+  while (__sync_lock_test_and_set(&smp_locked_stm_stats, 1))
+  {
+    while (smp_locked_stm_stats != 0)
+      _mm_pause();
+  }
+}
+
+static void unlock_stm_stats(void) {
+    __sync_lock_release(&smp_locked_stm_stats);
+}
+#else
+static void lock_stm_stats(void) {}
+static void unlock_stm_stats(void) {}
+#endif
+
+// protected by the stm_stats lock
+static stm_stats_node *smp_stm_stats = NULL;
+
+static void initSTMStatsValues(stm_stats* s)
+{
+    s->start = 0;
+    s->abort = 0;
+    s->retry = 0;
+    s->validate_fail = 0;
+    s->failed_wakeup = 0;
+
+    s->stm_commit = 0;
+    s->htm_commit = 0;
+    s->htm_fallback = 0;
+    s->htm_fail = 0;
+    s->htm_gc = 0;
+
+    s->hle_locked = 0;
+    s->hle_fail = 0;
+    s->hle_fallback = 0;
+    s->hle_commit = 0;
+    s->hle_release = 0;
+}
+
+static void addSTMStats(stm_stats* acc, stm_stats* s)
+{
+    acc->start += s->start;
+    acc->abort += s->abort;
+    acc->retry += s->retry;
+    acc->validate_fail += s->validate_fail;
+    acc->failed_wakeup += s->failed_wakeup;
+
+    acc->stm_commit += s->stm_commit;
+    acc->htm_commit += s->htm_commit;
+    acc->htm_fallback += s->htm_fallback;
+    acc->htm_fail += s->htm_fail;
+    acc->htm_gc += s->htm_gc;
+
+    acc->hle_locked   += s->hle_locked;
+    acc->hle_fail     += s->hle_fail;
+    acc->hle_fallback += s->hle_fallback;
+    acc->hle_commit   += s->hle_commit;
+    acc->hle_release  += s->hle_release;
+}
+
+static void printSTMStats(stm_stats* s)
+{
+    char temp[BIG_STRING_LEN];
+
+    showStgWord64(s->start,         temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->abort,         temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->retry,         temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->validate_fail, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->failed_wakeup, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->stm_commit,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_commit,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+ }
+
+static void printHTMStats(stm_stats* s)
+{
+    char temp[BIG_STRING_LEN];
+
+    showStgWord64(s->htm_fallback,  temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_gc,        temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_fail,      temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_locked,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_fail,      temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_fallback,  temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_commit,    temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->hle_release,   temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+}
+
+void initSTMStats(Capability* cap)
+{
+    stm_stats_node* node = (stm_stats_node*)stgMallocBytes(
+        sizeof(stm_stats_node),"initSTMStats");
+
+    node->next = NULL;
+    node->cap_no = cap->no;
+
+    initSTMStatsValues(&node->stats);
+
+    cap->stm_stats = &node->stats;
+
+    lock_stm_stats();
+
+    node->next = smp_stm_stats;
+    smp_stm_stats = node;
+
+    unlock_stm_stats();
+}
 
 /* -----------------------------------------------------------------------------
    Current elapsed time
@@ -779,6 +913,73 @@ stat_exit (void)
     if (GC_coll_max_pause) {
       stgFree(GC_coll_max_pause);
       GC_coll_max_pause = NULL;
+    }
+
+    /* Output STM stats */
+    if (RtsFlags.ConcFlags.stmStats != 0)
+    {
+        stm_stats total;
+        initSTMStatsValues(&total);
+
+        lock_stm_stats();
+        stm_stats_node* nodeStats = smp_stm_stats;
+        smp_stm_stats = NULL;
+        nat i;
+        for (i = 0; i < n_capabilities; i++) {
+          capabilities[i]->stm_stats = NULL;
+        }
+        unlock_stm_stats();
+
+        stm_stats_node* node = nodeStats;
+
+        debugBelch("STM stats:\n----------\nCap"
+                    "   Starts        "
+                    "  Aborts         "
+                    "  Retry          "
+                    "  Validate Fails "
+                    "  Failed-wakeup  "
+                    "  STM-commit     "
+                    "  HTM-commit\n");
+
+        while (node != NULL)
+        {
+            addSTMStats(&total, &node->stats);
+            debugBelch("%3d ", node->cap_no);
+            printSTMStats(&node->stats);
+            debugBelch("\n");
+
+            node = node->next;
+        }
+
+        debugBelch("    ");
+        printSTMStats(&total);
+        debugBelch("\n");
+
+        node = nodeStats;
+        debugBelch("HTM stats:\n----------\nCap"
+                    "   HTM-fallback  "
+                    "  HTM-GC         "
+                    "  HTM-fail       "
+                    "  HLE-locked     "
+                    "  HLE-fail       "
+                    "  HLE-fallback   "
+                    "  HLE-commit     "
+                    "  HLE-release\n");
+
+        while (node != NULL)
+        {
+            debugBelch("%3d ", node->cap_no);
+            printHTMStats(&node->stats);
+            debugBelch("\n");
+
+            stm_stats_node* prev = node;
+            node = node->next;
+            stgFree(prev);
+        }
+
+        debugBelch("    ");
+        printHTMStats(&total);
+        debugBelch("\n");
     }
 }
 

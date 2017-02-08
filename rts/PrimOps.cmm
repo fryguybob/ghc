@@ -397,6 +397,43 @@ stg_newSmallArrayzh ( W_ n /* words */, gcptr init )
     return (arr);
 }
 
+stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
+{
+    W_ words, size, p;
+    gcptr arr;
+
+    again: MAYBE_GC(again);
+
+    words = BYTES_TO_WDS(SIZEOF_StgStmMutArrPtrs) + n + np;
+    ("ptr" arr) = ccall allocate(MyCapability() "ptr",words);
+    TICK_ALLOC_PRIM(SIZEOF_StgStmMutArrPtrs, WDS(n + np), 0);
+
+    SET_HDR(arr, stg_STM_MUT_ARR_PTRS_DIRTY_info, CCCS);
+    StgStmMutArrPtrs_lock(arr) = 0;
+    StgStmMutArrPtrs_ptrs(arr) = np;
+    StgStmMutArrPtrs_words(arr) = n;
+
+    StgStmMutArrPtrs_hash_id(arr) = arr;
+
+    // Initialise all elements of the the array with the value in R2
+    p = arr + SIZEOF_StgStmMutArrPtrs;
+  for:
+    if (p < arr + SIZEOF_StgStmMutArrPtrs + WDS(np)) {
+        W_[p] = init;
+        p = p + WDS(1);
+        goto for;
+    }
+
+  forw:
+    if (p < arr + SIZEOF_StgStmMutArrPtrs + WDS(np) + WDS(n)) {
+        W_[p] = 0;
+        p = p + WDS(1);
+        goto forw;
+    }
+
+    return (arr);
+}
+
 stg_unsafeThawSmallArrayzh ( gcptr arr )
 {
     // See stg_unsafeThawArrayzh
@@ -1007,11 +1044,10 @@ INFO_TABLE_RET(stg_catch_retry_frame, CATCH_RETRY_FRAME,
 // Atomically frame ------------------------------------------------------------
 
 // This must match StgAtomicallyFrame in Closures.h
-#define ATOMICALLY_FRAME_FIELDS(w_,p_,info_ptr,p1,p2,code,next,result)  \
+#define ATOMICALLY_FRAME_FIELDS(w_,p_,info_ptr,p1,p2,code,result)       \
     w_ info_ptr,                                                        \
     PROF_HDR_FIELDS(w_,p1,p2)                                           \
     p_ code,                                                            \
-    p_ next,                                                            \
     p_ result
 
 
@@ -1020,67 +1056,35 @@ INFO_TABLE_RET(stg_atomically_frame, ATOMICALLY_FRAME,
                ATOMICALLY_FRAME_FIELDS(W_,P_,
                                        info_ptr, p1, p2,
                                        code,
-                                       next_invariant,
                                        frame_result))
     return (P_ result) // value returned to the frame
 {
     W_ valid;
-    gcptr trec, outer, next_invariant, q;
+    gcptr trec, outer, q;
 
     trec   = StgTSO_trec(CurrentTSO);
     outer  = StgTRecHeader_enclosing_trec(trec);
 
-    if (outer == NO_TREC) {
-        /* First time back at the atomically frame -- pick up invariants */
-        ("ptr" next_invariant) =
-            ccall stmGetInvariantsToCheck(MyCapability() "ptr", trec "ptr");
-        frame_result = result;
+    /* Back at the atomically frame */
+    frame_result = result;
 
+    /* try to commit */
+    (valid) = ccall stmCommitTransaction(MyCapability() "ptr", trec "ptr");
+    if (valid != 0) {
+        /* Transaction was valid: commit succeeded */
+        StgTSO_trec(CurrentTSO) = NO_TREC;
+        return (frame_result);
     } else {
-        /* Second/subsequent time back at the atomically frame -- abort the
-         * tx that's checking the invariant and move on to the next one */
-        StgTSO_trec(CurrentTSO) = outer;
-        StgInvariantCheckQueue_my_execution(next_invariant) = trec;
-        ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
-        /* Don't free trec -- it's linked from q and will be stashed in the
-         * invariant if we eventually commit. */
-        next_invariant =
-           StgInvariantCheckQueue_next_queue_entry(next_invariant);
-        trec = outer;
-    }
-
-    if (next_invariant != END_INVARIANT_CHECK_QUEUE) {
-        /* We can't commit yet: another invariant to check */
-        ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", trec "ptr");
+        /* Transaction was not valid: try again */
+        ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
+                                                 NO_TREC "ptr");
         StgTSO_trec(CurrentTSO) = trec;
-        q = StgInvariantCheckQueue_invariant(next_invariant);
         jump stg_ap_v_fast
+            // push the StgAtomicallyFrame again: the code generator is
+            // clever enough to only assign the fields that have changed.
             (ATOMICALLY_FRAME_FIELDS(,,info_ptr,p1,p2,
-                                     code,next_invariant,frame_result))
-            (StgAtomicInvariant_code(q));
-
-    } else {
-
-        /* We've got no more invariants to check, try to commit */
-        (valid) = ccall stmCommitTransaction(MyCapability() "ptr", trec "ptr");
-        if (valid != 0) {
-            /* Transaction was valid: commit succeeded */
-            StgTSO_trec(CurrentTSO) = NO_TREC;
-            return (frame_result);
-        } else {
-            /* Transaction was not valid: try again */
-            ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr",
-                                                     NO_TREC "ptr");
-            StgTSO_trec(CurrentTSO) = trec;
-            next_invariant = END_INVARIANT_CHECK_QUEUE;
-
-            jump stg_ap_v_fast
-                // push the StgAtomicallyFrame again: the code generator is
-                // clever enough to only assign the fields that have changed.
-                (ATOMICALLY_FRAME_FIELDS(,,info_ptr,p1,p2,
-                                         code,next_invariant,frame_result))
-                (code);
-        }
+                                     code,frame_result))
+            (code);
     }
 }
 
@@ -1090,7 +1094,6 @@ INFO_TABLE_RET(stg_atomically_waiting_frame, ATOMICALLY_FRAME,
                ATOMICALLY_FRAME_FIELDS(W_,P_,
                                        info_ptr, p1, p2,
                                        code,
-                                       next_invariant,
                                        frame_result))
     return (/* no return values */)
 {
@@ -1102,17 +1105,18 @@ INFO_TABLE_RET(stg_atomically_waiting_frame, ATOMICALLY_FRAME,
         /* Previous attempt is still valid: no point trying again yet */
         jump stg_block_noregs
             (ATOMICALLY_FRAME_FIELDS(,,info_ptr, p1, p2,
-                                     code,next_invariant,frame_result))
+                                     code,frame_result))
             ();
     } else {
         /* Previous attempt is no longer valid: try again */
         ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", NO_TREC "ptr");
+        StgTRecHeader_retrying(trec) = 1;
         StgTSO_trec(CurrentTSO) = trec;
 
         // change the frame header to stg_atomically_frame_info
         jump stg_ap_v_fast
             (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_frame_info, p1, p2,
-                                     code,next_invariant,frame_result))
+                                     code,frame_result))
             (code);
     }
 }
@@ -1163,7 +1167,7 @@ stg_atomicallyzh (P_ stm)
 {
     P_ old_trec;
     P_ new_trec;
-    P_ code, next_invariant, frame_result;
+    P_ code, frame_result;
 
     // stmStartTransaction may allocate
     MAYBE_GC_P(stg_atomicallyzh, stm);
@@ -1178,7 +1182,6 @@ stg_atomicallyzh (P_ stm)
     }
 
     code = stm;
-    next_invariant = END_INVARIANT_CHECK_QUEUE;
     frame_result = NO_TREC;
 
     /* Start the memory transcation */
@@ -1187,7 +1190,7 @@ stg_atomicallyzh (P_ stm)
 
     jump stg_ap_v_fast
         (ATOMICALLY_FRAME_FIELDS(,,stg_atomically_frame_info, CCCS, 0,
-                                 code,next_invariant,frame_result))
+                                 code,frame_result))
         (stm);
 }
 
@@ -1246,6 +1249,8 @@ stg_catchRetryzh (P_ first_code, /* :: STM a */
         (first_code);
 }
 
+#define HTM_ACTIVE_RETRY
+
 stg_retryzh /* no arg list: explicit stack layout */
 {
     W_ frame_type;
@@ -1253,6 +1258,7 @@ stg_retryzh /* no arg list: explicit stack layout */
     W_ trec;
     W_ outer;
     W_ r;
+    W_ htm;
 
     // STM operations may allocate
     MAYBE_GC_ (stg_retryzh); // NB. not MAYBE_GC(), we cannot make a
@@ -1269,10 +1275,12 @@ retry_pop_stack:
 
     if (frame_type == CATCH_RETRY_FRAME) {
         // The retry reaches a CATCH_RETRY_FRAME before the atomic frame
+
         ASSERT(outer != NO_TREC);
         // Abort the transaction attempting the current branch
         ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
         ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
+
         if (!StgCatchRetryFrame_running_alt_code(frame) != 0) {
             // Retry in the first branch: try the alternative
             ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
@@ -1290,16 +1298,6 @@ retry_pop_stack:
 
     // We've reached the ATOMICALLY_FRAME: attempt to wait
     ASSERT(frame_type == ATOMICALLY_FRAME);
-    if (outer != NO_TREC) {
-        // We called retry while checking invariants, so abort the current
-        // invariant check (merging its TVar accesses into the parents read
-        // set so we'll wait on them)
-        ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
-        ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
-        trec = outer;
-        StgTSO_trec(CurrentTSO) = trec;
-        outer  = StgTRecHeader_enclosing_trec(trec);
-    }
     ASSERT(outer == NO_TREC);
 
     (r) = ccall stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
@@ -1321,17 +1319,34 @@ retry_pop_stack:
 
 stg_checkzh (P_ closure /* STM a */)
 {
-    W_ trec;
-
-    MAYBE_GC_P (stg_checkzh, closure);
-
-    trec = StgTSO_trec(CurrentTSO);
-    ccall stmAddInvariantToCheck(MyCapability() "ptr",
-                                 trec "ptr",
-                                 closure "ptr");
     return ();
 }
 
+// TODO: What if we want a different Bloom filter size?
+stg_bloom_add (W_ filter, W_ id)
+{
+    W_ w;
+    w = filter;
+
+    w = w | (1 << ((id & 0x00003f0) >>  4));
+    w = w | (1 << ((id & 0x003f000) >> 12));
+    w = w | (1 << ((id & 0x3f00000) >> 20));
+
+    return (w);
+}
+
+stg_bloom_add_array (W_ filter, W_ id, W_ index)
+{
+    W_ w;
+
+    w = filter ^ (index << 16);
+
+    w = w | (1 << ((id & 0x00003f0) >>  4));
+    w = w | (1 << ((id & 0x003f000) >> 12));
+    w = w | (1 << ((id & 0x3f00000) >> 20));
+
+    return (w);
+}
 
 stg_newTVarzh (P_ init)
 {
@@ -1343,7 +1358,10 @@ stg_newTVarzh (P_ init)
     SET_HDR (tv, stg_TVAR_DIRTY_info, CCCS);
 
     StgTVar_current_value(tv) = init;
-    StgTVar_first_watch_queue_entry(tv) = stg_END_STM_WATCH_QUEUE_closure;
+
+	(W_ w) = call stg_bloom_add(0,tv);
+
+	StgTVar_hash_id(tv) = w;
     StgTVar_num_updates(tv) = 0;
 
     return (tv);
@@ -1389,6 +1407,109 @@ stg_writeTVarzh (P_ tvar,     /* :: TVar a */
                        new_value "ptr");
     return ();
 }
+
+stg_gc_prim_pn (P_ arg1, W_ arg2, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2);
+}
+
+stg_gc_prim_pnp (P_ arg1, W_ arg2, P_ arg3, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2,arg3);
+}
+
+stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2,arg3);
+}
+
+#define GC_PRIM_PN(fun,arg1,arg2)               \
+        jump stg_gc_prim_pn(arg1,arg2,fun);
+
+#define GC_PRIM_PNP(fun,arg1,arg2,arg3)         \
+        jump stg_gc_prim_pnp(arg1,arg2,arg3,fun);
+
+#define GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
+        jump stg_gc_prim_pnn(arg1,arg2,arg3,fun);
+
+#define MAYBE_GC_PN(fun,arg1,arg2)              \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PN(fun,arg1,arg2)               \
+   }
+
+#define MAYBE_GC_PNP(fun,arg1,arg2,arg3)        \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PNP(fun,arg1,arg2,arg3)         \
+   }
+
+#define MAYBE_GC_PNN(fun,arg1,arg2,arg3)        \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
+   }
+
+stg_readTArrayzh (P_ tarray, W_ index)
+{
+    P_ trec;
+    P_ result;
+
+    // Call to stmReadTArraySTM may allocate
+    MAYBE_GC_PN (stg_readTArrayzh, tarray, index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ("ptr" result) = ccall stmReadTArray(MyCapability() "ptr", trec "ptr",
+                                         tarray "ptr", index);
+    return (result);
+}
+
+stg_readTArrayWordzh (P_ tarray, W_ index)
+{
+    P_ trec;
+    P_ result;
+
+   // Call to stmReadTArrayWordSTM may allocate
+    MAYBE_GC_PN (stg_readTArrayWordzh, tarray, index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ("ptr" result) = ccall stmReadTArrayWord(MyCapability() "ptr", trec "ptr",
+                                             tarray "ptr", index);
+    return (result);
+}
+
+stg_writeTArrayzh (P_ tarray,    // :: TArray a
+                      W_ index,     // :: Word
+                      P_ new_value) // :: a
+{
+    W_ trec;
+    // Call to stmWriteTArraySTM may allocate
+    MAYBE_GC_PNP (stg_writeTArrayzh, tarray, index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTArray(MyCapability() "ptr", trec "ptr", tarray "ptr", index,
+                         new_value "ptr");
+    return ();
+}
+
+stg_writeTArrayWordzh (P_ tarray,    // :: TArray a
+                          W_ index,     // :: Word
+                          W_ new_value) // :: Word
+{
+    W_ trec;
+
+    // Call to stmWriteTArrayWordSTM may allocate
+    MAYBE_GC_PNN (stg_writeTArrayWordzh, tarray, index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTArrayWord(MyCapability() "ptr", trec "ptr", tarray "ptr", index,
+                             new_value);
+    return ();
+}
+
 
 
 /* -----------------------------------------------------------------------------

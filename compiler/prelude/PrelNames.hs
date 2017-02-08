@@ -1531,7 +1531,8 @@ addrPrimTyConKey, arrayPrimTyConKey, arrayArrayPrimTyConKey, boolTyConKey,
     mutableByteArrayPrimTyConKey, orderingTyConKey, mVarPrimTyConKey,
     ratioTyConKey, rationalTyConKey, realWorldTyConKey, stablePtrPrimTyConKey,
     stablePtrTyConKey, anyTyConKey, eqTyConKey, heqTyConKey,
-    smallArrayPrimTyConKey, smallMutableArrayPrimTyConKey :: Unique
+    smallArrayPrimTyConKey, smallMutableArrayPrimTyConKey,
+    stmMutableArrayPrimTyConKey :: Unique
 addrPrimTyConKey                        = mkPreludeTyConUnique  1
 arrayPrimTyConKey                       = mkPreludeTyConUnique  3
 boolTyConKey                            = mkPreludeTyConUnique  4
@@ -1725,19 +1726,20 @@ specTyConKey = mkPreludeTyConUnique 177
 
 smallArrayPrimTyConKey        = mkPreludeTyConUnique  178
 smallMutableArrayPrimTyConKey = mkPreludeTyConUnique  179
+stmMutableArrayPrimTyConKey   = mkPreludeTyConUnique  180
 
 staticPtrTyConKey  :: Unique
-staticPtrTyConKey  = mkPreludeTyConUnique 180
+staticPtrTyConKey  = mkPreludeTyConUnique 181
 
 staticPtrInfoTyConKey :: Unique
-staticPtrInfoTyConKey = mkPreludeTyConUnique 181
+staticPtrInfoTyConKey = mkPreludeTyConUnique 182
 
 callStackTyConKey :: Unique
-callStackTyConKey = mkPreludeTyConUnique 182
+callStackTyConKey = mkPreludeTyConUnique 183
 
 -- Typeables
 typeRepTyConKey :: Unique
-typeRepTyConKey = mkPreludeTyConUnique 183
+typeRepTyConKey = mkPreludeTyConUnique 184
 
 ---------------- Template Haskell -------------------
 --      THNames.hs: USES TyConUniques 200-299

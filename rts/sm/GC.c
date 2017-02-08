@@ -108,11 +108,9 @@ nat mutlist_MUTVARS,
     mutlist_MUTARRS,
     mutlist_MVARS,
     mutlist_TVAR,
-    mutlist_TVAR_WATCH_QUEUE,
     mutlist_TREC_CHUNK,
     mutlist_TREC_HEADER,
-    mutlist_ATOMIC_INVARIANT,
-    mutlist_INVARIANT_CHECK_QUEUE,
+    mutlist_WAKEUP_CHUNK,
     mutlist_OTHERS;
 #endif
 
@@ -226,11 +224,9 @@ GarbageCollect (nat collect_gen,
   mutlist_MUTARRS = 0;
   mutlist_MVARS = 0;
   mutlist_TVAR = 0;
-  mutlist_TVAR_WATCH_QUEUE = 0;
   mutlist_TREC_CHUNK = 0;
   mutlist_TREC_HEADER = 0;
-  mutlist_ATOMIC_INVARIANT = 0;
-  mutlist_INVARIANT_CHECK_QUEUE = 0;
+  mutlist_WAKEUP_CHUNK = 0;
   mutlist_OTHERS = 0;
 #endif
 
@@ -382,6 +378,8 @@ GarbageCollect (nat collect_gen,
 
   markScheduler(mark_root, gct);
 
+  markWakeupSTM(mark_root, gct);
+
 #if defined(RTS_USER_SIGNALS)
   // mark the signal handlers (signals should be already blocked)
   markSignalHandlers(mark_root, gct);
@@ -506,13 +504,12 @@ GarbageCollect (nat collect_gen,
         copied +=  mut_list_size;
 
         debugTrace(DEBUG_gc,
-                   "mut_list_size: %lu (%d vars, %d arrays, %d MVARs, %d TVARs, %d TVAR_WATCH_QUEUEs, %d TREC_CHUNKs, %d TREC_HEADERs, %d ATOMIC_INVARIANTs, %d INVARIANT_CHECK_QUEUEs, %d others)",
+                   "mut_list_size: %lu (%d vars, %d arrays, %d MVARs, %d TVARs, %d TREC_CHUNKs, %d TREC_HEADERs, %d WAKEUP_CHUNKs, %d others)",
                    (unsigned long)(mut_list_size * sizeof(W_)),
                    mutlist_MUTVARS, mutlist_MUTARRS, mutlist_MVARS,
-                   mutlist_TVAR, mutlist_TVAR_WATCH_QUEUE,
+                   mutlist_TVAR,
                    mutlist_TREC_CHUNK, mutlist_TREC_HEADER,
-                   mutlist_ATOMIC_INVARIANT,
-                   mutlist_INVARIANT_CHECK_QUEUE,
+                   mutlist_WAKEUP_CHUNK,
                    mutlist_OTHERS);
     }
 

@@ -24,6 +24,7 @@
 #include "Sparks.h"
 #include "Trace.h"
 #include "sm/GC.h" // for gcWorkerThread()
+#include "Stats.h"
 #include "STM.h"
 #include "RtsUtils.h"
 
@@ -288,9 +289,8 @@ initCapability( Capability *cap, nat i )
 
     cap->weak_ptr_list_hd = NULL;
     cap->weak_ptr_list_tl = NULL;
-    cap->free_tvar_watch_queues = END_STM_WATCH_QUEUE;
-    cap->free_invariant_check_queues = END_INVARIANT_CHECK_QUEUE;
     cap->free_trec_chunks = END_STM_CHUNK_LIST;
+    cap->free_tarray_rec_chunks = END_STM_ARRAY_CHUNK_LIST;
     cap->free_trec_headers = NO_TREC;
     cap->transaction_tokens = 0;
     cap->context_switch = 0;
@@ -313,6 +313,8 @@ initCapability( Capability *cap, nat i )
 #if defined(THREADED_RTS)
     traceSparkCounters(cap);
 #endif
+
+    initSTMStats(cap);
 }
 
 /* ---------------------------------------------------------------------------

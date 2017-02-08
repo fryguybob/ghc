@@ -986,8 +986,9 @@ callishMachOps = listToUFM $
         ( "popcnt8",  (,) $ MO_PopCnt W8  ),
         ( "popcnt16", (,) $ MO_PopCnt W16 ),
         ( "popcnt32", (,) $ MO_PopCnt W32 ),
-        ( "popcnt64", (,) $ MO_PopCnt W64 )
+        ( "popcnt64", (,) $ MO_PopCnt W64 ),
 
+        ("xtest",  (,) $ MO_XTest )
         -- ToDo: the rest, maybe
         -- edit: which rest?
         -- also: how do we tell CMM Lint how to type check callish macops?

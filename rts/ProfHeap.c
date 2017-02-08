@@ -1059,6 +1059,12 @@ heapCensusChain( Census *census, bdescr *bd )
                 size = small_mut_arr_ptrs_sizeW((StgSmallMutArrPtrs *)p);
                 break;
 
+            case STM_MUT_ARR_PTRS_CLEAN:
+            case STM_MUT_ARR_PTRS_DIRTY:
+                prim = rtsTrue;
+                size = stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs *)p);
+            break;
+
             case TSO:
                 prim = rtsTrue;
 #ifdef PROFILING
@@ -1094,6 +1100,11 @@ heapCensusChain( Census *census, bdescr *bd )
             case TREC_CHUNK:
                 prim = rtsTrue;
                 size = sizeofW(StgTRecChunk);
+                break;
+
+            case TARRAY_REC_CHUNK:
+                prim = rtsTrue;
+                size = sizeofW(StgTArrayRecChunk);
                 break;
 
             default:

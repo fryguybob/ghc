@@ -33,6 +33,38 @@ void      stat_endGC  (Capability *cap, struct gc_thread_ *_gct,
                        W_ live, W_ copied, W_ slop, nat gen,
                        nat n_gc_threads, W_ par_max_copied, W_ par_tot_copied);
 
+/* STM Stats*/
+typedef struct stm_stats_
+{
+    nat start;         /* Transactions started */
+    nat abort;         /* Transactions aborted due to conflict */
+    nat retry;         /* Successfully blocked transactions */
+    nat validate_fail; /* Failure to validate an STM transaction */
+    nat failed_wakeup; /* wakeups that lead to subsequent retry */
+
+    nat stm_commit;    /* Commit of an STM transaction */
+    nat htm_commit;    /* Commit of an HTM transaction */
+    nat htm_fallback;  /* Transaction that gave up and switched to STM */
+    nat htm_fail;      /* HTM hardware abort */
+    nat htm_gc;        /* Need for GC killed HTM */
+
+    nat hle_locked;    /* STM lock was observed as locked by HLE */
+    nat hle_fail;      /* HLE aborted */
+    nat hle_fallback;  /* HLE gave up */
+    nat hle_commit;    /* HLE success */
+    nat hle_release;   /* Full STM fallback released lock */
+} stm_stats;
+
+typedef struct stm_stats_node_
+{
+    struct stm_stats_node_  *next;
+    nat                      cap_no;
+    stm_stats                stats;
+} stm_stats_node;
+
+void initSTMStats(Capability* cap);
+
+
 #ifdef PROFILING
 void      stat_startRP(void);
 void      stat_endRP(nat, 

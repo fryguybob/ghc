@@ -70,6 +70,9 @@ StgWord hs_popcnt(StgWord x);
 StgFloat hs_word2float32(StgWord x);
 StgDouble hs_word2float64(StgWord x);
 
+/* libraries/ghc-prim/cbits/xtest.c */
+StgWord hs_xtest(void);
+
 /* libraries/ghc-prim/cbits/clz.c */
 StgWord hs_clz8(StgWord x);
 StgWord hs_clz16(StgWord x);
