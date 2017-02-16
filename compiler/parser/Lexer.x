@@ -721,6 +721,10 @@ data Token
   | ITLarrowtail IsUnicodeSyntax --  -<<
   | ITRarrowtail IsUnicodeSyntax --  >>-
 
+  -- Mutable fields extension
+  | ITmutable
+  | ITmutableArray
+
   -- type application '@' (lexed differently than as-pattern '@',
   -- due to checking for preceding whitespace)
   | ITtypeApp
@@ -810,7 +814,10 @@ reservedWordsFM = listToUFM $
 
          ( "rec",            ITrec,           xbit ArrowsBit .|.
                                               xbit RecursiveDoBit),
-         ( "proc",           ITproc,          xbit ArrowsBit)
+         ( "proc",           ITproc,          xbit ArrowsBit),
+
+         ( "mutable",        ITmutable,       xbit MutableFieldsBit),
+         ( "mutableArray",   ITmutableArray,  xbit MutableFieldsBit)
      ]
 
 {-----------------------------------
@@ -2085,6 +2092,7 @@ data ExtBits
   | BinaryLiteralsBit
   | NegativeLiteralsBit
   | TypeApplicationsBit
+  | MutableFieldsBit
   deriving Enum
 
 
@@ -2147,6 +2155,8 @@ patternSynonymsEnabled :: ExtsBitmap -> Bool
 patternSynonymsEnabled = xtest PatternSynonymsBit
 typeApplicationEnabled :: ExtsBitmap -> Bool
 typeApplicationEnabled = xtest TypeApplicationsBit
+mutableFieldsEnabled :: ExtsBitmap -> Bool
+mutableFieldsEnabled = xtest MutableFieldsBit
 
 -- PState for parsing options pragmas
 --
@@ -2218,6 +2228,7 @@ mkPState flags buf loc =
                .|. NegativeLiteralsBit         `setBitIf` xopt LangExt.NegativeLiterals         flags
                .|. PatternSynonymsBit          `setBitIf` xopt LangExt.PatternSynonyms          flags
                .|. TypeApplicationsBit         `setBitIf` xopt LangExt.TypeApplications         flags
+               .|. MutableFieldsBit            `setBitIf` xopt LangExt.MutableFields            flags
 
       --
       setBitIf :: ExtBits -> Bool -> ExtsBitmap

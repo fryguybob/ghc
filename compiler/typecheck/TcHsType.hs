@@ -420,6 +420,7 @@ tc_infer_lhs_type mode (L span ty)
 -- as described in Note [Bidirectional type checking]
 tc_infer_hs_type :: TcTyMode -> HsType Name -> TcM (TcType, TcKind)
 tc_infer_hs_type mode (HsTyVar (L _ tv)) = tcTyVar mode tv
+tc_infer_hs_type mode (HsMutableTy _ (L _ ty)) = tc_infer_hs_type mode ty
 tc_infer_hs_type mode (HsAppTy ty1 ty2)
   = do { let (fun_ty, arg_tys) = splitHsAppTys ty1 [ty2]
        ; (fun_ty', fun_kind) <- tc_infer_lhs_type mode fun_ty
@@ -472,6 +473,8 @@ tc_hs_type _ ty@(HsBangTy {}) _
     -- other kinds of bangs are not (eg ((!Maybe) Int)). These kinds of
     -- bangs are invalid, so fail. (#7210)
     = failWithTc (text "Unexpected strictness annotation:" <+> ppr ty)
+tc_hs_type mode (HsMutableTy _ (L _ ty)) exp_kind
+    = tc_hs_type mode ty exp_kind
 tc_hs_type _ ty@(HsRecTy _)      _
       -- Record types (which only show up temporarily in constructor
       -- signatures) should have been removed by now

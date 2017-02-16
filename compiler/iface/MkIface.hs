@@ -1480,7 +1480,10 @@ tyConToIfaceDecl env tycon
                     ifConStricts = map (toIfaceBang con_env2)
                                        (dataConImplBangs data_con),
                     ifConSrcStricts = map toIfaceSrcBang
-                                          (dataConSrcBangs data_con)}
+                                          (dataConSrcBangs data_con),
+                    ifConMutFields = map toIfaceMutable
+                                          (dataConMutableFields data_con),
+                    ifConWrapperActionTy = tidyToIfaceType con_env2 <$> dataConWrapperAction data_con }
         where
           (univ_tvs, _ex_tvs, eq_spec, theta, arg_tys, _)
             = dataConFullSig data_con
@@ -1519,6 +1522,11 @@ toIfaceBang _   HsStrict             = IfStrict
 
 toIfaceSrcBang :: HsSrcBang -> IfaceSrcBang
 toIfaceSrcBang (HsSrcBang _ unpk bang) = IfSrcBang unpk bang
+
+toIfaceMutable :: HsMutableInfo -> IfaceMutable
+toIfaceMutable HsImmutable    = IfImmutable
+toIfaceMutable HsMutable      = IfMutable
+toIfaceMutable HsMutableArray = IfMutableArray
 
 classToIfaceDecl :: TidyEnv -> Class -> (TidyEnv, IfaceDecl)
 classToIfaceDecl env clas

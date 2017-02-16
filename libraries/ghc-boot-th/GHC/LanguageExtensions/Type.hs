@@ -129,4 +129,5 @@ data Extension
    | Strict
    | StrictData
    | MonadFailDesugaring
+   | MutableFields
    deriving (Eq, Enum, Show, Generic)

@@ -1,8 +1,11 @@
 module TysWiredIn where
 
+import BasicTypes( Boxity )
 import {-# SOURCE #-} TyCon      ( TyCon )
 import {-# SOURCE #-} TyCoRep    (Type, Kind)
 
+intTy :: Type
+mkTupleTy :: Boxity -> [Type] -> Type
 
 listTyCon :: TyCon
 typeNatKind, typeSymbolKind :: Type

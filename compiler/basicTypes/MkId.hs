@@ -76,7 +76,7 @@ import FastString
 import ListSetOps
 import qualified GHC.LanguageExtensions as LangExt
 
-import Data.Maybe       ( maybeToList )
+import Data.Maybe       ( maybeToList, isJust )
 
 {-
 ************************************************************************
@@ -536,6 +536,8 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
              -- Because we are going to apply the eq_spec args manually in the
              -- wrapper
 
+    wrap_act = dataConWrapperAction data_con
+
     arg_ibangs =
       case mb_bangs of
         Nothing    -> zipWith (dataConSrcToImplBang dflags fam_envs)
@@ -552,7 +554,8 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
                 && (any isBanged (ev_ibangs ++ arg_ibangs)
                       -- Some forcing/unboxing (includes eq_spec)
                     || isFamInstTyCon tycon  -- Cast result
-                    || (not $ null eq_spec)) -- GADT
+                    || (not $ null eq_spec)  -- GADT
+                    || isJust (wrap_act))    -- Has wrapper context type
 
     initial_wrap_app = Var (dataConWorkId data_con)
                        `mkTyApps`  res_ty_args
