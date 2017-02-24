@@ -1498,8 +1498,10 @@ tcConDecl rep_tycon tmpl_tvs _tmpl_bndrs res_tmpl
        ; ctxt    <- zonkTcTypeToTypes ze ctxt
        ; res_ty  <- zonkTcTypeToType ze res_ty
 
+       ; matcher <- mkContextTcMatchTy
+
        ; let (univ_tvs, ex_tvs, eq_preds, res_ty', arg_subst)
-               = rejigConRes tmpl_tvs res_tmpl qtkvs res_ty
+               = rejigConRes tmpl_tvs res_tmpl qtkvs res_ty matcher
              -- NB: this is a /lazy/ binding, so we pass five thunks to buildDataCon
              --     without yet forcing the guards in rejigConRes
              -- See Note [Checking GADT return types]
@@ -1715,6 +1717,7 @@ rejigConRes :: [TyVar] -> Type    -- Template for result type; e.g.
                                   -- Type must be of kind *!
             -> [TyVar]            -- where MkT :: forall x y z. ...
             -> Type               -- res_ty type must be of kind *
+            -> (Type -> Type -> Maybe TCvSubst)
             -> ([TyVar],          -- Universal
                 [TyVar],          -- Existential (distinct OccNames from univs)
                 [EqSpec],      -- Equality predicates
@@ -1723,7 +1726,7 @@ rejigConRes :: [TyVar] -> Type    -- Template for result type; e.g.
         -- We don't check that the TyCon given in the ResTy is
         -- the same as the parent tycon, because checkValidDataCon will do it
 
-rejigConRes tmpl_tvs res_tmpl dc_tvs res_ty
+rejigConRes tmpl_tvs res_tmpl dc_tvs res_ty matcher
         -- E.g.  data T [a] b c where
         --         MkT :: forall x y z. T [(x,y)] z z
         -- The {a,b,c} are the tmpl_tvs, and the {x,y,z} are the dc_tvs
@@ -1737,7 +1740,7 @@ rejigConRes tmpl_tvs res_tmpl dc_tvs res_ty
         -- So we return ([a,b,z], [x,y], [a~(x,y),b~z], T [(x,y)] z z)
   | Just subst <- ASSERT( isLiftedTypeKind (typeKind res_ty) )
                   ASSERT( isLiftedTypeKind (typeKind res_tmpl) )
-                  tcMatchTy res_tmpl res_ty
+                  matcher res_tmpl res_ty
   = let (univ_tvs, raw_eqs, kind_subst) = mkGADTVars tmpl_tvs dc_tvs subst
         raw_ex_tvs = dc_tvs `minusList` univ_tvs
         (arg_subst, substed_ex_tvs)
@@ -2292,6 +2295,15 @@ checkValidDataCon dflags existential_ok tc con
             else do
               checkTc False $ ppr ((mkAppTy m res), orig)
               return (False, True)
+
+
+mkContextTcMatchTy = do
+     let star_star_kind = liftedTypeKind `mkFunTy` liftedTypeKind
+     m <- newFlexiTyVarTy star_star_kind
+     return $ \res orig ->
+        case tcMatchTy res orig of
+            Just m  -> return m
+            Nothing -> tcMatchTy (mkAppTy m res) orig
 
 -------------------------------
 checkNewDataCon :: DataCon -> TcM ()

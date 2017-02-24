@@ -29,6 +29,7 @@ module DataCon (
 
         -- ** Type deconstruction
         dataConRepType, dataConSig, dataConInstSig, dataConFullSig,
+        dataConFullSigForPat,
         dataConName, dataConIdentity, dataConTag, dataConTyCon,
         dataConOrigTyCon, dataConUserType,
         dataConUnivTyVars, dataConUnivTyBinders,
@@ -66,6 +67,7 @@ import {-# SOURCE #-} MkId( DataConBoxer )
 import Type
 import TyCoRep ( Type(..) )
 import {-# SOURCE #-} TysWiredIn ( intTy, mkTupleTy )
+import TysPrim ( mkRefPrimTy, realWorldTy )
 import ForeignCall ( CType )
 import Coercion
 import Unify
@@ -858,9 +860,16 @@ mkDataCon tycon_name name declared_infix prom_info
     tag = assoc "mkDataCon" (tyConDataCons rep_tycon `zip` [fIRST_TAG..]) con
     rep_arg_tys = dataConRepArgTys con
 
-    rep_ty = mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
-             mkFunTys rep_arg_tys $
-             mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+    rep_ty
+      | isJust wrap_act =
+            pprTrace "rep_ty: " (ppr (univ_bndrs, ex_bndrs, rep_arg_tys, rep_tycon, univ_tvs))
+            $ mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+              mkFunTys rep_arg_tys $
+              mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+      | otherwise       =
+            mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+            mkFunTys rep_arg_tys $
+            mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
 
     -- TODO: I think we want to allow data constructors that do not have mutable
     -- fields, but do require construction in a context.  It is hard to tell if
@@ -1123,6 +1132,31 @@ dataConFullSig (MkData {dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs,
                         dcEqSpec = eq_spec, dcOtherTheta = theta,
                         dcOrigArgTys = arg_tys, dcOrigResTy = res_ty})
   = (univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty)
+
+dataConFullSigForPat :: DataCon
+                     -> ([TyVar], [TyVar], [EqSpec], ThetaType, [Type], Type)
+dataConFullSigForPat dataCon@(MkData {dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs,
+                        dcEqSpec = eq_spec, dcOtherTheta = theta,
+                        dcOrigArgTys = arg_tys, dcOrigResTy = res_ty,
+                        dcMutFields = muts, dcWrapperAction = wrap_act})
+  = case wrap_act of
+      Just act ->
+        pprTrace "forPat: "
+          (ppr ( univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty
+               , zipWith mkMutTys muts arg_tys ))
+          (univ_tvs, ex_tvs, eq_spec, theta, zipWith mkMutTys muts arg_tys, res_ty)
+       where
+        mkMutTys :: HsMutableInfo -> Type -> Type
+        mkMutTys HsImmutable t = t
+        mkMutTys HsMutable t = mkRefPrimTy realWorldTy t -- mkAppTy act t
+        mkMutTys HsMutableArray t = mkRefPrimTy realWorldTy t
+        -- TODO: Instead of realWorld this needs to be a type variable, but
+        -- I'm not sure how to do that (probably in TcM from the place that
+        -- calls this).
+
+      Nothing -> (univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty)
+
+
 
 dataConOrigResTy :: DataCon -> Type
 dataConOrigResTy dc = dcOrigResTy dc

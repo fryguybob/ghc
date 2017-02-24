@@ -37,6 +37,7 @@ module TysPrim(
 
         voidPrimTyCon,          voidPrimTy,
         statePrimTyCon,         mkStatePrimTy,
+        refPrimTyCon,           mkRefPrimTy,
         realWorldTyCon,         realWorldTy, realWorldStatePrimTy,
 
         proxyPrimTyCon,         mkProxyPrimTy,
@@ -82,7 +83,7 @@ module TysPrim(
 import {-# SOURCE #-} TysWiredIn
   ( runtimeRepTy, liftedTypeKind
   , vecRepDataConTyCon, ptrRepUnliftedDataConTyCon
-  , voidRepDataConTy, intRepDataConTy
+  , voidRepDataConTy, intRepDataConTy, refRepDataConTy
   , wordRepDataConTy, int64RepDataConTy, word64RepDataConTy, addrRepDataConTy
   , floatRepDataConTy, doubleRepDataConTy
   , vec2DataConTy, vec4DataConTy, vec8DataConTy, vec16DataConTy, vec32DataConTy
@@ -140,6 +141,7 @@ primTyCons
     , stablePtrPrimTyCon
     , stableNamePrimTyCon
     , statePrimTyCon
+	, refPrimTyCon
     , voidPrimTyCon
     , proxyPrimTyCon
     , threadIdPrimTyCon
@@ -172,7 +174,7 @@ mkBuiltInPrimTc fs unique tycon
                   BuiltInSyntax
 
 
-charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, stmMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName :: Name
+charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, refPrimTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, stmMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName :: Name
 charPrimTyConName             = mkPrimTc (fsLit "Char#") charPrimTyConKey charPrimTyCon
 intPrimTyConName              = mkPrimTc (fsLit "Int#") intPrimTyConKey  intPrimTyCon
 int32PrimTyConName            = mkPrimTc (fsLit "Int32#") int32PrimTyConKey int32PrimTyCon
@@ -184,6 +186,7 @@ addrPrimTyConName             = mkPrimTc (fsLit "Addr#") addrPrimTyConKey addrPr
 floatPrimTyConName            = mkPrimTc (fsLit "Float#") floatPrimTyConKey floatPrimTyCon
 doublePrimTyConName           = mkPrimTc (fsLit "Double#") doublePrimTyConKey doublePrimTyCon
 statePrimTyConName            = mkPrimTc (fsLit "State#") statePrimTyConKey statePrimTyCon
+refPrimTyConName              = mkPrimTc (fsLit "Ref#") refPrimTyConKey refPrimTyCon
 voidPrimTyConName             = mkPrimTc (fsLit "Void#") voidPrimTyConKey voidPrimTyCon
 proxyPrimTyConName            = mkPrimTc (fsLit "Proxy#") proxyPrimTyConKey proxyPrimTyCon
 eqPrimTyConName               = mkPrimTc (fsLit "~#") eqPrimTyConKey eqPrimTyCon
@@ -660,6 +663,20 @@ mkStatePrimTy ty = TyConApp statePrimTyCon [ty]
 
 statePrimTyCon :: TyCon   -- See Note [The State# TyCon]
 statePrimTyCon   = pcPrimTyCon statePrimTyConName [Nominal] VoidRep
+
+{-
+Ref# primitive type for mutable fields.
+-}
+
+mkRefPrimTy :: Type -> Type -> Type
+mkRefPrimTy s a = TyConApp refPrimTyCon [s,a]
+
+refPrimTyCon :: TyCon
+refPrimTyCon = mkPrimTyCon refPrimTyConName binders result_kind roles
+  where
+    roles       = [Nominal,Nominal]
+    binders     = map (const (Anon liftedTypeKind)) roles
+    result_kind = tYPE refRepDataConTy
 
 {-
 RealWorld is deeply magical.  It is *primitive*, but it is not

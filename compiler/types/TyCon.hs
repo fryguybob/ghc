@@ -1182,6 +1182,7 @@ primElemRepSizeB Word64ElemRep = 8
 primElemRepSizeB FloatElemRep  = 4
 primElemRepSizeB DoubleElemRep = 8
 
+
 -- | Return if Rep stands for floating type,
 -- returns Nothing for vector types.
 primRepIsFloat :: PrimRep -> Maybe Bool

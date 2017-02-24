@@ -369,10 +369,24 @@ mkDataConWorkId wkr_name data_con
   | isNewTyCon tycon
   = mkGlobalId (DataConWrapId data_con) wkr_name nt_wrap_ty nt_work_info
   | otherwise
-  = mkGlobalId (DataConWorkId data_con) wkr_name alg_wkr_ty wkr_info
+  = case dataConWrapperAction data_con of
+      Nothing  -> mkGlobalId (DataConWorkId data_con) wkr_name alg_wkr_ty wkr_info
+      Just act -> mkGlobalId (DataConWorkId data_con) wkr_name (act_wkr_ty act)
+                                                               (act_wkr_info act)
 
   where
     tycon = dataConTyCon data_con
+
+        ----------- Workers for mutable fields -----------
+    act_wkr_ty act = pprTrace "act_wkr_ty: " (ppr (act, dataConRepType data_con))
+                   $ dataConRepType data_con
+    act_wkr_info act = noCafIdInfo
+                       `setArityInfo`      wkr_arity
+                       `setStrictnessInfo` act_wkr_sig act
+                       `setUnfoldingInfo`  evaldUnfolding
+
+    act_wkr_sig act = pprTrace "act_wkr_sig: " (ppr (act, x, wkr_arity, dataConCPR data_con)) x
+      where x = mkClosedStrictSig (replicate wkr_arity topDmd) (dataConCPR data_con)
 
         ----------- Workers for data types --------------
     alg_wkr_ty = dataConRepType data_con

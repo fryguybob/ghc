@@ -22,7 +22,8 @@ ptrRepUnliftedDataConTyCon, vecRepDataConTyCon :: TyCon
 
 voidRepDataConTy, intRepDataConTy,
   wordRepDataConTy, int64RepDataConTy, word64RepDataConTy, addrRepDataConTy,
-  floatRepDataConTy, doubleRepDataConTy, unboxedTupleRepDataConTy :: Type
+  floatRepDataConTy, doubleRepDataConTy, unboxedTupleRepDataConTy,
+  refRepDataConTy :: Type
 
 vec2DataConTy, vec4DataConTy, vec8DataConTy, vec16DataConTy, vec32DataConTy,
   vec64DataConTy :: Type
