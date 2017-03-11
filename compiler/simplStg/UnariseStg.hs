@@ -93,6 +93,7 @@ import Name
 import Util
 import Outputable
 import BasicTypes
+import TysPrim
 
 
 -- | A mapping from unboxed-tuple binders to the Ids they were expanded to.
@@ -263,6 +264,11 @@ unariseIdBinder us rho x = case repType (idType x) of
                          ys   = unboxedTupleBindersFrom us0 x tys
                          rho' = extendVarEnv rho x ys
                       in (us1, rho', ys)
+
+    UbxRefRep -> let (us0, us1) = splitUniqSupply us
+                     ys   = unboxedTupleBindersFrom us0 x [anyTy, intPrimTy]
+                     rho' = extendVarEnv rho x ys
+                 in (us1, rho', ys)
 
 unboxedTupleBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
 unboxedTupleBindersFrom us x tys = zipWith (mkSysLocalOrCoVar fs) (uniqsFromSupply us) tys

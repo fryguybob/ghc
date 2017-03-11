@@ -59,6 +59,7 @@ module TyCon(
         isImplicitTyCon,
         isTyConWithSrcDataCons,
         isTcTyCon,
+        isRefTyCon,
 
         -- ** Extracting information out of TyCons
         tyConName,
@@ -1724,6 +1725,11 @@ isTyConAssoc tc = isJust (tyConAssoc_maybe tc)
 tyConAssoc_maybe :: TyCon -> Maybe Class
 tyConAssoc_maybe (FamilyTyCon { famTcParent = mb_cls }) = mb_cls
 tyConAssoc_maybe _                                      = Nothing
+
+isRefTyCon :: TyCon -> Bool
+isRefTyCon tc@(PrimTyCon {})
+  = hasKey tc refPrimTyConKey
+isRefTyCon _ = False
 
 -- The unit tycon didn't used to be classed as a tuple tycon
 -- but I thought that was silly so I've undone it

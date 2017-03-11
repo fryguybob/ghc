@@ -1768,14 +1768,18 @@ data RepType
                             -- INVARIANT: never an empty list
                             -- (see Note [Nullary unboxed tuple])
   | UnaryRep UnaryType      -- Represented by a single value
+  | UbxRefRep               -- Field refernce is an unboxed pair
+                            -- of pointer to the object and offset.
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
   ppr (UnaryRep ty)     = text "UnaryRep"    <+> ppr ty
+  ppr UbxRefRep         = text "UbxRefRep"   <+> ppr [anyTy, intPrimTy]
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
 flattenRepType (UnaryRep ty)     = [ty]
+flattenRepType UbxRefRep         = [anyTy, intPrimTy]
 
 -- | 'repType' figure out how a type will be represented
 --   at runtime.  It looks through
@@ -1804,12 +1808,15 @@ repType ty
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
 
+      | isRefTyCon tc
+      = UbxRefRep
+
       | isUnboxedTupleTyCon tc
       = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)
       where
           -- See Note [Unboxed tuple RuntimeRep vars] in TyCon
         non_rr_tys = dropRuntimeRepArgs tys
-
+      
     go rec_nts (CastTy ty _)
       = go rec_nts ty
 
