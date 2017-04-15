@@ -721,11 +721,11 @@ emitLabel id = do tscope <- getTickScope
                   emitCgStmt (CgLabel id tscope)
 
 emitComment :: FastString -> FCode ()
-#if 0 /* def DEBUG */
+-- #if 0 /* def DEBUG */
 emitComment s = emitCgStmt (CgStmt (CmmComment s))
-#else
-emitComment _ = return ()
-#endif
+-- #else
+-- emitComment _ = return ()
+-- #endif
 
 emitTick :: CmmTickish -> FCode ()
 emitTick = emitCgStmt . CgStmt . CmmTick

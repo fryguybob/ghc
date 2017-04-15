@@ -1768,18 +1768,21 @@ data RepType
                             -- INVARIANT: never an empty list
                             -- (see Note [Nullary unboxed tuple])
   | UnaryRep UnaryType      -- Represented by a single value
-  | UbxRefRep               -- Field refernce is an unboxed pair
+  | UbxRefRep UnaryType     -- Field refernce is an unboxed pair
                             -- of pointer to the object and offset.
 
 instance Outputable RepType where
   ppr (UbxTupleRep tys) = text "UbxTupleRep" <+> ppr tys
   ppr (UnaryRep ty)     = text "UnaryRep"    <+> ppr ty
-  ppr UbxRefRep         = text "UbxRefRep"   <+> ppr [anyTy, intPrimTy]
+  ppr (UbxRefRep ty)    = text "UbxRefRep"   <+> ppr [refAddrTy, mkRefIndexTy ty]
+-- TODO: I don't know what context this instance is used, but it may be the
+-- case that it should expand to refAddrAlt!  Same goes for the flattenRepType
+-- function below.
 
 flattenRepType :: RepType -> [UnaryType]
 flattenRepType (UbxTupleRep tys) = tys
 flattenRepType (UnaryRep ty)     = [ty]
-flattenRepType UbxRefRep         = [anyTy, intPrimTy]
+flattenRepType (UbxRefRep ty)    = [refAddrTy, mkRefIndexTy ty]
 
 -- | 'repType' figure out how a type will be represented
 --   at runtime.  It looks through
@@ -1802,14 +1805,15 @@ repType ty
     go rec_nts (ForAllTy (Named {}) ty2)  -- Drop type foralls
       = go rec_nts ty2
 
+    go rec_nts (TyConApp tc [_,ty])
+      | isRefTyCon tc
+      = UbxRefRep ty
+
     go rec_nts (TyConApp tc tys)        -- Expand newtypes
       | isNewTyCon tc
       , tys `lengthAtLeast` tyConArity tc
       , Just rec_nts' <- checkRecTc rec_nts tc   -- See Note [Expanding newtypes] in TyCon
       = go rec_nts' (newTyConInstRhs tc tys)
-
-      | isRefTyCon tc
-      = UbxRefRep
 
       | isUnboxedTupleTyCon tc
       = UbxTupleRep (concatMap (flattenRepType . go rec_nts) non_rr_tys)

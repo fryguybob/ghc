@@ -200,6 +200,12 @@ unariseAlts us rho _ _ alts
 
 --------------------------
 unariseAlt :: UniqSupply -> UnariseEnv -> StgAlt -> StgAlt
+unariseAlt us rho (dataAlt@(DataAlt con), xs, uses, e)
+  | hasMutableFields con
+  = (dataAlt, xs', uses', unariseExpr us' rho' e)
+  where
+    (us', rho', xs', uses') = unariseUsedIdBindersMutable us rho xs uses 
+                                    (dataConMutableFields con)
 unariseAlt us rho (con, xs, uses, e)
   = (con, xs', uses', unariseExpr us' rho' e)
   where
@@ -243,8 +249,37 @@ unariseUsedIdBinders us rho xs uses
   where
     do_one us rho (x, use) = third3 (map (flip (,) use)) (unariseIdBinder us rho x)
 
+unariseUsedIdBindersMutable :: UniqSupply -> UnariseEnv -> [Id] -> [Bool]
+                     -> [HsMutableInfo] -> (UniqSupply, UnariseEnv, [Id], [Bool])
+unariseUsedIdBindersMutable us rho xs uses muts
+  = case mapAccumL2 do_one us rho (zipEqual "unariseUsedIdBindersMutable1" xs
+                                    (zipEqual "unariesUsedIdBinderMutable2" uses muts)) of
+      (us', rho', xs_usess) -> uncurry ((,,,) us' rho') (unzip (concat xs_usess))
+  where
+    do_one us rho (x, (use, mut)) = third3 (map (flip (,) use)) (unariseIdBinder' us rho x mut)
+
 unariseIdBinders :: UniqSupply -> UnariseEnv -> [Id] -> (UniqSupply, UnariseEnv, [Id])
 unariseIdBinders us rho xs = third3 concat $ mapAccumL2 unariseIdBinder us rho xs
+
+unariseIdBinder' :: UniqSupply -> UnariseEnv
+                -> Id                -- Binder
+                -> HsMutableInfo
+                -> (UniqSupply,
+                    UnariseEnv,      -- What to expand to at occurrence sites
+                    [Id])            -- What to expand to at binding site
+unariseIdBinder' us rho x HsImmutable = unariseIdBinder us rho x
+unariseIdBinder' us rho x HsMutable   = case repType (idType x) of
+    UbxRefRep ty -> let (us0, us1) = splitUniqSupply us
+                        -- we need to know later that these fields came from a Ref
+                        -- so we use special types RefAddr# and RefIndex#.
+                        -- Specifically these came from a binding of a mutable
+                        -- field so they should have a void representation for
+                        -- the Addr and index representation that matches the
+                        -- type of the mutable field.
+                        ys   = unboxedTupleBindersFrom us0 x [refAddrAltTy, mkRefIndexAltTy ty]
+                        rho' = extendVarEnv rho x ys
+                    in  (us1, rho', ys)
+    _            -> panic "Mutable field in alt that is not a Ref#"
 
 unariseIdBinder :: UniqSupply -> UnariseEnv
                 -> Id                -- Binder
@@ -265,10 +300,12 @@ unariseIdBinder us rho x = case repType (idType x) of
                          rho' = extendVarEnv rho x ys
                       in (us1, rho', ys)
 
-    UbxRefRep -> let (us0, us1) = splitUniqSupply us
-                     ys   = unboxedTupleBindersFrom us0 x [anyTy, intPrimTy]
-                     rho' = extendVarEnv rho x ys
-                 in (us1, rho', ys)
+    UbxRefRep ty -> let (us0, us1) = splitUniqSupply us
+                        -- we need to know later that these fields came from a Ref
+                        -- so we use special types RefAddr# and RefIndex#.
+                        ys   = unboxedTupleBindersFrom us0 x [refAddrTy, mkRefIndexTy ty]
+                        rho' = extendVarEnv rho x ys
+                    in (us1, rho', ys)
 
 unboxedTupleBindersFrom :: UniqSupply -> Id -> [UnaryType] -> [Id]
 unboxedTupleBindersFrom us x tys = zipWith (mkSysLocalOrCoVar fs) (uniqsFromSupply us) tys

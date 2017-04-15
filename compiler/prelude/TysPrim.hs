@@ -38,6 +38,10 @@ module TysPrim(
         voidPrimTyCon,          voidPrimTy,
         statePrimTyCon,         mkStatePrimTy,
         refPrimTyCon,           mkRefPrimTy,
+        refAddrTyCon,           refAddrTy,
+        refIndexTyCon,          mkRefIndexTy,
+        refAddrAltTyCon,        refAddrAltTy,
+        refIndexAltTyCon,       mkRefIndexAltTy,
         realWorldTyCon,         realWorldTy, realWorldStatePrimTy,
 
         proxyPrimTyCon,         mkProxyPrimTy,
@@ -174,7 +178,7 @@ mkBuiltInPrimTc fs unique tycon
                   BuiltInSyntax
 
 
-charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, refPrimTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, stmMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName :: Name
+charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, refPrimTyConName, refAddrTyConName, refIndexTyConName, refAddrAltTyConName, refIndexAltTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, stmMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName :: Name
 charPrimTyConName             = mkPrimTc (fsLit "Char#") charPrimTyConKey charPrimTyCon
 intPrimTyConName              = mkPrimTc (fsLit "Int#") intPrimTyConKey  intPrimTyCon
 int32PrimTyConName            = mkPrimTc (fsLit "Int32#") int32PrimTyConKey int32PrimTyCon
@@ -187,6 +191,10 @@ floatPrimTyConName            = mkPrimTc (fsLit "Float#") floatPrimTyConKey floa
 doublePrimTyConName           = mkPrimTc (fsLit "Double#") doublePrimTyConKey doublePrimTyCon
 statePrimTyConName            = mkPrimTc (fsLit "State#") statePrimTyConKey statePrimTyCon
 refPrimTyConName              = mkPrimTc (fsLit "Ref#") refPrimTyConKey refPrimTyCon
+refAddrTyConName              = mkPrimTc (fsLit "RefAddr#") refAddrTyConKey refAddrTyCon
+refIndexTyConName             = mkPrimTc (fsLit "RefIndex#") refIndexTyConKey refIndexTyCon
+refAddrAltTyConName           = mkPrimTc (fsLit "RefAddrAlt#") refAddrAltTyConKey refAddrAltTyCon
+refIndexAltTyConName          = mkPrimTc (fsLit "RefIndexAlt#") refIndexAltTyConKey refIndexAltTyCon
 voidPrimTyConName             = mkPrimTc (fsLit "Void#") voidPrimTyConKey voidPrimTyCon
 proxyPrimTyConName            = mkPrimTc (fsLit "Proxy#") proxyPrimTyConKey proxyPrimTyCon
 eqPrimTyConName               = mkPrimTc (fsLit "~#") eqPrimTyConKey eqPrimTyCon
@@ -677,6 +685,43 @@ refPrimTyCon = mkPrimTyCon refPrimTyConName binders result_kind roles
     roles       = [Nominal,Nominal]
     binders     = map (const (Anon liftedTypeKind)) roles
     result_kind = tYPE refRepDataConTy
+
+-- Durring unarise a Ref# is split into an address and an index.
+-- When stored the address part will be a pointer and the index an
+-- int.  But when these are bound from a pattern match the address
+-- is like a void representation for the object being bound as we will
+-- have two "fields" representing one in the object.  The index will be
+-- the same representation as the field so if the field has a pointer
+-- representation, then it should be with the pointers.  We have to ensure
+-- that even with the extra fields we get the right layout for objects.
+-- This approach should be able to extent to vector representations where
+-- the index field has a representation of multiple words allowing everything
+-- passed it to get properly placed, but when we go to do code generation for
+-- index we don't read of the value but instead just use a constant for the
+-- offset.  Similarly code generation for the address is simply the address
+-- of the object (the scrutenee with the tag bits stripped).
+refAddrTy :: Type
+refAddrTy = mkTyConTy refAddrTyCon
+refAddrTyCon :: TyCon
+refAddrTyCon = pcPrimTyCon0 refAddrTyConName PtrRep
+
+mkRefIndexTy :: Type -> Type
+mkRefIndexTy ty = TyConApp refIndexTyCon [ty]
+
+refIndexTyCon :: TyCon
+refIndexTyCon = pcPrimTyCon refIndexTyConName [Nominal] IntRep
+
+refAddrAltTy :: Type
+refAddrAltTy = mkTyConTy refAddrAltTyCon
+refAddrAltTyCon :: TyCon
+refAddrAltTyCon = pcPrimTyCon0 refAddrAltTyConName VoidRep
+
+mkRefIndexAltTy :: Type -> Type
+mkRefIndexAltTy ty = TyConApp refIndexAltTyCon [ty]
+
+refIndexAltTyCon :: TyCon
+refIndexAltTyCon = pcPrimTyCon refIndexAltTyConName [Nominal] PtrRep
+-- TODO: Rep must match the type it is applied to!
 
 {-
 RealWorld is deeply magical.  It is *primitive*, but it is not

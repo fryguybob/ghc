@@ -60,6 +60,8 @@ module TyCon(
         isTyConWithSrcDataCons,
         isTcTyCon,
         isRefTyCon,
+        isRefAddrTyCon,
+        isRefIndexTyCon,
 
         -- ** Extracting information out of TyCons
         tyConName,
@@ -1730,6 +1732,18 @@ isRefTyCon :: TyCon -> Bool
 isRefTyCon tc@(PrimTyCon {})
   = hasKey tc refPrimTyConKey
 isRefTyCon _ = False
+
+isRefAddrTyCon :: TyCon -> Bool
+isRefAddrTyCon tc@(PrimTyCon {})
+  =  hasKey tc refAddrTyConKey
+  || hasKey tc refAddrAltTyConKey
+isRefAddrTyCon _ = False
+
+isRefIndexTyCon :: TyCon -> Bool
+isRefIndexTyCon tc@(PrimTyCon {})
+  =  hasKey tc refIndexTyConKey
+  || hasKey tc refIndexAltTyConKey
+isRefIndexTyCon _ = False
 
 -- The unit tycon didn't used to be classed as a tuple tycon
 -- but I thought that was silly so I've undone it

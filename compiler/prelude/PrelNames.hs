@@ -1745,6 +1745,18 @@ typeRepTyConKey = mkPreludeTyConUnique 184
 refPrimTyConKey :: Unique
 refPrimTyConKey = mkPreludeTyConUnique 185
 
+refAddrTyConKey :: Unique
+refAddrTyConKey = mkPreludeTyConUnique 186
+
+refIndexTyConKey :: Unique
+refIndexTyConKey = mkPreludeTyConUnique 187
+
+refAddrAltTyConKey :: Unique
+refAddrAltTyConKey = mkPreludeTyConUnique 188
+
+refIndexAltTyConKey :: Unique
+refIndexAltTyConKey = mkPreludeTyConUnique 189
+
 ---------------- Template Haskell -------------------
 --      THNames.hs: USES TyConUniques 200-299
 -----------------------------------------------------

@@ -29,6 +29,7 @@ import StgCmmClosure
 import StgCmmProf ( curCCS )
 
 import CmmExpr
+import CmmUtils
 import CLabel
 import MkGraph
 import SMRep
@@ -245,6 +246,18 @@ buildDynCon' dflags _ binder actually_bound ccs con args
 --      Binding constructor arguments
 ---------------------------------------------------------------
 
+-- Mutable fields need special handling here.  References have been broken into
+-- two Id's at this point, a RefAddr# and a RefIndex#.  We need to make sure
+-- that these have the right representations for a matching constructor.
+-- Specifically, in bindConArgs RefAddr#s need to have a void representation
+-- and RefIndex#s need to have the representation that matches the
+-- representation of the mutable field.  We can then bind the address register
+-- to the object pointer and the index register to the offset without actually
+-- emitting a load.
+--
+-- If the RefAddr# and RefIndex# are from a stored Ref# rather then from a
+-- mutable field, then we should load the values as normal.
+
 bindConArgs :: AltCon -> LocalReg -> [Id] -> FCode [LocalReg]
 -- bindConArgs is called from cgAlt of a case
 -- (bindConArgs con args) augments the environment with bindings for the
@@ -255,15 +268,45 @@ bindConArgs (DataAlt con) base args
     do dflags <- getDynFlags
        let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdReps args)
            tag = tagForCon dflags con
+           args_addrs = filter (isRefAddrAlt . idType) args
 
            -- The binding below forces the masking out of the tag bits
            -- when accessing the constructor field.
            bind_arg :: (NonVoid Id, VirtualHpOffset) -> FCode LocalReg
            bind_arg (arg, offset)
-               = do emit $ mkTaggedObjectLoad dflags (idToReg dflags arg) base offset tag
-                    bindArgToReg arg
-       mapM bind_arg args_w_offsets
+             | isRefIndexAlt (idType . unsafe_stripNV $ arg) = do
+                 emitComment $ mkFastString "Begin refIndexAlt"
+                 emitAssign (CmmLocal (idToReg dflags arg)) (mkIntExpr dflags (offset - tag))
+                 emitComment $ mkFastString "End refIndexAlt"
+                 bindArgToReg arg
+             | otherwise = do
+                 emit $ mkTaggedObjectLoad dflags (idToReg dflags arg) base offset tag
+                 bindArgToReg arg
+
+           -- Instead of storing the untagged pointer in the register we bind the
+           -- arg to the base register and assign ref indexes to (offset - tag).
+           -- Ref's then look just like a delayed tagged object load and in most
+           -- cases will look identical after some code improvement if the
+           -- reference is dereferenced right away.
+           bind_addr :: Id -> FCode ()
+           bind_addr arg = do
+             -- TODO: I don't know if this breaks a lot of assumptions!  If it
+             -- does a viable approach could be to assign a new local register
+             -- to the base register, but this might break assumptions as well
+             -- as the Id here is void.
+             emitComment $ mkFastString "Begin refAddrAlt"
+             bindArgToOtherReg arg base
+             emitComment $ mkFastString "End refAddrAlt"
+  
+
+       mapM_ bind_addr args_addrs
+       mapM  bind_arg  args_w_offsets
 
 bindConArgs _other_con _base args
   = ASSERT( null args ) return []
+
+
+
+
+
 

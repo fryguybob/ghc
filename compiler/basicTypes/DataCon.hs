@@ -56,6 +56,7 @@ module DataCon (
         isVanillaDataCon, classDataCon, dataConCannotMatch,
         isBanged, isMarkedStrict, eqHsBang, isSrcStrict, isSrcUnpacked,
         specialPromotedDc, isLegacyPromotableDataCon, isLegacyPromotableTyCon,
+        hasMutableFields,
 
         -- ** Promotion related functions
         promoteDataCon
@@ -1276,6 +1277,10 @@ isUnboxedTupleCon (MkData {dcRepTyCon = tc}) = isUnboxedTupleTyCon tc
 -- | Vanilla 'DataCon's are those that are nice boring Haskell 98 constructors
 isVanillaDataCon :: DataCon -> Bool
 isVanillaDataCon dc = dcVanilla dc
+
+-- | Does this DataCon have mutable fields?
+hasMutableFields :: DataCon -> Bool
+hasMutableFields = not . all (== HsImmutable) . dcMutFields
 
 -- | Should this DataCon be allowed in a type even without -XDataKinds?
 -- Currently, only Lifted & Unlifted

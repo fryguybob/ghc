@@ -1996,6 +1996,35 @@ primop  CasMutVarOp "casMutVar#" GenPrimOp
    has_side_effects = True
 
 ------------------------------------------------------------------------
+section "Mutable Fields"
+------------------------------------------------------------------------
+
+primop  ReadRefOp "readRef#" GenPrimOp
+   Ref# s a -> State# s -> (# State# s, a #)
+   {Dereference a mutable field.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefOp "writeRef#" GenPrimOp
+   Ref# s a -> a -> State# s -> State# s
+   {Write to a mutable field at a given reference.}
+   with has_side_effects = True
+        can_fail         = True
+        code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
+
+-- primop  ReadRefOp_word "readRefWord#" GenPrimOp
+--   Ref# s Word# -> State# s -> (# State# s, Word# #)
+--   {Dereference a mutable field.}
+--   with has_side_effects = True
+--        can_fail = True
+--
+--primop  WriteRefOp_word "writeRefWord#" GenPrimOp
+--   Ref# s Word# -> Word# -> State# s -> State# s
+--   {Write to a mutable field at a given reference.}
+--   with has_side_effects = True
+--        can_fail         = True
+--
+------------------------------------------------------------------------
 section "Exceptions"
 ------------------------------------------------------------------------
 
