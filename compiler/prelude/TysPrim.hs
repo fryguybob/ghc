@@ -714,13 +714,13 @@ refIndexTyCon = pcPrimTyCon refIndexTyConName [Nominal] IntRep
 refAddrAltTy :: Type
 refAddrAltTy = mkTyConTy refAddrAltTyCon
 refAddrAltTyCon :: TyCon
-refAddrAltTyCon = pcPrimTyCon0 refAddrAltTyConName VoidRep
+refAddrAltTyCon = pcPrimTyCon0 refAddrAltTyConName PtrRep
 
 mkRefIndexAltTy :: Type -> Type
 mkRefIndexAltTy ty = TyConApp refIndexAltTyCon [ty]
 
 refIndexAltTyCon :: TyCon
-refIndexAltTyCon = pcPrimTyCon refIndexAltTyConName [Nominal] PtrRep
+refIndexAltTyCon = pcPrimTyCon refIndexAltTyConName [Nominal] IntRep
 -- TODO: Rep must match the type it is applied to!
 
 {-

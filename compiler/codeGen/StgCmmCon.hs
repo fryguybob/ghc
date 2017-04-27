@@ -266,7 +266,7 @@ bindConArgs :: AltCon -> LocalReg -> [Id] -> FCode [LocalReg]
 bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleCon con))
     do dflags <- getDynFlags
-       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdReps args)
+       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdRepsForAlt args)
            tag = tagForCon dflags con
            args_addrs = filter (isRefAddrAlt . idType) args
 

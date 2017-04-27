@@ -19,6 +19,8 @@ module StgCmmClosure (
         argPrimRep,
 		isRefAddrAlt,
         isRefIndexAlt,
+        idPrimRepForAlt,
+        addIdRepsForAlt,
 
         -- * LambdaFormInfo
         LambdaFormInfo,         -- Abstract
@@ -127,14 +129,7 @@ isKnownFun _ = False
 -- Why are these here?
 
 idPrimRep :: Id -> PrimRep
-idPrimRep id = case ty of
-    -- In a case alternative for a mutable field we treat the index with
-    -- the representation of the underlying mutable field.
-    TyConApp con [ty']
-      | con `hasKey` refIndexAltTyConKey -> typePrimRep ty'
-    _                                    -> typePrimRep ty
-  where
-    ty = idType id
+idPrimRep id = typePrimRep (idType id)
     -- NB: typePrimRep fails on unboxed tuples,
     --     but by StgCmm no Ids have unboxed tuple type
 
@@ -147,6 +142,22 @@ addArgReps args = [(argPrimRep arg, arg) | arg <- args]
 argPrimRep :: StgArg -> PrimRep
 argPrimRep arg = typePrimRep (stgArgType arg)
 
+
+addIdRepsForAlt :: [Id] -> [(PrimRep, Id)]
+addIdRepsForAlt ids = [(idPrimRepForAlt id, id) | id <- ids]
+
+idPrimRepForAlt :: Id -> PrimRep
+idPrimRepForAlt id = case ty of
+    -- In a case alternative for a mutable field we treat the index with
+    -- the representation of the underlying mutable field.
+    TyConApp con [ty']
+      | con `hasKey` refIndexAltTyConKey -> typePrimRep ty'
+    TyConApp con _
+      | con `hasKey` refAddrAltTyConKey  -> VoidRep
+    _                                    -> typePrimRep ty
+  where
+    ty = idType id
+ 
 isRefIndexAlt :: Type -> Bool
 isRefIndexAlt arg =
   case arg of
