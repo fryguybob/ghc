@@ -543,6 +543,8 @@ static StgTRecHeader *new_stg_trec_header(Capability *cap,
   result -> enclosing_trec = enclosing_trec;
   result -> current_chunk = new_stg_trec_chunk(cap);
   result -> current_array_chunk = new_stg_tarray_rec_chunk(cap);
+  result -> HpStart = 0;
+  result -> HpEnd = 0;
 
   if (enclosing_trec == NO_TREC) {
     result -> state = TREC_ACTIVE;
@@ -1604,6 +1606,7 @@ StgTRecHeader *stmStartTransaction(Capability *cap,
     cap->stm_stats->start++;
   }
 
+  cap->stm_stats->alloc_snapshot = 0;
   t = alloc_stg_trec_header(cap, outer);
   TRACE("%p : stmStartTransaction()=%p", outer, t);
   return t;
@@ -1801,6 +1804,88 @@ static TArrayRecEntry *get_array_entry_for(StgTRecHeader *trec, StgTArray *tarra
 
 /*......................................................................*/
 
+static int DiffHeapUse(bdescr* bs, bdescr* be, int s, int e)
+{
+    
+    int total = 0;
+
+    if (bs == be)
+    {
+        total = e - s;
+    }
+    else
+    {
+        total = BLOCK_SIZE*bs->blocks + s - (StgWord)bs->start;
+        bs = bs->link;
+        while (bs != be && bs != NULL)
+        {
+            total += BLOCK_SIZE*bs->blocks;
+            bs = bs->link;
+        }
+        if (bs == NULL)
+        {
+           return -1;
+        }
+        total += e - (StgWord)be->start;
+    }
+
+    return total;
+}
+
+static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, StgBool htm)
+{
+    // Extract how many bytes were allocated while the transaction ran.  We have
+    // recorded in the trec the start Hp and end Hp.  If it was all in one block
+    // we just want the difference.  If start and end are different blocks, add
+    // BLOCK_SIZE for each intervening block.  Record these stats in the stm_stats
+    // structure.  For STM we see aborted transactions allocations.  In HTM we don't.
+    
+    if (trec->HpStart == 0 || !HEAP_ALLOCED((StgPtr)trec->HpStart))
+    { // We saw a GC in the life of this TREC, so no info.
+        cap->stm_stats->no_record += 1;
+        return;
+    }
+
+    bdescr* bs = Bdescr((StgPtr)trec->HpStart);
+    bdescr* be = Bdescr((StgPtr)trec->HpEnd);
+    
+    TRACE("%p : alloc check bdescr %p -> %p, htm %d result %d"
+          , trec, bs, be, htm, result);
+
+    int total = DiffHeapUse(bs, be, trec->HpStart, trec->HpEnd);
+
+    if (total < 0)
+    {
+        TRACE("%p : alloc failed! total %d", trec, total);
+        cap->stm_stats->no_record += 1;
+    }
+    else
+    {
+        TRACE("%p : alloc total %d", trec, total);
+        if (htm)
+        {
+            stat_stm_accum(&cap->stm_stats->htm_alloc_hp, total/8);
+            stat_stm_accum(&cap->stm_stats->htm_alloc, cap->stm_stats->alloc_snapshot/8);
+        }
+        else
+        {
+            if (result)
+            {
+                stat_stm_accum(&cap->stm_stats->stm_alloc_committed_hp, total/8);
+                stat_stm_accum(&cap->stm_stats->stm_alloc_committed, cap->stm_stats->alloc_snapshot/8);
+            }
+            else
+            {
+                stat_stm_accum(&cap->stm_stats->stm_alloc_aborted_hp, total/8);
+                stat_stm_accum(&cap->stm_stats->stm_alloc_aborted, cap->stm_stats->alloc_snapshot/8);
+            }
+        }
+    }
+}
+
+/*......................................................................*/
+
+
 StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   int result;
   StgInt64 max_commits_at_start = max_commits;
@@ -1893,6 +1978,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       }
     });
 
+	RecordHeapUse(cap, trec, TRUE, FALSE);
     cap->stm_stats->htm_commit++;
     free_stg_trec_header(cap, trec);
     return TRUE;
@@ -1911,6 +1997,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       if (XABORT_CODE(status) == ABORT_STM_INCONSISTENT)
       {
         free_stg_trec_header(cap, trec);
+		cap->stm_stats->abort++;
         return FALSE; // we are done, validation failed.
       }
 
@@ -2008,9 +2095,14 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
   unlock_stm(cap, trec);
 
+  RecordHeapUse(cap, trec, result, FALSE);
+
   free_stg_trec_header(cap, trec);
 
   TRACE("%p : stmCommitTransaction()=%d", trec, result);
+
+  if (!result)
+    cap->stm_stats->abort++;
 
   return result;
 }

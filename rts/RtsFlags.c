@@ -238,6 +238,7 @@ void initRtsFlagsDefaults(void)
 #endif
     RtsFlags.ConcFlags.ctxtSwitchTime   = USToTime(20000); // 20ms
     RtsFlags.ConcFlags.stmStats         = rtsFalse;
+    RtsFlags.ConcFlags.stmAccum         = 0;
     RtsFlags.ConcFlags.htmRetryCount    = 5;
     RtsFlags.ConcFlags.hleRetryCount    = 5;
 
@@ -784,6 +785,22 @@ error = rtsTrue;
                   else if (strequal("stm-stats", &rts_argv[arg][2])) {
                       OPTION_SAFE;
                       RtsFlags.ConcFlags.stmStats = rtsTrue;
+                  }
+                  else if (strncmp("stm-accum=", &rts_argv[arg][2], 10) == 0) {
+                      OPTION_SAFE;
+                      if (rts_argv[arg][12] == '\0') {
+                        errorBelch("missing value for --stm-accum=<n>");
+                        error = rtsTrue;
+                        // Count needed.
+                      } else {
+                        int count;
+                        count = strtol(rts_argv[arg]+12, (char **) NULL, 10);
+                        if (count < 0 || count > 3) {
+                           errorBelch("bad value for --stm-accum");
+                           error = rtsTrue;
+                        }
+                        RtsFlags.ConcFlags.stmAccum = (nat)count;
+                      }
                   }
                   else if (strncmp("htm-retry=", &rts_argv[arg][2], 10) == 0) {
                       OPTION_SAFE;

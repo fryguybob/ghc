@@ -161,6 +161,7 @@ typedef struct _CONCURRENT_FLAGS {
     Time ctxtSwitchTime;         /* units: TIME_RESOLUTION */
     int ctxtSwitchTicks;         /* derived */
     rtsBool stmStats;            /* show stm stats at end */
+    int stmAccum;                /* stm allocation accumulator */
     int htmRetryCount;           /* how many times to attempt htm per transaction */
     int hleRetryCount;           /* how many times to attempt hle per lock acquisition */
 } CONCURRENT_FLAGS;

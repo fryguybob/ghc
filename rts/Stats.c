@@ -120,6 +120,26 @@ static void initSTMStatsValues(stm_stats* s)
     s->hle_fallback = 0;
     s->hle_commit = 0;
     s->hle_release = 0;
+
+    nat init = RtsFlags.ConcFlags.stmAccum == 2 ? 0xffffffff : 0;
+    s->htm_alloc_hp = init;
+    s->htm_alloc = init;
+    s->stm_alloc_committed_hp = init;
+    s->stm_alloc_committed = init;
+    s->stm_alloc_aborted_hp = init;
+    s->stm_alloc_aborted = init;
+    s->no_record = 0;
+}
+
+void stat_stm_accum(nat* w, nat v)
+{
+    switch (RtsFlags.ConcFlags.stmAccum)
+    {
+        default:
+        case 0: *w += v;              break; // SUM
+        case 1: *w = v > *w ? v : *w; break; // MAX
+        case 2: *w = v < *w ? v : *w; break; // MIN
+    }
 }
 
 static void addSTMStats(stm_stats* acc, stm_stats* s)
@@ -141,6 +161,14 @@ static void addSTMStats(stm_stats* acc, stm_stats* s)
     acc->hle_fallback += s->hle_fallback;
     acc->hle_commit   += s->hle_commit;
     acc->hle_release  += s->hle_release;
+
+    stat_stm_accum(&acc->htm_alloc_hp,           s->htm_alloc_hp);
+    stat_stm_accum(&acc->htm_alloc,              s->htm_alloc);
+    stat_stm_accum(&acc->stm_alloc_committed_hp, s->stm_alloc_committed_hp);
+    stat_stm_accum(&acc->stm_alloc_committed,    s->stm_alloc_committed);
+    stat_stm_accum(&acc->stm_alloc_aborted_hp,   s->stm_alloc_aborted_hp);
+    stat_stm_accum(&acc->stm_alloc_aborted,      s->stm_alloc_aborted);
+    stat_stm_accum(&acc->no_record,              s->no_record);
 }
 
 static void printSTMStats(stm_stats* s)
@@ -161,7 +189,17 @@ static void printSTMStats(stm_stats* s)
     statsPrintf("%16s ", temp);
     showStgWord64(s->htm_commit,    temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
- }
+    showStgWord64(s->stm_alloc_committed_hp, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->stm_alloc_committed, temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->stm_alloc_aborted_hp,temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->stm_alloc_aborted,   temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->no_record,     temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+}
 
 static void printHTMStats(stm_stats* s)
 {
@@ -183,6 +221,67 @@ static void printHTMStats(stm_stats* s)
     statsPrintf("%16s ", temp);
     showStgWord64(s->hle_release,   temp, rtsTrue/*commas*/);
     statsPrintf("%16s ", temp);
+	showStgWord64(s->htm_alloc_hp,  temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+    showStgWord64(s->htm_alloc,     temp, rtsTrue/*commas*/);
+    statsPrintf("%16s ", temp);
+}
+
+static double nanZero(double x)
+{
+    return isnan(x) ? 0 : x;
+}
+
+static void printTMAllocStats(stm_stats* s)
+{
+    debugBelch("Heap stats:\n-----------\n");
+    double t;
+    switch (RtsFlags.ConcFlags.stmAccum) // AVE
+    {
+    default:
+    case 0: // AVE
+        t = s->stm_commit - s->no_record;
+        statsPrintf("STM-committed: Hp-alloc %10.0lf, allocate %10.0lf, both %10.0lf ave %4d%%\n"
+                   , nanZero((double)s->stm_alloc_committed_hp / t)
+                   , nanZero((double)s->stm_alloc_committed    / t)
+                   , nanZero(((double)s->stm_alloc_committed_hp+(double)s->stm_alloc_committed) / t)
+                   , (int)((double)s->stm_commit*100.0/((double)s->htm_commit+(double)s->stm_commit)));
+        statsPrintf("STM-aborted  : Hp-alloc %10.0lf, allocate %10.0lf, both %10.0lf ave\n"
+                   , nanZero((double)s->stm_alloc_aborted_hp / (double)s->abort)
+                   , nanZero((double)s->stm_alloc_aborted    / (double)s->abort)
+                   , nanZero(((double)s->stm_alloc_aborted_hp+(double)s->stm_alloc_aborted)
+                        / (double)s->abort));
+        statsPrintf("HTM          : Hp-alloc %10.0lf, allocate %10.0lf, both %10.0lf ave %4d%%\n"
+                   , nanZero((double)s->htm_alloc_hp / (double)s->htm_commit)
+                   , nanZero((double)s->htm_alloc    / (double)s->htm_commit)
+                   , nanZero(((double)s->htm_alloc_hp + (double)s->htm_alloc) / (double)s->htm_commit)
+                   , (int)((double)s->htm_commit*100.0/((double)s->htm_commit+(double)s->stm_commit)));
+        break;
+    case 1: // MAX
+        statsPrintf("STM-committed: Hp-alloc %10d, allocate %10d, both %10d max\n"
+                   , s->stm_alloc_committed_hp , s->stm_alloc_committed
+                   , s->stm_alloc_committed_hp + s->stm_alloc_committed);
+        statsPrintf("STM-aborted  : Hp-alloc %10d, allocate %10d, both %10d max\n"
+                   , s->stm_alloc_aborted_hp , s->stm_alloc_aborted
+                   , s->stm_alloc_aborted_hp + s->stm_alloc_aborted);
+        statsPrintf("HTM          : Hp-alloc %10d, allocate %10d, both %10d max\n"
+                   , s->htm_alloc_hp , s->htm_alloc
+                   , s->htm_alloc_hp + s->htm_alloc);
+        break;
+    case 2: // MIN
+        statsPrintf("STM-committed: Hp-alloc %10d, allocate %10d, both %10d min\n"
+                   , s->stm_alloc_committed_hp , s->stm_alloc_committed
+                   , s->stm_alloc_committed_hp + s->stm_alloc_committed);
+        statsPrintf("STM-aborted  : Hp-alloc %10d, allocate %10d, both %10d min\n"
+                   , s->stm_alloc_aborted_hp , s->stm_alloc_aborted
+                   , s->stm_alloc_aborted_hp + s->stm_alloc_aborted);
+        statsPrintf("HTM          : Hp-alloc %10d, allocate %10d, both %10d min\n"
+                   , s->htm_alloc_hp , s->htm_alloc
+                   , s->htm_alloc_hp + s->htm_alloc);
+        break;
+    }
+
+    debugBelch("\n");
 }
 
 void initSTMStats(Capability* cap)
@@ -939,7 +1038,12 @@ stat_exit (void)
                     "  Validate Fails "
                     "  Failed-wakeup  "
                     "  STM-commit     "
-                    "  HTM-commit\n");
+                    "  HTM-commit     "
+                    "  STM-alloc-co-hp"
+                    "  STM-alloc-co   "
+                    "  STM-alloc-ab-hp"
+                    "  STM-alloc-ab   "
+                    "  No-record\n");
 
         while (node != NULL)
         {
@@ -964,7 +1068,9 @@ stat_exit (void)
                     "  HLE-fail       "
                     "  HLE-fallback   "
                     "  HLE-commit     "
-                    "  HLE-release\n");
+                    "  HLE-release    "
+                    "  HTM-alloc-hp   "
+                    "  HTM-alloc\n");
 
         while (node != NULL)
         {
@@ -980,6 +1086,8 @@ stat_exit (void)
         debugBelch("    ");
         printHTMStats(&total);
         debugBelch("\n");
+
+        printTMAllocStats(&total);
     }
 }
 

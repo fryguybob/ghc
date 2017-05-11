@@ -388,17 +388,22 @@ struct StgTRecHeader_ {
   StgTArrayRecChunk         *current_array_chunk;
   StgHalfWord                state;
   StgHalfWord                retrying;
-  StgWord                    padding[3];
+  StgWord                    HpStart;
+  StgWord                    HpEnd;
+  StgWord                    AllocStart; 
 };
 
 struct StgHTRecHeader_ {
   StgHeader                  header;
   struct StgHTRecHeader_    *enclosing_trec;
+  StgWord                    read_set;
   StgWord                    write_set;
+  StgWord                    padding0;
   StgHalfWord                state;
   StgHalfWord                retrying;
-  StgWord                    read_set;
-  StgWord                    padding[3];
+  StgWord                    HpStart;
+  StgWord                    HpEnd;
+  StgWord                    AllocStart; 
 };
 
 #define BLOOM_WAKEUP_CHUNK_NUM_ENTRIES 6  // TODO: Roundup to a multiple of cacheline size

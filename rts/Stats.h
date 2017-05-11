@@ -33,6 +33,8 @@ void      stat_endGC  (Capability *cap, struct gc_thread_ *_gct,
                        W_ live, W_ copied, W_ slop, nat gen,
                        nat n_gc_threads, W_ par_max_copied, W_ par_tot_copied);
 
+void      stat_stm_accum(nat* w, nat v);
+
 /* STM Stats*/
 typedef struct stm_stats_
 {
@@ -53,6 +55,15 @@ typedef struct stm_stats_
     nat hle_fallback;  /* HLE gave up */
     nat hle_commit;    /* HLE success */
     nat hle_release;   /* Full STM fallback released lock */
+
+    nat htm_alloc_hp;        /* Count bytes allocated while running committed HTM transactions */
+    nat htm_alloc;           /* Count bytes allocated using allocate in committed HTM transactions */
+    nat stm_alloc_committed_hp; /* Count bytes allocated while running committed STM transactions */
+    nat stm_alloc_committed; /* Count bytes allocated using allocate in committed STM transactions */
+    nat stm_alloc_aborted_hp;/* Count bytes allocated while running aborted STM transactions */
+    nat stm_alloc_aborted;   /* Count bytes allocated using allocate in aborted STM transactions */
+    nat alloc_snapshot;      /* Temporary holder for current transaction's allocation */
+    nat no_record;           /* Count times we could not record allocation info */
 } stm_stats;
 
 typedef struct stm_stats_node_

@@ -71,6 +71,9 @@ scavengeTSO (StgTSO *tso)
     evacuate((StgClosure **)&tso->blocked_exceptions);
     evacuate((StgClosure **)&tso->bq);
 
+    if (tso->trec != NULL)
+        tso->trec->HpStart = 0;
+
     // scavange current transaction record
     evacuate((StgClosure **)&tso->trec);
 
