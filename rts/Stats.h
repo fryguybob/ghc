@@ -74,6 +74,7 @@ typedef struct stm_stats_node_
 } stm_stats_node;
 
 void initSTMStats(Capability* cap);
+void resetSTMStats(Capability* cap);
 
 
 #ifdef PROFILING

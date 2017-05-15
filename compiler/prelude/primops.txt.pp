@@ -2248,6 +2248,12 @@ primop WriteTArrayWordOp "writeTArrayWord#" GenPrimOp
    out_of_line = True
    has_side_effects = True
 
+primop ResetSTMStatsOp "resetSTMStats#" GenPrimOp
+    State# s -> State# s
+    {Reset STM stats.}
+    with
+    out_of_line = True
+    has_side_effects = True
 
 ------------------------------------------------------------------------
 section "Synchronized Mutable Variables"

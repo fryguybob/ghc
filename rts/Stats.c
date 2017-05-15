@@ -304,6 +304,11 @@ void initSTMStats(Capability* cap)
     unlock_stm_stats();
 }
 
+void resetSTMStats(Capability* cap)
+{
+    initSTMStatsValues(cap->stm_stats);
+}
+
 /* -----------------------------------------------------------------------------
    Current elapsed time
    ------------------------------------------------------------------------- */

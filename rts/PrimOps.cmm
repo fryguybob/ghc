@@ -1517,7 +1517,11 @@ stg_writeTArrayWordzh (P_ tarray,    // :: TArray a
     return ();
 }
 
-
+stg_resetSTMStatszh ()
+{
+    ccall resetSTMStats(MyCapability() "ptr");
+    return ();
+}
 
 /* -----------------------------------------------------------------------------
  * MVar primitives
