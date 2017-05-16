@@ -121,7 +121,7 @@ static void initSTMStatsValues(stm_stats* s)
     s->hle_commit = 0;
     s->hle_release = 0;
 
-    nat init = RtsFlags.ConcFlags.stmAccum == 2 ? 0xffffffff : 0;
+    nat init = (RtsFlags.ConcFlags.stmAccum % 3) == 2 ? 0xffffffff : 0;
     s->htm_alloc_hp = init;
     s->htm_alloc = init;
     s->stm_alloc_committed_hp = init;
@@ -133,7 +133,7 @@ static void initSTMStatsValues(stm_stats* s)
 
 void stat_stm_accum(nat* w, nat v)
 {
-    switch (RtsFlags.ConcFlags.stmAccum)
+    switch (RtsFlags.ConcFlags.stmAccum % 3)
     {
         default:
         case 0: *w += v;              break; // SUM
@@ -236,7 +236,7 @@ static void printTMAllocStats(stm_stats* s)
 {
     debugBelch("Heap stats:\n-----------\n");
     double t;
-    switch (RtsFlags.ConcFlags.stmAccum) // AVE
+    switch (RtsFlags.ConcFlags.stmAccum % 3) // AVE
     {
     default:
     case 0: // AVE

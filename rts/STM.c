@@ -1832,7 +1832,8 @@ static int DiffHeapUse(bdescr* bs, bdescr* be, int s, int e)
     return total;
 }
 
-static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, StgBool htm)
+static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result,
+                          StgBool htm, StgBool read_only)
 {
     // Extract how many bytes were allocated while the transaction ran.  We have
     // recorded in the trec the start Hp and end Hp.  If it was all in one block
@@ -1840,7 +1841,10 @@ static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, 
     // BLOCK_SIZE for each intervening block.  Record these stats in the stm_stats
     // structure.  For STM we see aborted transactions allocations.  In HTM we don't.
     
-    if (trec->HpStart == 0 || !HEAP_ALLOCED((StgPtr)trec->HpStart))
+    if ( trec->HpStart == 0
+      || !HEAP_ALLOCED((StgPtr)trec->HpStart)
+      || (((RtsFlags.ConcFlags.stmAccum/3) == 1) &&  read_only)  // Only record if wrote
+      || (((RtsFlags.ConcFlags.stmAccum/3) == 2) && !read_only)) // Only record read-only
     { // We saw a GC in the life of this TREC, so no info.
         cap->stm_stats->no_record += 1;
         return;
@@ -1849,8 +1853,8 @@ static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, 
     bdescr* bs = Bdescr((StgPtr)trec->HpStart);
     bdescr* be = Bdescr((StgPtr)trec->HpEnd);
     
-    TRACE("%p : alloc check bdescr %p -> %p, htm %d result %d"
-          , trec, bs, be, htm, result);
+    TRACE("%p : alloc check bdescr %p -> %p, htm %d result %d, read_only %d"
+          , trec, bs, be, htm, result, read_only);
 
     int total = DiffHeapUse(bs, be, trec->HpStart, trec->HpEnd);
 
@@ -1888,6 +1892,7 @@ static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, 
 
 StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   int result;
+  StgBool read_only = TRUE;
   StgInt64 max_commits_at_start = max_commits;
 
   TRACE("%p : stmCommitTransaction()", trec);
@@ -1965,6 +1970,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
         // the XEND and here.  We don't yield between those, so we are safe.
         dirty_TVAR(cap, e -> tvar);
         unpark_waiters_on(cap, e -> tvar -> hash_id);
+        read_only = FALSE;
       }
     });
 
@@ -1975,10 +1981,11 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
             dirty_TARRAY(cap, e -> tarray);
         }
         unpark_waiters_on(cap, bloom_add_array(0, e -> tarray -> hash_id, e -> offset));
+        read_only = FALSE;
       }
     });
 
-	RecordHeapUse(cap, trec, TRUE, FALSE);
+	RecordHeapUse(cap, trec, TRUE, FALSE, read_only);
     cap->stm_stats->htm_commit++;
     free_stg_trec_header(cap, trec);
     return TRUE;
@@ -2009,6 +2016,8 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
     else if ((s & XABORT_RETRY) == 0)
       break; // Hardware recommends fallback.
   }
+
+  read_only = TRUE;
 
   // Fallback to software commit.
   cap->stm_stats->htm_fallback++;
@@ -2061,6 +2070,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
             s -> num_updates ++;
           });
           unlock_tvar(cap, trec, s, e -> new_value, TRUE);
+          read_only = FALSE;
         }
         ACQ_ASSERT(!tvar_is_locked(s, trec));
       });
@@ -2084,6 +2094,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
           // Perform write
           s -> payload[e -> offset] = e -> new_value.ptr;
           unlock_tarray(cap, s, TRUE); // May still be locked but with decremented counter.
+          read_only = FALSE;
         }
       });
 
@@ -2095,7 +2106,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
   unlock_stm(cap, trec);
 
-  RecordHeapUse(cap, trec, result, FALSE);
+  RecordHeapUse(cap, trec, result, FALSE, read_only);
 
   free_stg_trec_header(cap, trec);
 

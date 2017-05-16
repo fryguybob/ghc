@@ -795,7 +795,7 @@ error = rtsTrue;
                       } else {
                         int count;
                         count = strtol(rts_argv[arg]+12, (char **) NULL, 10);
-                        if (count < 0 || count > 3) {
+                        if (count < 0 || count > 8) {
                            errorBelch("bad value for --stm-accum");
                            error = rtsTrue;
                         }
