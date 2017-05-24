@@ -1054,7 +1054,15 @@ dirty_TARRAY(Capability *cap, StgStmMutArrPtrs *p)
         // Only the header needs to be updated as TArrays are
         // always on the mut_list.  So this is not needed:
         //      recordClosureMutated(cap,(StgClosure*)p);
-    }
+        // TODO: I'm testing adding the record back in here
+        // and promoting if the node is in the old generation.
+        // I don't know if there is a fundamental reason that
+        // the behavior in Scav for STM_MUT_ARR_PTRS_* is inconsistent
+        // with the comment saying it will avoid traversing
+        // "clean" closures.  It looks to me like it always
+        // traverses because it is always on the mut list.
+        recordClosureMutated(cap,(StgClosure*)p);
+   }
 }
 
 // Setting a TSO's link field with a write barrier.

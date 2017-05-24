@@ -753,12 +753,14 @@ scavenge_block (bdescr *bd)
         // array, but if we find the array only points to objects in
         // the same or an older generation, we mark it "clean" and
         // avoid traversing it during minor GCs.
-        gct->eager_promotion = rtsFalse;
+        // TODO: Trying eager_promotion.  I don't think there are any
+        //// problems trying this, it just may give poor performance.
+        //// gct->eager_promotion = rtsFalse;
         next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
         for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
             evacuate((StgClosure **)p);
         }
-        gct->eager_promotion = saved_eager_promotion;
+        // gct->eager_promotion = saved_eager_promotion; // TODO: restore here
 
         if (gct->failed_to_evac) {
             ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
@@ -766,7 +768,8 @@ scavenge_block (bdescr *bd)
             ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
         }
 
-        gct->failed_to_evac = rtsTrue; // always put it on the mutable list.
+        // TODO: or not!
+        //gct->failed_to_evac = rtsTrue; // always put it on the mutable list.
 
         p = p + ((StgStmMutArrPtrs*)q)->words;
         break;
@@ -1221,19 +1224,19 @@ scavenge_mark_stack(void)
             // follow every pointer
         {
             StgPtr next;
-            rtsBool saved_eager;
+//            rtsBool saved_eager;
 
             // We don't eagerly promote objects pointed to by a mutable
             // array, but if we find the array only points to objects in
             // the same or an older generation, we mark it "clean" and
             // avoid traversing it during minor GCs.
-            saved_eager = gct->eager_promotion;
-            gct->eager_promotion = rtsFalse;
+//            saved_eager = gct->eager_promotion;
+//            gct->eager_promotion = rtsFalse;
             next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
             for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
                 evacuate((StgClosure **)p);
             }
-            gct->eager_promotion = saved_eager;
+//            gct->eager_promotion = saved_eager;
 
             if (gct->failed_to_evac) {
                 ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
@@ -1241,7 +1244,7 @@ scavenge_mark_stack(void)
                 ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
             }
 
-            gct->failed_to_evac = rtsTrue; // mutable anyhow.
+            // gct->failed_to_evac = rtsTrue; // mutable anyhow.
             break;
         }
 
@@ -1604,20 +1607,20 @@ scavenge_one(StgPtr p)
     case STM_MUT_ARR_PTRS_DIRTY:
     {
         StgPtr next, q;
-        rtsBool saved_eager;
+//        rtsBool saved_eager;
 
         // We don't eagerly promote objects pointed to by a mutable
         // array, but if we find the array only points to objects in
         // the same or an older generation, we mark it "clean" and
         // avoid traversing it during minor GCs.
-        saved_eager = gct->eager_promotion;
-        gct->eager_promotion = rtsFalse;
+//        saved_eager = gct->eager_promotion;
+//        gct->eager_promotion = rtsFalse;
         q = p;
         next = ((P_)((StgStmMutArrPtrs *)p)->payload) + ((StgStmMutArrPtrs*)p)->ptrs;
         for (p = (P_)((StgStmMutArrPtrs *)p)->payload; p < next; p++) {
             evacuate((StgClosure **)p);
         }
-        gct->eager_promotion = saved_eager;
+  //      gct->eager_promotion = saved_eager;
 
         if (gct->failed_to_evac) {
             ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_DIRTY_info;
@@ -1625,7 +1628,7 @@ scavenge_one(StgPtr p)
             ((StgClosure *)q)->header.info = &stg_STM_MUT_ARR_PTRS_CLEAN_info;
         }
 
-        gct->failed_to_evac = rtsTrue;
+        // gct->failed_to_evac = rtsTrue;
         break;
     }
 
