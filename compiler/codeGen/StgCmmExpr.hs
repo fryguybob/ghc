@@ -681,9 +681,19 @@ cgConApp con stg_args
                 -- closure is is "con", which is a bit of a fudge, but
                 -- it only affects profiling (hence the False)
 
+        ; case dataConWrapperAction con of
+          Just act -> pprTrace "ConApp Wrapper Action: " 
+                        (ppr (con, act, stg_args
+                             , dataConWorkId con, dataConRepRepArity con))
+                        $ return ()
+          Nothing  -> return ()
+        ; emitComment $ mkFastString "cgConApp before fcode_init"
         ; emit =<< fcode_init
+        ; emitComment $ mkFastString "cgConApp after fcode_init"
         ; tickyReturnNewCon (length stg_args)
-        ; emitReturn [idInfoToAmode idinfo] }
+        ; emitComment $ mkFastString "cgConApp begin return"
+        ; emitReturn [idInfoToAmode idinfo]
+        }
 
 cgIdApp :: Id -> [StgArg] -> FCode ReturnKind
 cgIdApp fun_id [] | isVoidTy (idType fun_id) = emitReturn []
@@ -718,7 +728,9 @@ cgIdApp fun_id args = do
 
         -- A direct function call (possibly with some left-over arguments)
         DirectEntry lbl arity -> do
-                { tickyDirectCall arity args
+                { emitComment $ mkFastString ("cgIdApp "
+                            ++ showSDoc dflags (ppr (fun_id, args)))
+                ; tickyDirectCall arity args
                 ; if node_points dflags
                      then directCall NativeNodeCall   lbl arity (fun_arg:args)
                      else directCall NativeDirectCall lbl arity args }

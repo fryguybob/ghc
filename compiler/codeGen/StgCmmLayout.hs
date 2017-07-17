@@ -177,6 +177,9 @@ directCall :: Convention -> CLabel -> RepArity -> [StgArg] -> FCode ReturnKind
 -- Both arity and args include void args
 directCall conv lbl arity stg_args
   = do  { argreps <- getArgRepsAmodes stg_args
+        ; dflags <- getDynFlags
+        ; emitComment $ mkFastString ("directCall "
+            ++ showSDoc dflags (ppr (conv, lbl, arity, stg_args, argreps)))
         ; direct_call "directCall" conv lbl arity argreps }
 
 

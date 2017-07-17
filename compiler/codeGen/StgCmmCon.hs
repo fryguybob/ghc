@@ -215,7 +215,11 @@ buildDynCon' dflags platform binder _ _cc con [arg]
 
 -------- buildDynCon': the general case -----------
 buildDynCon' dflags _ binder actually_bound ccs con args
-  = do  { (id_info, reg) <- rhsIdInfo binder lf_info
+  = do  { emitComment $ mkFastString "begin buildDynCon'"
+        ; dflags <- getDynFlags
+        ; emitComment $ mkFastString (showSDoc dflags (ppr (args, addArgReps args)))
+        ; (id_info, reg) <- rhsIdInfo binder lf_info
+        ; emitComment $ mkFastString "end buildDynCon'"
         ; return (id_info, gen_code reg)
         }
  where
@@ -233,6 +237,7 @@ buildDynCon' dflags _ binder actually_bound ccs con args
 
           ; hp_plus_n <- allocDynClosure ticky_name info_tbl lf_info
                                           use_cc blame_cc args_w_offsets
+          ; emitComment $ mkFastString "buildDynCon' gen_code"
           ; return (mkRhsInit dflags reg lf_info hp_plus_n) }
     where
       use_cc      -- cost-centre to stick in the object
