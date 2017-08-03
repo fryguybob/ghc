@@ -85,6 +85,7 @@
 #include "Threads.h"
 #include "sm/Storage.h"
 
+#include <time.h>
 #include <stdio.h>
 
 #include "rtm-goto.h"
@@ -1495,7 +1496,11 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 // Keir Fraser's PhD dissertation "Practical lock-free programming" discuss
 // this kind of algorithm.
 
+#if defined(STM_FG_LOCKS)
+static StgBool check_read_only(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED) {
+#else
 static StgBool check_read_only(Capability* cap, StgTRecHeader *trec) {
+#endif
   StgBool result = TRUE;
 
   ASSERT(config_use_read_phase);
@@ -1832,9 +1837,33 @@ static int DiffHeapUse(bdescr* bs, bdescr* be, int s, int e)
     return total;
 }
 
-static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result,
+static double dump_gettime(void)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+
+static void DumpTRec(Capability *cap, StgTRecHeader *trec, StgBool result, StgBool htmCommit, double time)
+{
+	printf("TREC: %p %d %d %0.17g\n", cap, result, htmCommit, time);
+	FOR_EACH_ENTRY(trec, e, {
+      printf("TVAR: %p %p %p\n", e->tvar, e->expected_value, e->new_value);
+    });
+
+    FOR_EACH_ARRAY_ENTRY(trec, e, {
+	  printf("TSTR: %p %02ld 0x%lx 0x%lx\n", e->tarray, e->offset, e->expected_value.word, e->new_value.word);
+    });
+}
+
+static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, StgBool htmCommit, double time,
                           StgBool htm, StgBool read_only)
 {
+	if ( RtsFlags.ConcFlags.dumpTRecs )
+		DumpTRec(cap, trec, result, htmCommit, time);
+
     // Extract how many bytes were allocated while the transaction ran.  We have
     // recorded in the trec the start Hp and end Hp.  If it was all in one block
     // we just want the difference.  If start and end are different blocks, add
@@ -1898,6 +1927,8 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   TRACE("%p : stmCommitTransaction()", trec);
   ASSERT(trec != NO_TREC);
 
+  double start = dump_gettime();
+
   lock_stm(cap, trec);
 
   ASSERT(trec -> enclosing_trec == NO_TREC);
@@ -1943,11 +1974,11 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       s = e -> tarray;
 
       if ((s -> lock & 1) != 0) // if is locked
-        XABORT(ABORT_STM_INCONSISTENT);
+        XABORT(ABORT_STM_INCONSISTENT+1);
 
       // Equality is same on .ptr as .word.
       if (s -> payload[e -> offset] != e -> expected_value.ptr)
-        XABORT(ABORT_STM_INCONSISTENT);
+        XABORT(ABORT_STM_INCONSISTENT+2);
 
       if (e -> expected_value.ptr != e -> new_value.ptr) {
         s -> payload[e -> offset] = e -> new_value.ptr;
@@ -1976,7 +2007,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
      if (e -> expected_value.ptr != e -> new_value.ptr) {
-        if (!e -> offset < e -> tarray -> ptrs) // If this is a ptr access
+        if (e -> offset < e -> tarray -> ptrs) // If this is a ptr access
         {
             dirty_TARRAY(cap, e -> tarray);
         }
@@ -1985,7 +2016,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       }
     });
 
-	RecordHeapUse(cap, trec, TRUE, FALSE, read_only);
+	RecordHeapUse(cap, trec, TRUE, TRUE, dump_gettime() - start, FALSE, read_only);
     cap->stm_stats->htm_commit++;
     free_stg_trec_header(cap, trec);
     return TRUE;
@@ -2001,7 +2032,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
       if (XABORT_CODE(status) == ABORT_FALLBACK)
         break; // Give up and go to the fallback.
 
-      if (XABORT_CODE(status) == ABORT_STM_INCONSISTENT)
+      if (XABORT_CODE(status) >= ABORT_STM_INCONSISTENT)
       {
         free_stg_trec_header(cap, trec);
 		cap->stm_stats->abort++;
@@ -2106,7 +2137,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
   unlock_stm(cap, trec);
 
-  RecordHeapUse(cap, trec, result, FALSE, read_only);
+  RecordHeapUse(cap, trec, result, FALSE, dump_gettime() - start, FALSE, read_only);
 
   free_stg_trec_header(cap, trec);
 

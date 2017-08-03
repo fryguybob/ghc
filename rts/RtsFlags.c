@@ -241,6 +241,7 @@ void initRtsFlagsDefaults(void)
     RtsFlags.ConcFlags.stmAccum         = 0;
     RtsFlags.ConcFlags.htmRetryCount    = 5;
     RtsFlags.ConcFlags.hleRetryCount    = 5;
+    RtsFlags.ConcFlags.dumpTRecs        = rtsFalse;
 
     RtsFlags.MiscFlags.install_signal_handlers = rtsTrue;
     RtsFlags.MiscFlags.machineReadable = rtsFalse;
@@ -785,6 +786,10 @@ error = rtsTrue;
                   else if (strequal("stm-stats", &rts_argv[arg][2])) {
                       OPTION_SAFE;
                       RtsFlags.ConcFlags.stmStats = rtsTrue;
+                  }
+                  else if (strequal("dump-trecs", &rts_argv[arg][2])) {
+                      OPTION_SAFE;
+                      RtsFlags.ConcFlags.dumpTRecs = rtsTrue;
                   }
                   else if (strncmp("stm-accum=", &rts_argv[arg][2], 10) == 0) {
                       OPTION_SAFE;
