@@ -877,10 +877,11 @@ mkDataCon tycon_name name declared_infix prom_info
     -- we have one of these outside of typechecking.  So we are not going to do
     -- that for now.  For now we will just check for mutable fields and allow
     -- any wrapping action, but only use it when there are mutable fields.
-    wrap_act =
+    wrap_act = 
         case orig_res_ty of
-          TyConApp tc tys | tyConName tc /= tycon_name ->
-              pprTrace "wrap_act = " (ppr (tc, tycon_name, tys, name, tyConName tc))
+          TyConApp tc tys | tyConName tc /= tycon_name 
+			 &&  any (== HsMutable) mutable_fields ->
+              pprTrace "wrap_act = " (ppr (tc, tyConFamInst_maybe tc, tycon_name, isSystemName tycon_name, tys, name, tyConName tc))
                   $ Just (TyConApp tc (take (length tys - 1) tys))
           _ -> Nothing
 

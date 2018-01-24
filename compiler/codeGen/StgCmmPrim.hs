@@ -628,11 +628,13 @@ emitPrimOp _      [res] XTestOp    [_] = emitXTestCall res
 -- Mutable Field Ref# Ops (based on ReadByteArrayOp_Word)
 emitPrimOp dflags res ReadRefOp  args = pprTrace "ReadRefPtr:" (ppr (args, res)) $ do
     emitComment $ mkFastString "Begin ReadRefPtr"
-    doIndexOffAddrOp Nothing (bWord dflags) res args
+--    doIndexOffAddrOp Nothing (bWord dflags) res args
+    doIndexOffAddrOpAs Nothing (bWord dflags) b8 res args
     emitComment $ mkFastString "End ReadRefPtr"
 emitPrimOp dflags res WriteRefOp  args = pprTrace "WriteRefPtr:" (ppr (args, res)) $ do
     emitComment $ mkFastString "Begin WriteRefPtr"
-    doWriteOffAddrOp Nothing (bWord dflags) res args
+--    doWriteOffAddrOp Nothing (bWord dflags) res args
+    doWriteOffAddrOp Nothing b8 res args
     emitComment $ mkFastString "End WriteRefPtr"
 
 {-
