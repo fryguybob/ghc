@@ -58,6 +58,7 @@ module StgCmmClosure (
 
         -- * InfoTables
         mkDataConInfoTable,
+        mkDataConDirtyInfoTable,
         cafBlackHoleInfoTable,
         indStaticInfoTable,
         staticClosureNeedsLink,
@@ -1031,6 +1032,27 @@ mkDataConInfoTable dflags data_con is_static ptr_wds nonptr_wds
             | otherwise = mkConInfoTableLabel    name NoCafRefs
 
    sm_rep = mkHeapRep dflags is_static ptr_wds nonptr_wds cl_type
+
+   cl_type = Constr (dataConTagZ data_con) (dataConIdentity data_con)
+
+   prof | not (gopt Opt_SccProfilingOn dflags) = NoProfilingInfo
+        | otherwise                            = ProfilingInfo ty_descr val_descr
+
+   ty_descr  = stringToWord8s $ occNameString $ getOccName $ dataConTyCon data_con
+   val_descr = stringToWord8s $ occNameString $ getOccName data_con
+
+mkDataConDirtyInfoTable :: DynFlags -> DataCon -> Int -> Int -> CmmInfoTable
+mkDataConDirtyInfoTable dflags data_con ptr_wds nonptr_wds
+ = CmmInfoTable { cit_lbl  = info_lbl
+                , cit_rep  = sm_rep
+                , cit_prof = prof
+                , cit_srt  = NoC_SRT }
+ where
+   name = dataConName data_con
+
+   info_lbl = mkConDirtyInfoTableLabel name NoCafRefs
+
+   sm_rep = mkHeapRep dflags False ptr_wds nonptr_wds cl_type
 
    cl_type = Constr (dataConTagZ data_con) (dataConIdentity data_con)
 

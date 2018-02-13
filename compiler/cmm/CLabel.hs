@@ -21,6 +21,7 @@ module CLabel (
         mkStaticConEntryLabel,
         mkRednCountsLabel,
         mkConInfoTableLabel,
+        mkConDirtyInfoTableLabel,
         mkStaticInfoTableLabel,
         mkLargeSRTLabel,
         mkApEntryLabel,
@@ -303,6 +304,7 @@ data IdLabelInfo
 
   | ConEntry            -- ^ Constructor entry point
   | ConInfoTable        -- ^ Corresponding info table
+  | ConDirtyInfoTable   -- ^ Info table for dirty mutable constructor
   | StaticConEntry      -- ^ Static constructor entry point
   | StaticInfoTable     -- ^ Corresponding info table
 
@@ -395,6 +397,7 @@ mkLocalConEntryLabel        :: CafInfo -> Name -> CLabel
 mkLocalStaticInfoTableLabel :: CafInfo -> Name -> CLabel
 mkLocalStaticConEntryLabel  :: CafInfo -> Name -> CLabel
 mkConInfoTableLabel         :: Name -> CafInfo -> CLabel
+mkConDirtyInfoTableLabel    :: Name -> CafInfo -> CLabel
 mkStaticInfoTableLabel      :: Name -> CafInfo -> CLabel
 mkClosureLabel name         c     = IdLabel name c Closure
 mkInfoTableLabel name       c     = IdLabel name c InfoTable
@@ -405,6 +408,7 @@ mkLocalConEntryLabel        c con = IdLabel con c ConEntry
 mkLocalStaticInfoTableLabel c con = IdLabel con c StaticInfoTable
 mkLocalStaticConEntryLabel  c con = IdLabel con c StaticConEntry
 mkConInfoTableLabel name    c     = IdLabel name c ConInfoTable
+mkConDirtyInfoTableLabel name c   = IdLabel name c ConDirtyInfoTable
 mkStaticInfoTableLabel name c     = IdLabel name c StaticInfoTable
 
 mkConEntryLabel       :: Name -> CafInfo -> CLabel
@@ -589,13 +593,14 @@ toSlowEntryLbl (IdLabel n c _) = IdLabel n c Slow
 toSlowEntryLbl l = pprPanic "toSlowEntryLbl" (ppr l)
 
 toEntryLbl :: CLabel -> CLabel
-toEntryLbl (IdLabel n c LocalInfoTable)  = IdLabel n c LocalEntry
-toEntryLbl (IdLabel n c ConInfoTable)    = IdLabel n c ConEntry
-toEntryLbl (IdLabel n c StaticInfoTable) = IdLabel n c StaticConEntry
-toEntryLbl (IdLabel n c _)               = IdLabel n c Entry
-toEntryLbl (CaseLabel n CaseReturnInfo)  = CaseLabel n CaseReturnPt
-toEntryLbl (CmmLabel m str CmmInfo)      = CmmLabel m str CmmEntry
-toEntryLbl (CmmLabel m str CmmRetInfo)   = CmmLabel m str CmmRet
+toEntryLbl (IdLabel n c LocalInfoTable)    = IdLabel n c LocalEntry
+toEntryLbl (IdLabel n c ConDirtyInfoTable) = IdLabel n c ConEntry
+toEntryLbl (IdLabel n c ConInfoTable)      = IdLabel n c ConEntry
+toEntryLbl (IdLabel n c StaticInfoTable)   = IdLabel n c StaticConEntry
+toEntryLbl (IdLabel n c _)                 = IdLabel n c Entry
+toEntryLbl (CaseLabel n CaseReturnInfo)    = CaseLabel n CaseReturnPt
+toEntryLbl (CmmLabel m str CmmInfo)        = CmmLabel m str CmmEntry
+toEntryLbl (CmmLabel m str CmmRetInfo)     = CmmLabel m str CmmRet
 toEntryLbl l = pprPanic "toEntryLbl" (ppr l)
 
 toInfoLbl :: CLabel -> CLabel
@@ -854,14 +859,15 @@ labelType _                                     = DataLabel
 idInfoLabelType :: IdLabelInfo -> CLabelType
 idInfoLabelType info =
   case info of
-    InfoTable     -> DataLabel
-    LocalInfoTable -> DataLabel
-    Closure       -> GcPtrLabel
-    ConInfoTable  -> DataLabel
-    StaticInfoTable -> DataLabel
-    ClosureTable  -> DataLabel
-    RednCounts    -> DataLabel
-    _             -> CodeLabel
+    InfoTable         -> DataLabel
+    LocalInfoTable    -> DataLabel
+    Closure           -> GcPtrLabel
+    ConInfoTable      -> DataLabel
+    ConDirtyInfoTable -> DataLabel
+    StaticInfoTable   -> DataLabel
+    ClosureTable      -> DataLabel
+    RednCounts        -> DataLabel
+    _                 -> CodeLabel
 
 
 -- -----------------------------------------------------------------------------
@@ -1145,6 +1151,7 @@ ppIdFlavor x = pp_cSEP <>
                        RednCounts       -> text "ct"
                        ConEntry         -> text "con_entry"
                        ConInfoTable     -> text "con_info"
+                       ConDirtyInfoTable-> text "con_info_dirty"
                        StaticConEntry   -> text "static_entry"
                        StaticInfoTable  -> text "static_info"
                        ClosureTable     -> text "closure_tbl"

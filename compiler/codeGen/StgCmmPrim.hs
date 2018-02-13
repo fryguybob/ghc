@@ -635,6 +635,8 @@ emitPrimOp dflags res WriteRefOp  args = pprTrace "WriteRefPtr:" (ppr (args, res
     emitComment $ mkFastString "Begin WriteRefPtr"
 --    doWriteOffAddrOp Nothing (bWord dflags) res args
     doWriteOffAddrOp Nothing b8 res args
+    -- TODO: Here we need to emit code for adding the object to the mutable
+    -- list if the header is not dirty.
     emitComment $ mkFastString "End WriteRefPtr"
 
 {-

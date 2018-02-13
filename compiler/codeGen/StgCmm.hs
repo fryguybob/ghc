@@ -227,6 +227,7 @@ cgDataCon data_con
 
             sta_info_tbl = mkDataConInfoTable dflags data_con True  ptr_wds nonptr_wds
             dyn_info_tbl = mkDataConInfoTable dflags data_con False ptr_wds nonptr_wds
+            mut_info_tbl = mkDataConDirtyInfoTable dflags data_con  ptr_wds nonptr_wds
 
             emit_info info_tbl ticky_code
                 = emitClosureAndInfoTable info_tbl NativeDirectCall []
@@ -252,7 +253,9 @@ cgDataCon data_con
 
             -- Dynamic closure code for non-nullary constructors only
         ; when (not (isNullaryRepDataCon data_con))
-                (emit_info dyn_info_tbl tickyEnterDynCon)
+                (emit_info dyn_info_tbl tickyEnterDynCon
+                 >> when (hasMutableFields data_con)
+                           (emit_info mut_info_tbl tickyEnterDynCon))
 
                 -- Dynamic-Closure first, to reduce forward references
         ; emit_info sta_info_tbl tickyEnterStaticCon }
