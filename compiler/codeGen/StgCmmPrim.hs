@@ -631,12 +631,21 @@ emitPrimOp dflags res ReadRefOp  args = pprTrace "ReadRefPtr:" (ppr (args, res))
 --    doIndexOffAddrOp Nothing (bWord dflags) res args
     doIndexOffAddrOpAs Nothing (bWord dflags) b8 res args
     emitComment $ mkFastString "End ReadRefPtr"
-emitPrimOp dflags res WriteRefOp  args = pprTrace "WriteRefPtr:" (ppr (args, res)) $ do
+emitPrimOp dflags [] WriteRefOp  args@[addr,_,_] = pprTrace "WriteRefPtr:" (ppr args) $ do
+    -- We need to know where the clean and dirty info tables are.  so we
+    -- store the "other" table as a field in both info tables.  When we
+    -- GC and need to mark clean, we use the other from the dirty table.
+    -- When we mutate (here) and need to mark dirty, we use other from
+    -- the clean info table.
     emitComment $ mkFastString "Begin WriteRefPtr"
---    doWriteOffAddrOp Nothing (bWord dflags) res args
-    doWriteOffAddrOp Nothing b8 res args
-    -- TODO: Here we need to emit code for adding the object to the mutable
-    -- list if the header is not dirty.
+    emitPrimCall [] MO_WriteBarrier []
+    doWriteOffAddrOp Nothing b8 [] args
+    -- TODO: move all or some of this call to here if we can.
+    emitCCall
+        [{-no results-}]
+        (CmmLit (CmmLabel mkDirty_MUT_CON_Label))
+        [(CmmReg (CmmGlobal BaseReg), AddrHint),
+            (cmmUntag dflags addr,AddrHint)]
     emitComment $ mkFastString "End WriteRefPtr"
 
 {-

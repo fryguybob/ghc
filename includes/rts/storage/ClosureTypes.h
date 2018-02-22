@@ -87,6 +87,8 @@
 #define SMALL_MUT_ARR_PTRS_FROZEN     66
 #define STM_MUT_ARR_PTRS_CLEAN  67
 #define STM_MUT_ARR_PTRS_DIRTY  68
-#define N_CLOSURE_TYPES         69
+#define MUT_CONSTR_CLEAN        69
+#define MUT_CONSTR_DIRTY        70
+#define N_CLOSURE_TYPES         71
 
 #endif /* RTS_STORAGE_CLOSURETYPES_H */

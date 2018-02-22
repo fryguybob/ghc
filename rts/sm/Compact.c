@@ -649,6 +649,8 @@ thread_obj (StgInfoTable *info, StgPtr p)
 
     case FUN:
     case CONSTR:
+    case MUT_CONSTR_CLEAN:
+    case MUT_CONSTR_DIRTY:
     case PRIM:
     case MUT_PRIM:
     case MUT_VAR_CLEAN:

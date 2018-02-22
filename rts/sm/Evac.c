@@ -606,6 +606,11 @@ loop:
       copy_tag_nolock(p,info,q,sizeW_fromITBL(INFO_PTR_TO_STRUCT(info)),gen_no,tag);
       return;
 
+  case MUT_CONSTR_CLEAN:
+  case MUT_CONSTR_DIRTY:
+      copy_tag(p,info,q,sizeW_fromITBL(INFO_PTR_TO_STRUCT(info)),gen_no,tag);
+      return;
+
   case BLACKHOLE:
   {
       StgClosure *r;
@@ -945,6 +950,8 @@ selector_loop:
       case CONSTR_0_2:
       case CONSTR_STATIC:
       case CONSTR_NOCAF_STATIC:
+      case MUT_CONSTR_CLEAN:
+      case MUT_CONSTR_DIRTY:
           {
               // check that the size is in range
               ASSERT(field <  (StgWord32)(info->layout.payload.ptrs +

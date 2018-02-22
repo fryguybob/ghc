@@ -59,6 +59,9 @@ import Data.Char( ord )
 import Data.Word
 import Data.Bits
 
+import CmmExpr ( CmmLit )
+import PprCmmExpr()
+
 {-
 ************************************************************************
 *                                                                      *
@@ -194,6 +197,7 @@ data ClosureTypeInfo
   | ThunkSelector SelectorOffset
   | BlackHole
   | IndStatic
+  | MutConstr     ConstrTag ConstrDescription CmmLit Bool
 
 type ConstrTag         = Int
 type ConstrDescription = [Word8] -- result of dataConIdentity
@@ -279,8 +283,9 @@ isStackRep (RTSRep _ rep) = isStackRep rep
 isStackRep _              = False
 
 isConRep :: SMRep -> Bool
-isConRep (HeapRep _ _ _ Constr{}) = True
-isConRep _                        = False
+isConRep (HeapRep _ _ _ Constr{})    = True
+isConRep (HeapRep _ _ _ MutConstr{}) = True
+isConRep _                           = False
 
 isThunkRep :: SMRep -> Bool
 isThunkRep (HeapRep _ _ _ Thunk{})         = True
@@ -455,6 +460,9 @@ rtsClosureType rep
       HeapRep False 0 2 Constr{} -> CONSTR_0_2
       HeapRep False _ _ Constr{} -> CONSTR
 
+      HeapRep False _ _ (MutConstr _ _ _ True)  -> MUT_CONSTR_CLEAN
+      HeapRep False _ _ (MutConstr _ _ _ False) -> MUT_CONSTR_DIRTY
+
       HeapRep False 1 0 Fun{} -> FUN_1_0
       HeapRep False 0 1 Fun{} -> FUN_0_1
       HeapRep False 2 0 Fun{} -> FUN_2_0
@@ -477,6 +485,9 @@ rtsClosureType rep
       HeapRep True _ _ Constr{} -> CONSTR_STATIC
       HeapRep True _ _ Fun{}    -> FUN_STATIC
       HeapRep True _ _ Thunk{}  -> THUNK_STATIC
+
+      HeapRep True 0 _ MutConstr{} -> CONSTR_NOCAF_STATIC
+      HeapRep True _ _ MutConstr{} -> CONSTR_STATIC
 
       HeapRep False _ _ BlackHole{} -> BLACKHOLE
 
@@ -546,6 +557,13 @@ pprTypeInfo (Constr tag descr)
   = text "Con" <+>
     braces (sep [ text "tag:" <+> ppr tag
                 , text "descr:" <> text (show descr) ])
+
+pprTypeInfo (MutConstr tag descr other clean)
+  = text "MutCon" <+>
+    braces (sep [ text "tag:" <+> ppr tag
+                , text "descr:" <> text (show descr)
+                , text "other:" <> ppr other
+                , text "clean:" <> text (show clean) ])
 
 pprTypeInfo (Fun arity args)
   = text "Fun" <+>

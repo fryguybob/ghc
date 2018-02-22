@@ -576,6 +576,35 @@ scavenge_block (bdescr *bd)
         break;
     }
 
+    // A constructor with mutable fields.
+    // We must manage the dirty clean state.
+    case MUT_CONSTR_CLEAN:
+    {
+        StgPtr end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        p += info->layout.payload.nptrs;
+        break;
+    }
+    case MUT_CONSTR_DIRTY:
+    {
+        StgPtr end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        p += info->layout.payload.nptrs;
+        break;
+    }
+
     case BCO: {
         StgBCO *bco = (StgBCO *)p;
         evacuate((StgClosure **)&bco->instrs);
@@ -1048,6 +1077,31 @@ scavenge_mark_stack(void)
             break;
         }
 
+        case MUT_CONSTR_CLEAN:
+        {
+            StgPtr end;
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+            for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (gct->failed_to_evac) { // change to dirty
+               ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+            }
+            break;
+        }
+        case MUT_CONSTR_DIRTY:
+        {
+            StgPtr end;
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+            for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (!gct->failed_to_evac) { // change to clean
+               ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+            }
+            break;
+        }
+
         case BCO: {
             StgBCO *bco = (StgBCO *)p;
             evacuate((StgClosure **)&bco->instrs);
@@ -1443,6 +1497,31 @@ scavenge_one(StgPtr p)
         end = (StgPtr)((StgClosure *)p)->payload + info->layout.payload.ptrs;
         for (q = (StgPtr)((StgClosure *)p)->payload; q < end; q++) {
             evacuate((StgClosure **)q);
+        }
+        break;
+    }
+
+    case MUT_CONSTR_CLEAN:
+    {
+        StgPtr q = p, end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        break;
+    }
+    case MUT_CONSTR_DIRTY:
+    {
+        StgPtr q = p, end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
         }
         break;
     }

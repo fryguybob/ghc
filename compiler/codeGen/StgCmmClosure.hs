@@ -1033,7 +1033,11 @@ mkDataConInfoTable dflags data_con is_static ptr_wds nonptr_wds
 
    sm_rep = mkHeapRep dflags is_static ptr_wds nonptr_wds cl_type
 
-   cl_type = Constr (dataConTagZ data_con) (dataConIdentity data_con)
+   cl_type
+      | hasMutableFields data_con && not is_static
+                  = MutConstr (dataConTagZ data_con) (dataConIdentity data_con)
+                              (CmmLabel (mkConDirtyInfoTableLabel name NoCafRefs)) True
+      | otherwise = Constr    (dataConTagZ data_con) (dataConIdentity data_con)
 
    prof | not (gopt Opt_SccProfilingOn dflags) = NoProfilingInfo
         | otherwise                            = ProfilingInfo ty_descr val_descr
@@ -1054,7 +1058,8 @@ mkDataConDirtyInfoTable dflags data_con ptr_wds nonptr_wds
 
    sm_rep = mkHeapRep dflags False ptr_wds nonptr_wds cl_type
 
-   cl_type = Constr (dataConTagZ data_con) (dataConIdentity data_con)
+   cl_type = MutConstr (dataConTagZ data_con) (dataConIdentity data_con)
+                       (CmmLabel (mkConInfoTableLabel name NoCafRefs)) False
 
    prof | not (gopt Opt_SccProfilingOn dflags) = NoProfilingInfo
         | otherwise                            = ProfilingInfo ty_descr val_descr

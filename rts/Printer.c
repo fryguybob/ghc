@@ -141,6 +141,25 @@ printClosure( StgClosure *obj )
             break;
         }
 
+    case MUT_CONSTR_CLEAN:
+    case MUT_CONSTR_DIRTY:
+        {
+            StgWord i, j;
+            StgMutConInfoTable *con_info = get_mut_con_itbl (obj);
+
+            debugBelch("%s(", GET_MUT_CON_DESC(con_info));
+            for (i = 0; i < info->layout.payload.ptrs; ++i) {
+                if (i != 0) debugBelch(", ");
+                printPtr((StgPtr)obj->payload[i]);
+            }
+            for (j = 0; j < info->layout.payload.nptrs; ++j) {
+                if (i != 0 || j != 0) debugBelch(", ");
+                debugBelch("%p#", obj->payload[i+j]);
+            }
+            debugBelch(")\n");
+            break;
+        }
+
     case FUN:
     case FUN_1_0: case FUN_0_1:
     case FUN_1_1: case FUN_0_2: case FUN_2_0:

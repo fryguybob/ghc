@@ -218,6 +218,11 @@ mkInfoTableContents dflags
            ; return ( Just (toStgHalfWord dflags (fromIntegral con_tag))
                     , Nothing, [descr_lit], [decl]) }
 
+    mk_pieces (MutConstr con_tag con_descr other _) _no_srt
+      = do { (descr_lit, decl) <- newStringLit con_descr
+           ; return ( Just (toStgHalfWord dflags (fromIntegral con_tag))
+                    , Nothing, [other, descr_lit], [decl]) }
+
     mk_pieces Thunk srt_label
       = return (Nothing, Nothing, srt_label, [])
 
