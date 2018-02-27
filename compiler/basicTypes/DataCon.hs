@@ -29,7 +29,7 @@ module DataCon (
 
         -- ** Type deconstruction
         dataConRepType, dataConSig, dataConInstSig, dataConFullSig,
-        dataConFullSigForPat,
+        dataConAltRepType, dataConFullSigForPat,
         dataConName, dataConIdentity, dataConTag, dataConTyCon,
         dataConOrigTyCon, dataConUserType,
         dataConUnivTyVars, dataConUnivTyBinders,
@@ -43,6 +43,7 @@ module DataCon (
         dataConSrcBangs,
         dataConMutableFields,
         dataConWrapperAction,
+        dataConWrapperDataCon,
         dataConSourceArity, dataConRepArity, dataConRepRepArity,
         dataConIsInfix,
         dataConWorkId, dataConWrapId, dataConWrapId_maybe,
@@ -388,6 +389,8 @@ data DataCon
 
         dcWrapperAction :: Maybe Type,
 
+        dcWrapperDataCon :: Maybe (DataCon, Type),
+
         dcFields  :: [FieldLabel],
                 -- Field labels for this constructor, in the
                 -- same order as the dcOrigArgTys;
@@ -424,6 +427,7 @@ data DataCon
         -- and use that to check the pattern.  Mind you, this is really only
         -- used in CoreLint.
 
+        dcAltRepType :: Type, -- Type for a case alternative.
 
         dcInfix :: Bool,        -- True <=> declared infix
                                 -- Used for Template Haskell and 'deriving' only
@@ -633,7 +637,18 @@ but the rep type is
         Trep :: Int# -> a -> T a
 Actually, the unboxed part isn't implemented yet!
 
+The dcAltRepType field contains the type of the representation of a constructor
+used in a case alternative.  With mutable fields this will have Ref# fields:
 
+    data M a where
+      MkM :: mutable a -> IO (M a)
+
+    MkM :: a -> IO (M a)
+
+    but
+
+    case m :: M a of
+      MkM (r :: Ref# RealWorld# a) -> ...
 
 ************************************************************************
 *                                                                      *
@@ -832,8 +847,8 @@ mkDataCon tycon_name name declared_infix prom_info
 
   = con
   where
-    is_vanilla = null ex_tvs && null eq_spec && null theta
-              && all (== HsImmutable) mutable_fields
+    is_vanilla = null ex_tvs && null eq_spec && null theta && not is_mutable
+    is_mutable  = any (== HsMutable) mutable_fields
               -- && (not $ isJust wrap_act) -- TODO: See the comment on the definition of wrap_act
     con = MkData {dcName = name, dcUnique = nameUnique name,
                   dcVanilla = is_vanilla, dcInfix = declared_infix,
@@ -847,7 +862,9 @@ mkDataCon tycon_name name declared_infix prom_info
                   dcSrcBangs = arg_stricts,
                   dcMutFields = mutable_fields,
                   dcWrapperAction = wrap_act,
+                  dcWrapperDataCon = wrap_dc,
                   dcFields = fields, dcTag = tag, dcRepType = rep_ty,
+                  dcAltRepType = alt_rep_ty,
                   dcWorkId = work_id,
                   dcRep = rep,
                   dcSourceArity = length orig_arg_tys,
@@ -862,7 +879,7 @@ mkDataCon tycon_name name declared_infix prom_info
     rep_arg_tys = dataConRepArgTys con
 
     rep_ty
-      | isJust wrap_act =
+      | is_mutable =
             pprTrace "rep_ty: " (ppr (univ_bndrs, ex_bndrs, rep_arg_tys, rep_tycon, univ_tvs))
             $ mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
               mkFunTys rep_arg_tys $
@@ -872,18 +889,32 @@ mkDataCon tycon_name name declared_infix prom_info
             mkFunTys rep_arg_tys $
             mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
 
+    alt_rep_ty
+      | is_mutable =
+            pprTrace "alt_rep_ty: " (ppr (univ_bndrs, ex_bndrs,
+                zipWith mkMutTys mutable_fields rep_arg_tys, rep_tycon,
+                univ_tvs))
+            $ mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+              mkFunTys (zipWith mkMutTys mutable_fields rep_arg_tys) $
+              mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+      | otherwise = rep_ty
+
     -- TODO: I think we want to allow data constructors that do not have mutable
     -- fields, but do require construction in a context.  It is hard to tell if
     -- we have one of these outside of typechecking.  So we are not going to do
     -- that for now.  For now we will just check for mutable fields and allow
     -- any wrapping action, but only use it when there are mutable fields.
-    wrap_act = 
+    (wrap_act, wrap_dc) =
         case orig_res_ty of
-          TyConApp tc tys | tyConName tc /= tycon_name 
-			 &&  any (== HsMutable) mutable_fields ->
-              pprTrace "wrap_act = " (ppr (tc, tyConFamInst_maybe tc, tycon_name, isSystemName tycon_name, tys, name, tyConName tc))
-                  $ Just (TyConApp tc (take (length tys - 1) tys))
-          _ -> Nothing
+          TyConApp tc tys | tyConName tc /= tycon_name && is_mutable ->
+               case tyConDataCons tc of
+                 [dc] -> pprTrace "wrap_act = " (ppr (tc, tyConFamInst_maybe tc,
+                           tycon_name, isSystemName tycon_name, tys, name, tyConName tc))
+                           $ (Just (TyConApp tc (take (length tys - 1) tys)),
+                              Just (dc, last tys))
+                 dcs  -> pprPanic "Invalid data constructors for wrapper action."
+                           (ppr (tc, dcs))
+          _ -> (Nothing, Nothing)
 
       -- See Note [Promoted data constructors] in TyCon
     prom_binders = filterEqSpec eq_spec univ_bndrs ++
@@ -922,10 +953,19 @@ dataConOrigTyCon dc
 dataConWrapperAction :: DataCon -> Maybe Type
 dataConWrapperAction dc = dcWrapperAction dc
 
+-- | The data constructor for the wrapper action.
+dataConWrapperDataCon :: DataCon -> Maybe (DataCon, Type)
+dataConWrapperDataCon dc = dcWrapperDataCon dc
+
 -- | The representation type of the data constructor, i.e. the sort
 -- type that will represent values of this type at runtime
 dataConRepType :: DataCon -> Type
 dataConRepType = dcRepType
+
+-- | The representation type of the data constructure when used as
+-- a case alternative.
+dataConAltRepType :: DataCon -> Type
+dataConAltRepType = dcAltRepType
 
 -- | Should the 'DataCon' be presented infix?
 dataConIsInfix :: DataCon -> Bool
@@ -1137,28 +1177,26 @@ dataConFullSig (MkData {dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs,
 
 dataConFullSigForPat :: DataCon
                      -> ([TyVar], [TyVar], [EqSpec], ThetaType, [Type], Type)
-dataConFullSigForPat dataCon@(MkData {dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs,
+dataConFullSigForPat MkData {dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs,
                         dcEqSpec = eq_spec, dcOtherTheta = theta,
                         dcOrigArgTys = arg_tys, dcOrigResTy = res_ty,
-                        dcMutFields = muts, dcWrapperAction = wrap_act})
+                        dcMutFields = muts, dcWrapperAction = wrap_act}
   = case wrap_act of
-      Just act ->
+      Just _ ->
         pprTrace "forPat: "
           (ppr ( univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty
                , zipWith mkMutTys muts arg_tys ))
           (univ_tvs, ex_tvs, eq_spec, theta, zipWith mkMutTys muts arg_tys, res_ty)
-       where
-        mkMutTys :: HsMutableInfo -> Type -> Type
-        mkMutTys HsImmutable t = t
-        mkMutTys HsMutable t = mkRefPrimTy realWorldTy t -- mkAppTy act t
-        mkMutTys HsMutableArray t = mkRefPrimTy realWorldTy t
-        -- TODO: Instead of realWorld this needs to be a type variable, but
-        -- I'm not sure how to do that (probably in TcM from the place that
-        -- calls this).
-
       Nothing -> (univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty)
+      -- TODO: merge some of this with dcAltRepTy
 
-
+mkMutTys :: HsMutableInfo -> Type -> Type
+mkMutTys HsImmutable t = t
+mkMutTys HsMutable t = mkRefPrimTy realWorldTy t -- mkAppTy act t
+mkMutTys HsMutableArray t = mkRefPrimTy realWorldTy t
+-- TODO: Instead of realWorld this needs to be a type variable, but
+-- I'm not sure how to do that (probably in TcM from the place that
+-- calls this).
 
 dataConOrigResTy :: DataCon -> Type
 dataConOrigResTy dc = dcOrigResTy dc
@@ -1187,7 +1225,7 @@ dataConUserType (MkData { dcUnivTyBinders = univ_bndrs,
                           dcOrigResTy = res_ty,
                           dcMutFields = mut_fields,
                           dcWrapperAction = mwrap_act })
-  | Just wrap_act <- mwrap_act
+  | Just _ <- mwrap_act
   , any (/= HsImmutable) mut_fields
   = mkForAllTys (filterEqSpec eq_spec univ_bndrs) $
     mkForAllTys ex_bndrs $

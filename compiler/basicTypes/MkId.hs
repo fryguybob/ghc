@@ -491,16 +491,24 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
 
   | otherwise
   = do { wrap_args <- mapM newLocal wrap_arg_tys
-       ; wrap_body <- mk_rep_app (wrap_args `zip` dropList eq_spec unboxers)
-                                 initial_wrap_app
-
-       ; let wrap_id = pprTrace "mkDataConRep" (ppr (wrap_arity, wrap_unf, wrap_sig, wrap_ty, wrap_name))
+       ; wrap_body' <- wrapFamInstBody tycon res_ty_args
+                       <$> mk_rep_app (wrap_args `zip` dropList eq_spec unboxers)
+                                  initial_wrap_app
+       ; wrap_body <- if is_mutable
+                        then inContext wrap_body'
+                        else return    wrap_body'
+       ; let wrap_id
+                | is_mutable = pprTrace "mkDataConRep" (ppr (wrap_arity, wrap_unf,
+                                    -- wrap_sig, wrap_ty, wrap_name,
+                                    res_ty_args, wrap_rhs, wrap_body, wrap_body'))
                      $ mkGlobalId (DataConWrapId data_con) wrap_name wrap_ty wrap_info
+                | otherwise = mkGlobalId (DataConWrapId data_con) wrap_name
+                                wrap_ty wrap_info
              wrap_info = noCafIdInfo
                          `setArityInfo`         wrap_arity
                              -- It's important to specify the arity, so that partial
                              -- applications are treated as values
-                         `setInlinePragInfo`    (if isMutable
+                         `setInlinePragInfo`    (if is_mutable
                                                    then neverInlinePragma
                                                    else alwaysInlinePragma)
                          `setUnfoldingInfo`     wrap_unf
@@ -522,14 +530,10 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
                  --      ...(let w = C x in ...(w p q)...)...
                  -- we want to see that w is strict in its two arguments
 
-             wrap_unf = -- if isMutable
-                        --  then NoUnfolding
-                        --  else
-                        mkInlineUnfolding (Just wrap_arity) wrap_rhs
+             wrap_unf = mkInlineUnfolding (Just wrap_arity) wrap_rhs
              wrap_tvs = (univ_tvs `minusList` map eqSpecTyVar eq_spec) ++ ex_tvs
              wrap_rhs = mkLams wrap_tvs $
                         mkLams wrap_args $
-                        wrapFamInstBody tycon res_ty_args $
                         wrap_body
 
        ; return (DCR { dcr_wrap_id = wrap_id
@@ -539,9 +543,9 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
                      , dcr_bangs   = arg_ibangs }) }
 
   where
-    (univ_tvs, ex_tvs, eq_spec, theta, orig_arg_tys', _orig_res_ty)
+    (univ_tvs, ex_tvs, eq_spec, theta, orig_arg_tys, _orig_res_ty)
       = dataConFullSig data_con
-    orig_arg_tys = orig_arg_tys' ++ act_tys
+
     res_ty_args  = substTyVars (mkTvSubstPrs (map eqSpecPair eq_spec)) univ_tvs
 
     tycon        = dataConTyCon data_con       -- The representation TyCon (not family)
@@ -552,19 +556,25 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
     orig_bangs   = dataConSrcBangs data_con
 
     wrap_arg_tys = theta ++ orig_arg_tys
-    wrap_arity   = length wrap_arg_tys -- if isMutable
-                   --  then 1 + length wrap_arg_tys
-                   --  else length wrap_arg_tys
+    wrap_arity   = length wrap_arg_tys
              -- The wrap_args are the arguments *other than* the eq_spec
              -- Because we are going to apply the eq_spec args manually in the
              -- wrapper
 
     wrap_act = dataConWrapperAction data_con
-    isMutable = isJust wrap_act
+    is_mutable = isJust wrap_act
 
-    act_tys = if isMutable
-                then [ realWorldTy ]
-                else []
+    inContext :: CoreExpr -> UniqSM CoreExpr
+    inContext e = do
+        tv <- newLocal stateRW
+        let app = mkConApp dc [Type res, mkLams [tv] (mkCoreUbxTup [stateRW, res] [Var tv, e])]
+        return $ pprTrace "inContext: " (ppr (e, dc, res, tv, app)) $ app
+      where
+        stateRW = mkTyConApp statePrimTyCon [realWorldTy]
+        (dc, res) =
+            case dataConWrapperDataCon data_con of
+              Just p -> p
+              _      -> pprPanic ("No constructor for wrapper action.") (ppr wrap_act)
 
     arg_ibangs =
       case mb_bangs of
@@ -583,7 +593,7 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
                       -- Some forcing/unboxing (includes eq_spec)
                     || isFamInstTyCon tycon  -- Cast result
                     || (not $ null eq_spec)  -- GADT
-                    || isMutable)    -- Has wrapper context type
+                    || is_mutable)    -- Has wrapper context type
 
     initial_wrap_app = Var (dataConWorkId data_con)
                        `mkTyApps`  res_ty_args

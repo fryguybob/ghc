@@ -1901,6 +1901,11 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
                 else
                     mutlist_OTHERS++;
                 break;
+            case MUT_CONSTR_CLEAN:
+                barf("MUT_CONSTR_CLEAN on mutable list");
+            case MUT_CONSTR_DIRTY:
+                mutlist_CONSTR++; break;
+                break;
             default:
                 mutlist_OTHERS++; break;
             }

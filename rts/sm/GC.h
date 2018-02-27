@@ -43,7 +43,8 @@ extern nat mutlist_MUTVARS, mutlist_MUTARRS, mutlist_MVARS, mutlist_OTHERS,
     mutlist_TVAR,
     mutlist_TREC_CHUNK,
     mutlist_TREC_HEADER,
-    mutlist_WAKEUP_CHUNK;
+    mutlist_WAKEUP_CHUNK,
+    mutlist_CONSTR;
 #endif
 
 #if defined(PROF_SPIN) && defined(THREADED_RTS)
