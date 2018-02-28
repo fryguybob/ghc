@@ -1565,7 +1565,7 @@ dataConInstPat fss uniqs con inst_tys
   where
     univ_tvs = dataConUnivTyVars con
     ex_tvs   = dataConExTyVars con
-    arg_tys  = dataConRepArgTys con
+    arg_tys  = dataConAltRepArgTys con
     arg_strs = dataConRepStrictness con  -- 1-1 with arg_tys
     n_ex = length ex_tvs
 

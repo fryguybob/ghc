@@ -38,7 +38,7 @@ module DataCon (
         dataConEqSpec, dataConTheta,
         dataConStupidTheta,
         dataConInstArgTys, dataConOrigArgTys, dataConOrigResTy,
-        dataConInstOrigArgTys, dataConRepArgTys,
+        dataConInstOrigArgTys, dataConRepArgTys, dataConAltRepArgTys,
         dataConFieldLabels, dataConFieldType,
         dataConSrcBangs,
         dataConMutableFields,
@@ -93,7 +93,6 @@ import qualified Data.Typeable
 import Data.Char
 import Data.Word
 import Data.List( mapAccumL, find )
-import Data.Maybe( isJust )
 
 {-
 Data constructor representation
@@ -849,7 +848,6 @@ mkDataCon tycon_name name declared_infix prom_info
   where
     is_vanilla = null ex_tvs && null eq_spec && null theta && not is_mutable
     is_mutable  = any (== HsMutable) mutable_fields
-              -- && (not $ isJust wrap_act) -- TODO: See the comment on the definition of wrap_act
     con = MkData {dcName = name, dcUnique = nameUnique name,
                   dcVanilla = is_vanilla, dcInfix = declared_infix,
                   dcUnivTyVars = univ_tvs, dcUnivTyBinders = univ_bndrs,
@@ -877,26 +875,16 @@ mkDataCon tycon_name name declared_infix prom_info
 
     tag = assoc "mkDataCon" (tyConDataCons rep_tycon `zip` [fIRST_TAG..]) con
     rep_arg_tys = dataConRepArgTys con
+    alt_rep_arg_tys = dataConAltRepArgTys con
 
-    rep_ty
-      | is_mutable =
-            pprTrace "rep_ty: " (ppr (univ_bndrs, ex_bndrs, rep_arg_tys, rep_tycon, univ_tvs))
-            $ mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
-              mkFunTys rep_arg_tys $
-              mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
-      | otherwise       =
-            mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
-            mkFunTys rep_arg_tys $
-            mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+    rep_ty = mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+               mkFunTys rep_arg_tys $
+               mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
 
     alt_rep_ty
-      | is_mutable =
-            pprTrace "alt_rep_ty: " (ppr (univ_bndrs, ex_bndrs,
-                zipWith mkMutTys mutable_fields rep_arg_tys, rep_tycon,
-                univ_tvs))
-            $ mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
-              mkFunTys (zipWith mkMutTys mutable_fields rep_arg_tys) $
-              mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+      | is_mutable = mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+                       mkFunTys alt_rep_arg_tys $
+                       mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
       | otherwise = rep_ty
 
     -- TODO: I think we want to allow data constructors that do not have mutable
@@ -1231,8 +1219,6 @@ dataConUserType (MkData { dcUnivTyBinders = univ_bndrs,
     mkForAllTys ex_bndrs $
     mkFunTys theta $
     mkFunTys (map (uncurry translateMutableType) $ zip mut_fields arg_tys) $
---    mkAppTy wrap_act $ -- TODO: The result type is already wrapped.  Should we remove
---                       -- it when we make the data constructor and put it back here?
     res_ty
   | otherwise
   = mkForAllTys (filterEqSpec eq_spec univ_bndrs) $
@@ -1296,6 +1282,17 @@ dataConRepArgTys (MkData { dcRep = rep
   = case rep of
       NoDataConRep -> ASSERT( null eq_spec ) theta ++ orig_arg_tys
       DCR { dcr_arg_tys = arg_tys } -> arg_tys
+
+-- TODO: I don't fully understand how this is used, but in
+-- dataConInstPat we need to see mutable field information
+-- hence this version of dataConRepArgTys that should be used
+-- when the arguments are needed for a pattern.
+dataConAltRepArgTys :: DataCon -> [Type]
+dataConAltRepArgTys dc@(MkData { dcMutFields = mutable_fields })
+    | is_mutable = zipWith mkMutTys mutable_fields (dataConRepArgTys dc)
+    | otherwise  = dataConRepArgTys dc
+  where
+    is_mutable = any (== HsMutable) mutable_fields
 
 -- | The string @package:module.name@ identifying a constructor, which is attached
 -- to its info table and used by the GHCi debugger and the heap profiler

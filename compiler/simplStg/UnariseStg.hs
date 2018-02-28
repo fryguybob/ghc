@@ -135,7 +135,10 @@ unariseExpr _ rho (StgApp f args)
      -- See Note [Nullary unboxed tuple]
     StgConApp (tupleDataCon Unboxed (length tys))
               (map StgVarArg (unariseId rho f))
-
+  | null args
+  , UbxRefRep ty <- repType (idType f)
+  = StgConApp (tupleDataCon Unboxed 2)
+              (map StgVarArg (unariseId rho f))
   | otherwise
   = StgApp f (unariseArgs rho args)
 
@@ -202,7 +205,9 @@ unariseAlts us rho _ _ alts
 unariseAlt :: UniqSupply -> UnariseEnv -> StgAlt -> StgAlt
 unariseAlt us rho (dataAlt@(DataAlt con), xs, uses, e)
   | hasMutableFields con
-  = (dataAlt, xs', uses', unariseExpr us' rho' e)
+  = pprTrace "unariseAlt: "
+     (ppr (con, xs, uses, e, dataConMutableFields con))
+     $ (dataAlt, xs', uses', unariseExpr us' rho' e)
   where
     (us', rho', xs', uses') = unariseUsedIdBindersMutable us rho xs uses 
                                     (dataConMutableFields con)
@@ -279,7 +284,8 @@ unariseIdBinder' us rho x HsMutable   = case repType (idType x) of
                         ys   = unboxedTupleBindersFrom us0 x [refAddrAltTy, mkRefIndexAltTy ty]
                         rho' = extendVarEnv rho x ys
                     in  (us1, rho', ys)
-    _            -> panic "Mutable field in alt that is not a Ref#"
+    rep          -> pprPanic "Mutable field in alt that is not a Ref#"
+                             (ppr (rep, x))
 
 unariseIdBinder :: UniqSupply -> UnariseEnv
                 -> Id                -- Binder
