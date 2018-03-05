@@ -24,6 +24,7 @@ dataConInstOrigArgTys  :: DataCon -> [Type] -> [Type]
 dataConStupidTheta :: DataCon -> ThetaType
 dataConFullSig :: DataCon
                -> ([TyVar], [TyVar], [EqSpec], ThetaType, [Type], Type)
+hasMutableFields :: DataCon -> Bool
 
 instance Eq DataCon
 instance Ord DataCon

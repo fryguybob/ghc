@@ -118,7 +118,8 @@ module TyCon(
 import {-# SOURCE #-} TyCoRep ( Kind, Type, PredType, TyBinder, mkForAllTys )
 import {-# SOURCE #-} TysWiredIn  ( runtimeRepTyCon, constraintKind
                                   , vecCountTyCon, vecElemTyCon, liftedTypeKind )
-import {-# SOURCE #-} DataCon ( DataCon, dataConExTyVars, dataConFieldLabels )
+import {-# SOURCE #-} DataCon ( DataCon, dataConExTyVars, dataConFieldLabels
+                              , hasMutableFields )
 
 import Binary
 import Var
@@ -1596,6 +1597,7 @@ isDataProductTyCon_maybe (AlgTyCon { algTcRhs = rhs })
   = case rhs of
        DataTyCon { data_cons = [con] }
          | null (dataConExTyVars con)  -- non-existential
+         , not (hasMutableFields con)
          -> Just con
        TupleTyCon { data_con = con }
          -> Just con
