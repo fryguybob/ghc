@@ -15,7 +15,8 @@ import DynFlags
 import HscTypes
 import Name             ( Name, getName )
 import NameEnv
-import DataCon          ( DataCon, dataConRepArgTys, dataConIdentity )
+import DataCon          ( DataCon, dataConRepArgTys, dataConIdentity,
+                          dataConWrapperIsSTM )
 import TyCon            ( TyCon, tyConFamilySize, isDataTyCon, tyConDataCons )
 import Type             ( flattenRepType, repType, typePrimRep )
 import StgCmmLayout     ( mkVirtHeapOffsets )
@@ -59,7 +60,9 @@ make_constr_itbls hsc_env cons =
                     , rep_arg <- flattenRepType (repType arg) ]
 
          (tot_wds, ptr_wds, _) =
-             mkVirtHeapOffsets dflags False{-not a THUNK-} rep_args
+             mkVirtHeapOffsets dflags False{-not a THUNK-} ext_hdr rep_args
+         ext_hdr | dataConWrapperIsSTM dcon = Just 7
+                 | otherwise                = Nothing
 
          ptrs'  = ptr_wds
          nptrs' = tot_wds - ptr_wds

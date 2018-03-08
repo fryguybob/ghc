@@ -115,7 +115,7 @@ cgTopRhsClosure dflags rec id ccs _ upd_flag args body =
         ; emitDataLits closure_label closure_rep
         ; let fv_details :: [(NonVoid Id, VirtualHpOffset)]
               (_, _, fv_details) = mkVirtHeapOffsets dflags (isLFThunk lf_info)
-                                               (addIdReps [])
+                                               Nothing (addIdReps [])
         -- Don't drop the non-void args until the closure info has been made
         ; forkClosureBody (closureCodeBody True id closure_info ccs
                                 (nonVoidIds args) (length args) body fv_details)
@@ -276,7 +276,7 @@ mkRhsClosure    dflags bndr _cc _bi
   , StgApp selectee [{-no args-}] <- strip sel_expr
   , the_fv == scrutinee                -- Scrutinee is the only free variable
 
-  , let (_, _, params_w_offsets) = mkVirtConstrOffsets dflags (addIdReps params)
+  , let (_, _, params_w_offsets) = mkVirtConstrOffsets dflags Nothing (addIdReps params)
                                    -- Just want the layout
   , Just the_offset <- assocMaybe params_w_offsets (NonVoid selectee)
 
@@ -349,7 +349,7 @@ mkRhsClosure dflags bndr cc _ fvs upd_flag args body
                 descr = closureDescription dflags mod_name name
                 fv_details :: [(NonVoid Id, ByteOff)]
                 (tot_wds, ptr_wds, fv_details)
-                   = mkVirtHeapOffsets dflags (isLFThunk lf_info)
+                   = mkVirtHeapOffsets dflags (isLFThunk lf_info) Nothing
                                        (addIdReps (map unsafe_stripNV reduced_fvs))
                 closure_info = mkClosureInfo dflags False       -- Not static
                                              bndr lf_info tot_wds ptr_wds
@@ -394,7 +394,7 @@ cgRhsStdThunk bndr lf_info payload
     mod_name <- getModuleName
   ; dflags <- getDynFlags
   ; let (tot_wds, ptr_wds, payload_w_offsets)
-            = mkVirtHeapOffsets dflags (isLFThunk lf_info) (addArgReps payload)
+            = mkVirtHeapOffsets dflags (isLFThunk lf_info) Nothing (addArgReps payload)
 
         descr = closureDescription dflags mod_name (idName bndr)
         closure_info = mkClosureInfo dflags False       -- Not static

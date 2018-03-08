@@ -44,6 +44,7 @@ module DataCon (
         dataConMutableFields,
         dataConWrapperAction,
         dataConWrapperDataCon,
+        dataConWrapperIsSTM,
         dataConSourceArity, dataConRepArity, dataConRepRepArity,
         dataConIsInfix,
         dataConWorkId, dataConWrapId, dataConWrapId_maybe,
@@ -389,6 +390,8 @@ data DataCon
         dcWrapperAction :: Maybe Type,
 
         dcWrapperDataCon :: Maybe (DataCon, Type),
+
+        dcWrapperIsSTM :: Bool,
 
         dcFields  :: [FieldLabel],
                 -- Field labels for this constructor, in the
@@ -861,6 +864,7 @@ mkDataCon tycon_name name declared_infix prom_info
                   dcMutFields = mutable_fields,
                   dcWrapperAction = wrap_act,
                   dcWrapperDataCon = wrap_dc,
+                  dcWrapperIsSTM = is_stm,
                   dcFields = fields, dcTag = tag, dcRepType = rep_ty,
                   dcAltRepType = alt_rep_ty,
                   dcWorkId = work_id,
@@ -892,17 +896,18 @@ mkDataCon tycon_name name declared_infix prom_info
     -- we have one of these outside of typechecking.  So we are not going to do
     -- that for now.  For now we will just check for mutable fields and allow
     -- any wrapping action, but only use it when there are mutable fields.
-    (wrap_act, wrap_dc) =
+    (wrap_act, wrap_dc, is_stm) =
         case orig_res_ty of
           TyConApp tc tys | tyConName tc /= tycon_name && is_mutable ->
                case tyConDataCons tc of
                  [dc] -> pprTrace "wrap_act = " (ppr (tc, tyConFamInst_maybe tc,
                            tycon_name, isSystemName tycon_name, tys, name, tyConName tc))
                            $ (Just (TyConApp tc (take (length tys - 1) tys)),
-                              Just (dc, last tys))
+                              Just (dc, last tys),
+                              not (dc `hasKey` ioDataConKey))
                  dcs  -> pprPanic "Invalid data constructors for wrapper action."
                            (ppr (tc, dcs))
-          _ -> (Nothing, Nothing)
+          _ -> (Nothing, Nothing, False)
 
       -- See Note [Promoted data constructors] in TyCon
     prom_binders = filterEqSpec eq_spec univ_bndrs ++
@@ -944,6 +949,9 @@ dataConWrapperAction dc = dcWrapperAction dc
 -- | The data constructor for the wrapper action.
 dataConWrapperDataCon :: DataCon -> Maybe (DataCon, Type)
 dataConWrapperDataCon dc = dcWrapperDataCon dc
+
+dataConWrapperIsSTM :: DataCon -> Bool
+dataConWrapperIsSTM dc = dcWrapperIsSTM dc
 
 -- | The representation type of the data constructor, i.e. the sort
 -- type that will represent values of this type at runtime

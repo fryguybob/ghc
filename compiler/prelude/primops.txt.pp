@@ -2216,6 +2216,20 @@ primop  WriteTVarOp "writeTVar#" GenPrimOp
 primop  SameTVarOp "sameTVar#" GenPrimOp
    TVar# s a -> TVar# s a -> Int#
 
+primop ReadTRefOp "readTRef#" GenPrimOp
+    Ref# s a -> State# s -> (# State# s, a #)
+   {Read contents of {\tt Ref\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop WriteTRefOp "writeTRef#" GenPrimOp
+    Ref# s a -> a -> State# s -> State# s
+   {Write contents of {\tt Ref\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
 primop ReadTArrayOp "readTArray#" GenPrimOp
     STMMutableArray# s a
     -> Word# -> State# s -> (# State# s, a #)

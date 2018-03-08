@@ -26,6 +26,7 @@ import StgCmmHeap
 import StgCmmLayout
 import StgCmmUtils
 import StgCmmClosure
+import StgCmmForeign
 import StgCmmProf ( curCCS )
 
 import CmmExpr
@@ -78,7 +79,7 @@ cgTopRhsCon dflags id con args =
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
              ptr_wds, --  #ptr_wds
-             nv_args_w_offsets) = mkVirtConstrOffsets dflags (addArgReps args)
+             nv_args_w_offsets) = mkVirtConstrOffsets dflags Nothing (addArgReps args)
 
             nonptr_wds = tot_wds - ptr_wds
 
@@ -227,8 +228,10 @@ buildDynCon' dflags _ binder actually_bound ccs con args
 
   gen_code reg
     = do  { let (tot_wds, ptr_wds, args_w_offsets)
-                  = mkVirtConstrOffsets dflags (addArgReps args)
+                  = mkVirtConstrOffsets dflags ext_hdr (addArgReps args)
                   -- No void args in args_w_offsets
+                ext_hdr | dataConWrapperIsSTM con = Just 7
+                        | otherwise               = Nothing
                 nonptr_wds = tot_wds - ptr_wds
                 info_tbl = mkDataConInfoTable dflags con False
                                 ptr_wds nonptr_wds
@@ -238,7 +241,15 @@ buildDynCon' dflags _ binder actually_bound ccs con args
           ; hp_plus_n <- allocDynClosure ticky_name info_tbl lf_info
                                           use_cc blame_cc args_w_offsets
           ; emitComment $ mkFastString "buildDynCon' gen_code"
-          ; return (mkRhsInit dflags reg lf_info hp_plus_n) }
+          ; let rhs = mkRhsInit dflags reg lf_info hp_plus_n
+          ; if dataConWrapperIsSTM con
+              then do
+                emitCCall [] 
+                    (CmmLit (CmmLabel mkSTMInitMutCon_Label))
+                    [(hp_plus_n, AddrHint)]
+                return rhs
+              else return rhs
+          }
     where
       use_cc      -- cost-centre to stick in the object
         | isCurrentCCS ccs = curCCS
@@ -271,7 +282,9 @@ bindConArgs :: AltCon -> LocalReg -> [Id] -> FCode [LocalReg]
 bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleCon con))
     do dflags <- getDynFlags
-       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdRepsForAlt args)
+       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags ext_hdr (addIdRepsForAlt args)
+           ext_hdr | dataConWrapperIsSTM con = Just 7
+                   | otherwise               = Nothing
            tag = tagForCon dflags con
            args_addrs = filter (isRefAddrAlt . idType) args
 

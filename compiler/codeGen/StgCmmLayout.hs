@@ -394,6 +394,7 @@ getHpRelOffset virtual_offset
 mkVirtHeapOffsets
   :: DynFlags
   -> Bool                -- True <=> is a thunk
+  -> Maybe Int            -- Extended header words
   -> [(PrimRep,a)]        -- Things to make offsets for
   -> (WordOff,                -- _Total_ number of words allocated
       WordOff,                -- Number of words allocated for *pointers*
@@ -409,13 +410,14 @@ mkVirtHeapOffsets
 -- mkVirtHeapOffsets always returns boxed things with smaller offsets
 -- than the unboxed things
 
-mkVirtHeapOffsets dflags is_thunk things
+mkVirtHeapOffsets dflags is_thunk ext_hdr things
   = ( bytesToWordsRoundUp dflags tot_bytes
     , bytesToWordsRoundUp dflags bytes_of_ptrs
     , ptrs_w_offsets ++ non_ptrs_w_offsets
     )
   where
     hdr_words | is_thunk   = thunkHdrSize dflags
+              | Just sz <- ext_hdr = fixedHdrSizeW dflags + sz
               | otherwise  = fixedHdrSizeW dflags
     hdr_bytes = wordsToBytes dflags hdr_words
 
@@ -433,9 +435,11 @@ mkVirtHeapOffsets dflags is_thunk things
 
 -- | Just like mkVirtHeapOffsets, but for constructors
 mkVirtConstrOffsets
-  :: DynFlags -> [(PrimRep,a)]
+  :: DynFlags
+  -> Maybe Int
+  -> [(PrimRep,a)]
   -> (WordOff, WordOff, [(NonVoid a, ByteOff)])
-mkVirtConstrOffsets dflags = mkVirtHeapOffsets dflags False
+mkVirtConstrOffsets dflags ext_hdr = mkVirtHeapOffsets dflags False ext_hdr
 
 
 -------------------------------------------------------------------------

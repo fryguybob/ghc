@@ -208,6 +208,32 @@ void stmWriteTVar(Capability *cap,
                   StgTRecHeader *trec,
                   StgTVar *tvar, 
                   StgClosure *new_value);
+
+/* ----- TRef ----- */
+
+void stmInitMutCon(StgClosure* obj);
+
+/*
+ * Return the logical contents of 'tref' within the context of the
+ * thread's current transaction.
+ */
+
+StgClosure *stmReadTRef(Capability *cap,
+                        StgTRecHeader *trec,
+                        StgClosure *tarray,
+                        StgWord index);
+
+/* Update the logical contents of 'tref' within the context of the
+ * thread's current transaction.
+ */
+
+void stmWriteTRef(Capability *cap,
+                  StgTRecHeader *trec,
+                  StgClosure *tarray,
+                  StgWord index,
+                  StgClosure *new_value);
+
+
 /* ----- TArray ----- */
 
 typedef StgStmMutArrPtrs StgTArray;

@@ -2451,6 +2451,117 @@ void stmWriteTVar(Capability *cap,
 
 /*......................................................................*/
 
+void stmInitMutCon(StgClosure* obj) {
+    StgTArray *tarray = UNTAG_CLOSURE(obj);
+    const StgInfoTable *info = get_itbl(tarray);
+    
+    tarray -> lock    = 0;
+    tarray -> hash_id = (StgWord)obj;
+    tarray -> ptrs    = info->layout.payload.ptrs;
+    tarray -> words   = info->layout.payload.nptrs;
+
+    TRACE("%p : stmInitMutCon", tarray);
+}
+
+/*......................................................................*/
+
+StgClosure *stmReadTRef(Capability *cap,
+                        StgTRecHeader *trec,
+                        StgClosure* obj,
+                        StgWord pre_tag_index) {
+
+  StgWord tag = GET_CLOSURE_TAG(obj);
+  StgWord index = pre_tag_index + tag;
+  StgTArray *tarray = UNTAG_CLOSURE(obj);
+  StgTRecHeader *entry_in = NULL;
+  StgClosure *result = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmReadTRef(%p[%d])", trec, tarray, index);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE ||
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      result = entry -> new_value.ptr;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      TRACE("%p : stmReadTRef copied from %p", trec, entry_in);
+      new_entry -> tarray = tarray;
+      new_entry -> offset = index;
+      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
+      new_entry -> new_value.ptr = entry -> new_value.ptr;
+      result = new_entry -> new_value.ptr;
+    }
+  } else {
+    // No entry found
+    StgClosure *current_value = read_array_current_value(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    TRACE("%p : stmReadTRef new entry with value %p", trec, current_value);
+    new_entry -> tarray = tarray;
+    new_entry -> offset = index;
+    new_entry -> expected_value.ptr = current_value;
+    new_entry -> new_value.ptr = current_value;
+    result = current_value;
+  }
+
+  TRACE("%p : stmReadTRef(%p[%d])=%p", trec, tarray, index, result);
+  return result;
+}
+
+/*......................................................................*/
+
+void stmWriteTRef(Capability *cap,
+                  StgTRecHeader *trec,
+                  StgClosure *obj,
+                  StgWord pre_tag_index,
+                  StgClosure *new_value) {
+
+  StgWord tag = GET_CLOSURE_TAG(obj);
+  StgWord index = pre_tag_index + tag;
+  StgTArray *tarray = UNTAG_CLOSURE(obj);
+  StgTRecHeader *entry_in = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmWriteTRef(%p[%d], %p)", trec, tarray, index, new_value);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE ||
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      entry -> new_value.ptr = new_value;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> offset = index;
+      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
+      new_entry -> new_value.ptr = new_value;
+    }
+  } else {
+    // No entry found
+    StgClosure *current_value = read_array_current_value(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> offset = index;
+    new_entry -> expected_value.ptr = current_value;
+    new_entry -> new_value.ptr = new_value;
+  }
+
+  TRACE("%p : stmWriteTRef done", trec);
+}/*......................................................................*/
+
+
+
+/*......................................................................*/
+
 StgClosure *stmReadTArray(Capability *cap,
                         StgTRecHeader *trec,
                         StgTArray *tarray,

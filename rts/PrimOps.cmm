@@ -1460,6 +1460,34 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
         GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
    }
 
+stg_readTRefzh (P_ tref, W_ index)
+{
+    P_ trec;
+    P_ result;
+
+    // Call to stmReadTArraySTM may allocate
+    MAYBE_GC_PN (stg_readTRefzh, tref, index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ("ptr" result) = ccall stmReadTRef(MyCapability() "ptr", trec "ptr",
+                                       tref "ptr", index);
+    return (result);
+}
+
+stg_writeTRefzh (P_ tref,      // :: Ref# s a
+                 W_ index,     // :: Word
+                 P_ new_value) // :: a
+{
+    W_ trec;
+    // Call to stmWriteTRefSTM may allocate
+    MAYBE_GC_PNP (stg_writeTRefzh, tref, index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTRef(MyCapability() "ptr", trec "ptr", tref "ptr", index,
+                       new_value "ptr");
+    return ();
+}
+
 stg_readTArrayzh (P_ tarray, W_ index)
 {
     P_ trec;

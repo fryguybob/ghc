@@ -221,8 +221,15 @@ cgDataCon data_con
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
              ptr_wds, --  #ptr_wds
-             arg_things) = mkVirtConstrOffsets dflags arg_reps
+             arg_things) = mkVirtConstrOffsets dflags ext_hdr arg_reps
 
+            -- TODO: We need some design work for how to do this in general
+            ext_hdr
+              | hasMutableFields data_con
+              , Just (dc, _) <- dataConWrapperDataCon data_con
+              , dataConWrapperIsSTM data_con = pprTrace "ext_hdr: " (ppr (dc))
+                                               $ Just 7
+              | otherwise           = Nothing
             nonptr_wds   = tot_wds - ptr_wds
 
             sta_info_tbl = mkDataConInfoTable dflags data_con True  ptr_wds nonptr_wds
