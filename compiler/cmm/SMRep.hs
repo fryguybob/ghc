@@ -197,7 +197,7 @@ data ClosureTypeInfo
   | ThunkSelector SelectorOffset
   | BlackHole
   | IndStatic
-  | MutConstr     ConstrTag ConstrDescription CmmLit Bool
+  | MutConstr     ConstrTag ConstrDescription CmmLit Bool Bool
 
 type ConstrTag         = Int
 type ConstrDescription = [Word8] -- result of dataConIdentity
@@ -412,6 +412,7 @@ closureTypeHdrSize dflags ty = case ty of
                   ThunkSelector{} -> thunkHdrSize dflags
                   BlackHole{}     -> thunkHdrSize dflags
                   IndStatic{}     -> thunkHdrSize dflags
+                  (MutConstr _ _ _ _ True) -> fixedHdrSizeW dflags + 7
                   _               -> fixedHdrSizeW dflags
         -- All thunks use thunkHdrSize, even if they are non-updatable.
         -- this is because we don't have separate closure types for
@@ -460,8 +461,10 @@ rtsClosureType rep
       HeapRep False 0 2 Constr{} -> CONSTR_0_2
       HeapRep False _ _ Constr{} -> CONSTR
 
-      HeapRep False _ _ (MutConstr _ _ _ True)  -> MUT_CONSTR_CLEAN
-      HeapRep False _ _ (MutConstr _ _ _ False) -> MUT_CONSTR_DIRTY
+      HeapRep False _ _ (MutConstr _ _ _ True  False) -> MUT_CONSTR_CLEAN
+      HeapRep False _ _ (MutConstr _ _ _ False False) -> MUT_CONSTR_DIRTY
+      HeapRep False _ _ (MutConstr _ _ _ True  True)  -> MUT_CONSTR_EXT_CLEAN
+      HeapRep False _ _ (MutConstr _ _ _ False True)  -> MUT_CONSTR_EXT_DIRTY
 
       HeapRep False 1 0 Fun{} -> FUN_1_0
       HeapRep False 0 1 Fun{} -> FUN_0_1
@@ -558,12 +561,13 @@ pprTypeInfo (Constr tag descr)
     braces (sep [ text "tag:" <+> ppr tag
                 , text "descr:" <> text (show descr) ])
 
-pprTypeInfo (MutConstr tag descr other clean)
+pprTypeInfo (MutConstr tag descr other clean ext)
   = text "MutCon" <+>
     braces (sep [ text "tag:" <+> ppr tag
                 , text "descr:" <> text (show descr)
                 , text "other:" <> ppr other
-                , text "clean:" <> text (show clean) ])
+                , text "clean:" <> text (show clean)
+                , text "ext:"   <> text (show ext) ])
 
 pprTypeInfo (Fun arity args)
   = text "Fun" <+>

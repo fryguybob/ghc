@@ -649,12 +649,12 @@ thread_obj (StgInfoTable *info, StgPtr p)
 
     case FUN:
     case CONSTR:
-    case MUT_CONSTR_CLEAN:
-    case MUT_CONSTR_DIRTY:
     case PRIM:
     case MUT_PRIM:
     case MUT_VAR_CLEAN:
     case MUT_VAR_DIRTY:
+    case MUT_CONSTR_CLEAN:
+    case MUT_CONSTR_DIRTY:
     case TVAR:
     case BLACKHOLE:
     case BLOCKING_QUEUE:
@@ -664,6 +664,20 @@ thread_obj (StgInfoTable *info, StgPtr p)
         end = (P_)((StgClosure *)p)->payload +
             info->layout.payload.ptrs;
         for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            thread((StgClosure **)p);
+        }
+        return p + info->layout.payload.nptrs;
+    }
+
+    case MUT_CONSTR_EXT_CLEAN:
+    case MUT_CONSTR_EXT_DIRTY:
+    {
+        StgPtr end;
+        StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+
+        end = (P_)((StgClosure *)p)->payload + o +
+            info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload + o; p < end; p++) {
             thread((StgClosure **)p);
         }
         return p + info->layout.payload.nptrs;

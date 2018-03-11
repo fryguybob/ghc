@@ -297,6 +297,17 @@ checkClosure( StgClosure* p )
             return sizeW_fromITBL(info);
         }
 
+    case MUT_CONSTR_EXT_CLEAN:
+    case MUT_CONSTR_EXT_DIRTY:
+        {
+            nat i;
+            StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+            for (i = 0; i < info->layout.payload.ptrs; i++) {
+                ASSERT(LOOKS_LIKE_CLOSURE_PTR(p->payload[i+o]));
+            }
+            return mut_constr_ext_sizeW_fromITBL(info);
+        }
+
     case BLOCKING_QUEUE:
     {
         StgBlockingQueue *bq = (StgBlockingQueue *)p;

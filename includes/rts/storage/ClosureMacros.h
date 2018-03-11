@@ -64,11 +64,13 @@ INLINE_HEADER StgFunInfoTable *FUN_INFO_PTR_TO_STRUCT(const StgInfoTable *info) 
 INLINE_HEADER StgThunkInfoTable *THUNK_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgThunkInfoTable *)info - 1;}
 INLINE_HEADER StgConInfoTable *CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgConInfoTable *)info - 1;}
 INLINE_HEADER StgMutConInfoTable *MUT_CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgMutConInfoTable *)info - 1;}
+INLINE_HEADER StgMutConExtInfoTable *MUT_CON_EXT_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgMutConExtInfoTable *)info - 1;}
 INLINE_HEADER StgFunInfoTable *itbl_to_fun_itbl(const StgInfoTable *i) {return (StgFunInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgRetInfoTable *itbl_to_ret_itbl(const StgInfoTable *i) {return (StgRetInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgThunkInfoTable *itbl_to_thunk_itbl(const StgInfoTable *i) {return (StgThunkInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgConInfoTable *itbl_to_con_itbl(const StgInfoTable *i) {return (StgConInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgMutConInfoTable *itbl_to_mut_con_itbl(const StgInfoTable *i) {return (StgMutConInfoTable *)(i + 1) - 1;}
+INLINE_HEADER StgMutConExtInfoTable *itbl_to_mut_con_ext_itbl(const StgInfoTable *i) {return (StgMutConExtInfoTable *)(i + 1) - 1;}
 #else
 EXTERN_INLINE StgInfoTable *INFO_PTR_TO_STRUCT(const StgInfoTable *info);
 EXTERN_INLINE StgInfoTable *INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgInfoTable *)info;}
@@ -78,11 +80,13 @@ INLINE_HEADER StgFunInfoTable *FUN_INFO_PTR_TO_STRUCT(const StgInfoTable *info) 
 INLINE_HEADER StgThunkInfoTable *THUNK_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgThunkInfoTable *)info;}
 INLINE_HEADER StgConInfoTable *CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgConInfoTable *)info;}
 INLINE_HEADER StgMutConInfoTable *MUT_CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgConInfoTable *)info;}
+INLINE_HEADER StgMutConExtInfoTable *MUT_CON_EXT_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgConInfoTable *)info;}
 INLINE_HEADER StgFunInfoTable *itbl_to_fun_itbl(const StgInfoTable *i) {return (StgFunInfoTable *)i;}
 INLINE_HEADER StgRetInfoTable *itbl_to_ret_itbl(const StgInfoTable *i) {return (StgRetInfoTable *)i;}
 INLINE_HEADER StgThunkInfoTable *itbl_to_thunk_itbl(const StgInfoTable *i) {return (StgThunkInfoTable *)i;}
 INLINE_HEADER StgConInfoTable *itbl_to_con_itbl(const StgInfoTable *i) {return (StgConInfoTable *)i;}
 INLINE_HEADER StgMutConInfoTable *itbl_to_mut_con_itbl(const StgInfoTable *i) {return (StgMutConInfoTable *)i;}
+INLINE_HEADER StgMutConExtInfoTable *itbl_to_mut_con_ext_itbl(const StgInfoTable *i) {return (StgMutConExtInfoTable *)i;}
 #endif
 
 EXTERN_INLINE StgInfoTable *get_itbl(const StgClosure *c);
@@ -98,6 +102,8 @@ INLINE_HEADER StgThunkInfoTable *get_thunk_itbl(const StgClosure *c) {return THU
 INLINE_HEADER StgConInfoTable *get_con_itbl(const StgClosure *c) {return CON_INFO_PTR_TO_STRUCT((c)->header.info);}
 
 INLINE_HEADER StgMutConInfoTable *get_mut_con_itbl(const StgClosure *c) {return MUT_CON_INFO_PTR_TO_STRUCT((c)->header.info);}
+
+INLINE_HEADER StgMutConExtInfoTable *get_mut_con_ext_itbl(const StgClosure *c) {return MUT_CON_EXT_INFO_PTR_TO_STRUCT((c)->header.info);}
 
 INLINE_HEADER StgHalfWord GET_TAG(const StgClosure *con) {
     return get_itbl(con)->srt_bitmap;
@@ -340,6 +346,9 @@ EXTERN_INLINE StgOffset stm_mut_arr_ptrs_sizeW( StgStmMutArrPtrs* x );
 EXTERN_INLINE StgOffset stm_mut_arr_ptrs_sizeW( StgStmMutArrPtrs* x )
 { return sizeofW(StgStmMutArrPtrs) + x->ptrs + x->words; }
 
+INLINE_HEADER StgOffset mut_constr_ext_sizeW_fromITBL( const StgInfoTable* itbl )
+{ return sizeW_fromITBL(itbl) + (StgOffset)GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(itbl)); }
+
 EXTERN_INLINE StgWord stack_sizeW ( StgStack *stack );
 EXTERN_INLINE StgWord stack_sizeW ( StgStack *stack )
 { return sizeofW(StgStack) + stack->stack_size; }
@@ -516,8 +525,17 @@ INLINE_HEADER StgWord8 *mutArrPtrsCard (StgMutArrPtrs *a, W_ n)
 
    -------------------------------------------------------------------------- */
 
-#define ZERO_SLOP_FOR_LDV_PROF     (defined(PROFILING))
-#define ZERO_SLOP_FOR_SANITY_CHECK (defined(DEBUG) && !defined(THREADED_RTS))
+#if defined(PROFILING)
+#define ZERO_SLOP_FOR_LDV_PROF 1
+#else
+#define ZERO_SLOP_FOR_LDV_PROF 0
+#endif
+
+#if defined(DEBUG) && !defined(THREADED_RTS)
+#define ZERO_SLOP_FOR_SANITY_CHECK 1
+#else
+#define ZERO_SLOP_FOR_SANITY_CHECK 0
+#endif
 
 #if ZERO_SLOP_FOR_LDV_PROF || ZERO_SLOP_FOR_SANITY_CHECK
 #define OVERWRITING_CLOSURE(c) overwritingClosure(c)

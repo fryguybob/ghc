@@ -347,6 +347,28 @@ typedef struct StgMutConInfoTable_ {
 #endif
 } StgMutConInfoTable;
 
+typedef struct StgMutConExtInfoTable_ {
+#if !defined(TABLES_NEXT_TO_CODE)
+    StgInfoTable i;
+#endif
+
+#if defined(TABLES_NEXT_TO_CODE)
+    OFFSET_FIELD(con_desc); // the name of the data constructor
+                            // as: Package:Module.Name
+    OFFSET_FIELD(other);
+    StgWord ext_size;
+#else
+    char *con_desc;
+    StgInfoTable *other;
+    StgWord ext_size;
+#endif
+
+
+#if defined(TABLES_NEXT_TO_CODE)
+    StgInfoTable i;
+#endif
+} StgMutConExtInfoTable;
+
 /* -----------------------------------------------------------------------------
    Accessor macros for fields that might be offsets (C version)
    -------------------------------------------------------------------------- */
@@ -390,6 +412,33 @@ typedef struct StgMutConInfoTable_ {
 #else
 #define GET_MUT_CON_OTHER(info) ((info)->other)
 #endif
+
+/*
+ * GET_MUT_CON_EXT_DESC(info)
+ * info must be a StgMutConExtInfoTable*.
+ */
+#ifdef TABLES_NEXT_TO_CODE
+#define GET_MUT_CON_EXT_DESC(info) ((char *)((StgWord)((info)+1) + (info->con_desc)))
+#else
+#define GET_MUT_CON_EXT_DESC(info) ((info)->con_desc)
+#endif
+
+/*
+ * GET_MUT_CON_EXT_OTHER(info)
+ * info must be a StgMutConExtInfoTable*.
+ */
+#ifdef TABLES_NEXT_TO_CODE
+#define GET_MUT_CON_EXT_OTHER(info) ((StgInfoTable*) (((StgWord)((info)+1) + (info)->other)))
+#else
+#define GET_MUT_CON_EXT_OTHER(info) ((info)->other)
+#endif
+
+/*
+ * GET_MUT_CON_EXT_SIZE(info)
+ * info must be a StgMutConExtInfoTable*.
+ */
+#define GET_MUT_CON_EXT_SIZE(info) ((info)->ext_size)
+
 
 /*
  * GET_FUN_SRT(info)

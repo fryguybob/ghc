@@ -446,6 +446,7 @@ mkSMAP_FROZEN0_infoLabel        = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_P
 mkSMAP_DIRTY_infoLabel          = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_PTRS_DIRTY") CmmInfo
 mkSTMMAP_DIRTY_infoLabel        = CmmLabel rtsUnitId (fsLit "stg_STM_MUT_ARR_PTRS_DIRTY") CmmInfo
 mkDirty_MUT_CON_Label           = mkForeignLabel (fsLit "dirty_MUT_CON") Nothing ForeignLabelInExternalPackage IsFunction
+mkDirty_MUT_EXT_CON_Label       = mkForeignLabel (fsLit "dirty_MUT_CON_EXT") Nothing ForeignLabelInExternalPackage IsFunction
 mkSTMInitMutCon_Label           = mkForeignLabel (fsLit "stmInitMutCon") Nothing ForeignLabelInExternalPackage IsFunction
 
 -----

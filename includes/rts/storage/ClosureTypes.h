@@ -89,6 +89,8 @@
 #define STM_MUT_ARR_PTRS_DIRTY  68
 #define MUT_CONSTR_CLEAN        69
 #define MUT_CONSTR_DIRTY        70
-#define N_CLOSURE_TYPES         71
+#define MUT_CONSTR_EXT_CLEAN    71
+#define MUT_CONSTR_EXT_DIRTY    72
+#define N_CLOSURE_TYPES         73
 
 #endif /* RTS_STORAGE_CLOSURETYPES_H */

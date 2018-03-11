@@ -1049,6 +1049,16 @@ dirty_MUT_CON(StgRegTable *reg, StgClosure *p)
 }
 
 void
+dirty_MUT_CON_EXT(Capability *cap, StgClosure *p)
+{
+    StgInfoTable *t = INFO_PTR_TO_STRUCT(p->header.info);
+    if (t->type == MUT_CONSTR_EXT_CLEAN) {
+        p->header.info = GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(t));
+        recordClosureMutated(cap,p);
+    }
+}
+
+void
 dirty_TVAR(Capability *cap, StgTVar *p)
 {
     if (p->header.info == &stg_TVAR_CLEAN_info) {

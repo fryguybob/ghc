@@ -176,6 +176,17 @@ static int shake(void) {
 
 /*......................................................................*/
 
+static void dirty_TARRAY_or_MUT_CON(Capability *cap, StgTArray *s)
+{
+    StgInfoTable *info = INFO_PTR_TO_STRUCT(s->header.info);
+    if (info->type == MUT_CONSTR_EXT_CLEAN)
+        dirty_MUT_CON_EXT(cap,(StgClosure*)s);
+    else if (info->type != MUT_CONSTR_EXT_DIRTY)
+        dirty_TARRAY(cap,s); // unlocking is due to a write.
+}
+
+/*......................................................................*/
+
 #define IF_STM_UNIPROC(__X)  do { } while (0)
 #define IF_STM_CG_LOCK(__X)  do { } while (0)
 #define IF_STM_FG_LOCKS(__X) do { } while (0)
@@ -209,7 +220,7 @@ static void unlock_tarray(Capability *cap,
                         StgTArray *s,
                         StgBool was_update) {
   if (was_update) {
-      dirty_TARRAY(cap,s); // unlocking is due to a write.
+    dirty_TARRAY_or_MUT_CON(cap, s);
   }
 }
 
@@ -334,7 +345,7 @@ static void unlock_tarray(Capability *cap,
                         StgTArray *s,
                         StgBool was_update) {
   if (was_update) {
-      dirty_TARRAY(cap,s); // unlocking is due to a write.
+      dirty_TARRAY_or_MUT_CON(cap, s); // unlocking is due to a write.
   }
 }
 
@@ -418,7 +429,7 @@ static void unlock_tarray(Capability *cap,
         // to track which ones to dirty.  With the lock counter, we are
         // already writing to the same cacheline as the header, so
         // a lot would have to change to get this benefit.
-        dirty_TARRAY(cap,s); // Assume the unlocking is due to a write.
+        dirty_TARRAY_or_MUT_CON(cap,s); // Assume the unlocking is due to a write.
     }
     else {
         // Nothing was changed, so unlock by simply putting back the
@@ -1496,7 +1507,7 @@ static StgBool validate_and_acquire_ownership (Capability *cap,
 // Keir Fraser's PhD dissertation "Practical lock-free programming" discuss
 // this kind of algorithm.
 
-#if defined(STM_FG_LOCKS)
+#if !defined(STM_FG_LOCKS)
 static StgBool check_read_only(Capability* cap STG_UNUSED, StgTRecHeader *trec STG_UNUSED) {
 #else
 static StgBool check_read_only(Capability* cap, StgTRecHeader *trec) {
@@ -1811,7 +1822,6 @@ static TArrayRecEntry *get_array_entry_for(StgTRecHeader *trec, StgTArray *tarra
 
 static int DiffHeapUse(bdescr* bs, bdescr* be, int s, int e)
 {
-    
     int total = 0;
 
     if (bs == be)
@@ -1869,7 +1879,7 @@ static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, 
     // we just want the difference.  If start and end are different blocks, add
     // BLOCK_SIZE for each intervening block.  Record these stats in the stm_stats
     // structure.  For STM we see aborted transactions allocations.  In HTM we don't.
-    
+
     if ( trec->HpStart == 0
       || !HEAP_ALLOCED((StgPtr)trec->HpStart)
       || (((RtsFlags.ConcFlags.stmAccum/3) == 1) &&  read_only)  // Only record if wrote
@@ -1881,7 +1891,7 @@ static void RecordHeapUse(Capability *cap, StgTRecHeader *trec, StgBool result, 
 
     bdescr* bs = Bdescr((StgPtr)trec->HpStart);
     bdescr* be = Bdescr((StgPtr)trec->HpEnd);
-    
+
     TRACE("%p : alloc check bdescr %p -> %p, htm %d result %d, read_only %d"
           , trec, bs, be, htm, result, read_only);
 
@@ -2009,7 +2019,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
      if (e -> expected_value.ptr != e -> new_value.ptr) {
         if (e -> offset < e -> tarray -> ptrs) // If this is a ptr access
         {
-            dirty_TARRAY(cap, e -> tarray);
+            dirty_TARRAY_or_MUT_CON(cap, e -> tarray);
         }
         unpark_waiters_on(cap, bloom_add_array(0, e -> tarray -> hash_id, e -> offset));
         read_only = FALSE;
@@ -2053,7 +2063,7 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
   // Fallback to software commit.
   cap->stm_stats->htm_fallback++;
 #endif
-  
+
   // Use a read-phase (i.e. don't lock TVars we've read but not updated) if
   // the configueration lets us use a read phase.
   result = validate_and_acquire_ownership(cap, trec, (!config_use_read_phase), TRUE);
@@ -2452,9 +2462,9 @@ void stmWriteTVar(Capability *cap,
 /*......................................................................*/
 
 void stmInitMutCon(StgClosure* obj) {
-    StgTArray *tarray = UNTAG_CLOSURE(obj);
-    const StgInfoTable *info = get_itbl(tarray);
-    
+    StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+    const StgInfoTable *info = get_itbl((StgClosure*)tarray);
+
     tarray -> lock    = 0;
     tarray -> hash_id = (StgWord)obj;
     tarray -> ptrs    = info->layout.payload.ptrs;
@@ -2470,9 +2480,8 @@ StgClosure *stmReadTRef(Capability *cap,
                         StgClosure* obj,
                         StgWord pre_tag_index) {
 
-  StgWord tag = GET_CLOSURE_TAG(obj);
-  StgWord index = pre_tag_index + tag;
-  StgTArray *tarray = UNTAG_CLOSURE(obj);
+  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
   StgTRecHeader *entry_in = NULL;
   StgClosure *result = NULL;
   TArrayRecEntry *entry = NULL;
@@ -2521,9 +2530,11 @@ void stmWriteTRef(Capability *cap,
                   StgWord pre_tag_index,
                   StgClosure *new_value) {
 
-  StgWord tag = GET_CLOSURE_TAG(obj);
-  StgWord index = pre_tag_index + tag;
-  StgTArray *tarray = UNTAG_CLOSURE(obj);
+  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+  // TODO: improve this code by using this representation more directly
+  // instead of reusing the existing get_array_entry_for.
+  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
+  // StgWord index = (pre_tag_index + tag - sizeof(StgTArray)) / 8;
   StgTRecHeader *entry_in = NULL;
   TArrayRecEntry *entry = NULL;
   TRACE("%p : stmWriteTRef(%p[%d], %p)", trec, tarray, index, new_value);

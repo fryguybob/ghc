@@ -611,6 +611,11 @@ loop:
       copy_tag(p,info,q,sizeW_fromITBL(INFO_PTR_TO_STRUCT(info)),gen_no,tag);
       return;
 
+  case MUT_CONSTR_EXT_CLEAN:
+  case MUT_CONSTR_EXT_DIRTY:
+      copy_tag(p,info,q,mut_constr_ext_sizeW_fromITBL(INFO_PTR_TO_STRUCT(info)),gen_no,tag);
+      return;
+
   case BLACKHOLE:
   {
       StgClosure *r;
@@ -939,6 +944,13 @@ selector_loop:
 
     info = INFO_PTR_TO_STRUCT(info);
     switch (info->type) {
+      case MUT_CONSTR_CLEAN:
+      case MUT_CONSTR_DIRTY:
+      case MUT_CONSTR_EXT_CLEAN:
+      case MUT_CONSTR_EXT_DIRTY:
+          goto bale_out; // TODO: I don't think we can select a Ref#!!!
+                         // Is this or should this be ruled out elsewhere?
+                         // I don't see cases for other mutable objects.
       case WHITEHOLE:
           goto bale_out; // about to be evacuated by another thread (or a loop).
 
@@ -950,9 +962,7 @@ selector_loop:
       case CONSTR_0_2:
       case CONSTR_STATIC:
       case CONSTR_NOCAF_STATIC:
-      case MUT_CONSTR_CLEAN:
-      case MUT_CONSTR_DIRTY:
-          {
+         {
               // check that the size is in range
               ASSERT(field <  (StgWord32)(info->layout.payload.ptrs +
                                           info->layout.payload.nptrs));
