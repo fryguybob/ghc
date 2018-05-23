@@ -34,8 +34,7 @@
 #define STM_H
 
 #ifdef THREADED_RTS
-//#define STM_CG_LOCK
-#define STM_FG_LOCKS
+#define STM_CG_LOCK
 #else
 #define STM_UNIPROC
 #endif
@@ -172,7 +171,7 @@ void stmWaitUnlock(Capability *cap, StgTRecHeader *trec);
  * End a hardware transaction and add it's read set to the
  * wakeup bloom filters.
  */
-
+void htmWait(Capability *cap, StgTSO *tso, StgHTRecHeader *htrec);
 #endif
 
 /*

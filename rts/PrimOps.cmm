@@ -405,6 +405,7 @@ stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
     again: MAYBE_GC(again);
 
     words = BYTES_TO_WDS(SIZEOF_StgStmMutArrPtrs) + n + np;
+    // TODO: allocateCacheAligned
     ("ptr" arr) = ccall allocate(MyCapability() "ptr",words);
     TICK_ALLOC_PRIM(SIZEOF_StgStmMutArrPtrs, WDS(n + np), 0);
 
@@ -1266,6 +1267,8 @@ stg_retryzh /* no arg list: explicit stack layout */
     W_ r;
     W_ htm;
 
+    (htm) = prim %xtest();
+
     // STM operations may allocate
     MAYBE_GC_ (stg_retryzh); // NB. not MAYBE_GC(), we cannot make a
                              // function call in an explicit-stack proc
@@ -1282,16 +1285,36 @@ retry_pop_stack:
     if (frame_type == CATCH_RETRY_FRAME) {
         // The retry reaches a CATCH_RETRY_FRAME before the atomic frame
 
-        ASSERT(outer != NO_TREC);
-        // Abort the transaction attempting the current branch
-        ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
-        ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
-
+#ifdef THREADED_RTS
+        if (htm != 0) { // HTM
+            // TODO: we could nest write sets here and check if writes happened on the
+            // speculative branch.  That is stash the current write set on the CatchRetryFrame
+            // and merge the write sets when committing while
+            if (StgHTRecHeader_write_set(trec) != 0) { // Writes have already happened.
+                // TODO: XABORT directly in cmm
+                ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
+            }
+        } else { // STM
+#endif
+            ASSERT(outer != NO_TREC);
+            // Abort the transaction attempting the current branch
+            ccall stmAbortTransaction(MyCapability() "ptr", trec "ptr");
+            ccall stmFreeAbortedTRec(MyCapability() "ptr", trec "ptr");
+#ifdef THREADED_RTS
+        }
+#endif
         if (!StgCatchRetryFrame_running_alt_code(frame) != 0) {
             // Retry in the first branch: try the alternative
-            ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
-            StgTRecHeader_HpStart(trec) = Hp;
-            StgTSO_trec(CurrentTSO) = trec;
+#ifndef THREADED_RTS
+            if (htm == 0) // STM
+            {
+#endif
+                ("ptr" trec) = ccall stmStartTransaction(MyCapability() "ptr", outer "ptr");
+            	StgTRecHeader_HpStart(trec) = Hp;
+                StgTSO_trec(CurrentTSO) = trec;
+#ifndef THREADED_RTS
+            }
+#endif
             StgCatchRetryFrame_running_alt_code(frame) = 1 :: CInt; // true;
             R1 = StgCatchRetryFrame_alt_code(frame);
             jump stg_ap_v_fast [R1];
@@ -1306,6 +1329,17 @@ retry_pop_stack:
     // We've reached the ATOMICALLY_FRAME: attempt to wait
     ASSERT(frame_type == ATOMICALLY_FRAME);
     ASSERT(outer == NO_TREC);
+
+#ifdef THREADED_RTS
+    if (htm != 0 && StgHTRecHeader_write_set(trec) == 0) // In HTM and read only.
+    {
+        ccall htmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
+        StgHeader_info(frame) = stg_atomically_waiting_frame_info;
+        Sp = frame;
+        R3 = trec; // passing to stmWaitUnblock()
+        jump stg_block_stmwait [R3];
+    }
+#endif
 
     (r) = ccall stmWait(MyCapability() "ptr", CurrentTSO "ptr", trec "ptr");
     if (r != 0) {
@@ -1359,7 +1393,8 @@ stg_newTVarzh (P_ init)
 {
     W_ tv;
 
-    ALLOC_PRIM_P (SIZEOF_StgTVar, stg_newTVarzh, init);
+    // TODO: allocateCacheAligned
+	ALLOC_PRIM_P (SIZEOF_StgTVar, stg_newTVarzh, init);
 
     tv = Hp - SIZEOF_StgTVar + WDS(1);
     SET_HDR (tv, stg_TVAR_DIRTY_info, CCCS);
@@ -1369,24 +1404,47 @@ stg_newTVarzh (P_ init)
 	(W_ w) = call stg_bloom_add(0,tv);
 
 	StgTVar_hash_id(tv) = w;
-    StgTVar_num_updates(tv) = 0;
 
     return (tv);
 }
 
 
-stg_readTVarzh (P_ tvar)
+stg_readTVarSTMzh (P_ tvar)
 {
     P_ trec;
     P_ result;
 
-    // Call to stmReadTVar may allocate
-    MAYBE_GC_P (stg_readTVarzh, tvar);
+    // Call to stmReadTVarSTM may allocate
+    MAYBE_GC_P (stg_readTVarSTMzh, tvar);
 
     trec = StgTSO_trec(CurrentTSO);
     ("ptr" result) = ccall stmReadTVar(MyCapability() "ptr", trec "ptr",
                                        tvar "ptr");
     return (result);
+}
+
+stg_readTVarzh (P_ tvar)
+{
+    P_ result;
+    P_ htrec;
+    W_ htm;
+    W_ filter;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        result = StgTVar_current_value(tvar);
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        filter = StgHTRecHeader_read_set(htrec) | StgTVar_hash_id(tvar);
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+    } else {
+        jump stg_readTVarSTMzh(tvar);
+    }
 }
 
 stg_readTVarIOzh ( P_ tvar /* :: TVar a */ )
@@ -1401,18 +1459,49 @@ again:
     return (result);
 }
 
-stg_writeTVarzh (P_ tvar,     /* :: TVar a */
-                 P_ new_value /* :: a      */)
+stg_writeTVarSTMzh (P_ tvar,     /* :: TVar a */
+                    P_ new_value /* :: a      */)
 {
     W_ trec;
 
-    // Call to stmWriteTVar may allocate
-    MAYBE_GC_PP (stg_writeTVarzh, tvar, new_value);
+    // Call to stmWriteTVarSTM may allocate
+    MAYBE_GC_PP (stg_writeTVarSTMzh, tvar, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTVar(MyCapability() "ptr", trec "ptr", tvar "ptr",
                        new_value "ptr");
     return ();
+}
+
+stg_writeTVarzh (P_ tvar,     /* :: TVar a */
+                 P_ new_value /* :: a      */)
+{
+    W_ htm;
+    P_ htrec;
+    W_ filter;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        StgTVar_current_value(tvar) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        filter = StgHTRecHeader_write_set(htrec) | StgTVar_hash_id(tvar);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+
+        // TODO: Here we need the GC write barrier when
+        // we are not in gen 0 (transaction with long
+        // lived TVars).  We could also add all promoted
+        // TVars as a new list of roots that we always
+        // follow at GC and avoid tracking the write set.
+        ccall dirty_TVAR(MyCapability() "ptr", tvar "ptr");
+
+        return ();
+    } else {
+        jump stg_writeTVarSTMzh(tvar,new_value);
+    }
 }
 
 stg_gc_prim_pn (P_ arg1, W_ arg2, W_ fun)
@@ -1460,27 +1549,65 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
         GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
    }
 
-stg_readTRefzh (P_ tref, W_ index)
+stg_readTRefSTMzh (P_ tref, W_ index)
 {
     P_ trec;
     P_ result;
 
-    // Call to stmReadTArraySTM may allocate
-    MAYBE_GC_PN (stg_readTRefzh, tref, index);
+    // Call to stmReadTRefSTM may allocate
+    MAYBE_GC_PN (stg_readTRefSTMzh, tref, index);
 
     trec = StgTSO_trec(CurrentTSO);
     ("ptr" result) = ccall stmReadTRef(MyCapability() "ptr", trec "ptr",
                                        tref "ptr", index);
+
+    //P_ obj;
+    //W_ tindex;
+
+    //obj  = UNTAG(tref);
+    //tindex = (GETTAG(tref) + index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+	
+    //ccall stmDebugTRefIndex(GETTAG(tref) + index, OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader, WDS(1), obj "ptr", tindex,  tref "ptr", index);
     return (result);
 }
 
-stg_writeTRefzh (P_ tref,      // :: Ref# s a
-                 W_ index,     // :: Word
-                 P_ new_value) // :: a
+stg_readTRefzh (P_ obj, W_ pre_tag_index)
+{
+    P_ result;
+	P_ htrec;
+    P_ tref;
+	W_ htm;
+    W_ index;
+
+	(htm) = prim %xtest();
+
+	if (htm != 0) {
+        tref  = UNTAG(obj);
+		index = (GETTAG(obj) + pre_tag_index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+		result = StgStmMutArrPtrs_payload(tref,index);
+
+		htrec = StgTSO_trec(CurrentTSO);
+
+		(W_ filter) = call stg_bloom_add_array(
+			StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tref),
+            index);
+
+		StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+	} else {
+		jump stg_readTRefSTMzh(obj, pre_tag_index);
+	}
+}
+
+stg_writeTRefSTMzh (P_ tref,      // :: Ref# s a
+                    W_ index,     // :: Word
+                    P_ new_value) // :: a
 {
     W_ trec;
     // Call to stmWriteTRefSTM may allocate
-    MAYBE_GC_PNP (stg_writeTRefzh, tref, index, new_value);
+    MAYBE_GC_PNP (stg_writeTRefSTMzh, tref, index, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTRef(MyCapability() "ptr", trec "ptr", tref "ptr", index,
@@ -1488,13 +1615,64 @@ stg_writeTRefzh (P_ tref,      // :: Ref# s a
     return ();
 }
 
-stg_readTArrayzh (P_ tarray, W_ index)
+stg_writeTRefzh (P_ obj,           // :: Ref# s a
+                 W_ pre_tag_index, // :: Word
+                 P_ new_value)     // :: a
+{
+    W_ htm;
+	W_ index;
+	P_ tref;
+    P_ htrec;
+        
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        tref  = UNTAG(obj);
+		index = (GETTAG(obj) + pre_tag_index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+        
+        StgStmMutArrPtrs_payload(tref,index) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tref),
+            index);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+
+		// TODO: check that the following is still the case:
+        // TArrays are always on the mut list after they are
+        // promoted.  We only need to dirty the header.  We
+        // also want to avoid the conflict, so check first.
+
+//        W_ info;
+
+		// TODO: TRef dirty is more complicated
+//        info = StgHeader_info(tref);
+//        if (info == stg_STM_MUT_ARR_PTRS_CLEAN_info)
+//        {
+//            SET_INFO(tref,stg_STM_MUT_ARR_PTRS_DIRTY_info);
+ //       }
+
+        // We do not need to do this:
+        //    ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
+
+        ccall dirty_MUT_CON_EXT(MyCapability() "ptr", tref "ptr");
+
+        return ();
+    } else {
+        jump stg_writeTRefSTMzh(obj,pre_tag_index,new_value);
+    }
+}
+
+stg_readTArraySTMzh (P_ tarray, W_ index)
 {
     P_ trec;
     P_ result;
 
     // Call to stmReadTArraySTM may allocate
-    MAYBE_GC_PN (stg_readTArrayzh, tarray, index);
+    MAYBE_GC_PN (stg_readTArraySTMzh, tarray, index);
 
     trec = StgTSO_trec(CurrentTSO);
     ("ptr" result) = ccall stmReadTArray(MyCapability() "ptr", trec "ptr",
@@ -1502,13 +1680,13 @@ stg_readTArrayzh (P_ tarray, W_ index)
     return (result);
 }
 
-stg_readTArrayWordzh (P_ tarray, W_ index)
+stg_readTArrayWordSTMzh (P_ tarray, W_ index)
 {
     P_ trec;
     P_ result;
 
    // Call to stmReadTArrayWordSTM may allocate
-    MAYBE_GC_PN (stg_readTArrayWordzh, tarray, index);
+    MAYBE_GC_PN (stg_readTArrayWordSTMzh, tarray, index);
 
     trec = StgTSO_trec(CurrentTSO);
     ("ptr" result) = ccall stmReadTArrayWord(MyCapability() "ptr", trec "ptr",
@@ -1516,13 +1694,66 @@ stg_readTArrayWordzh (P_ tarray, W_ index)
     return (result);
 }
 
-stg_writeTArrayzh (P_ tarray,    // :: TArray a
+stg_readTArrayzh (P_ tarray, W_ index)
+{
+    P_ result;
+    P_ htrec;
+    W_ htm;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        result = StgStmMutArrPtrs_payload(tarray,index);
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+    } else {
+        jump stg_readTArraySTMzh(tarray, index);
+    }
+}
+
+stg_readTArrayWordzh (P_ tarray, W_ index)
+{
+    W_ result;
+    P_ htrec;
+    W_ htm;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+
+        result = StgStmMutArrPtrs_payload(tarray,StgStmMutArrPtrs_ptrs(tarray) + index);
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+    } else {
+        jump stg_readTArrayWordSTMzh(tarray, index);
+    }
+}
+
+stg_writeTArraySTMzh (P_ tarray,    // :: TArray a
                       W_ index,     // :: Word
                       P_ new_value) // :: a
 {
     W_ trec;
     // Call to stmWriteTArraySTM may allocate
-    MAYBE_GC_PNP (stg_writeTArrayzh, tarray, index, new_value);
+    MAYBE_GC_PNP (stg_writeTArraySTMzh, tarray, index, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTArray(MyCapability() "ptr", trec "ptr", tarray "ptr", index,
@@ -1530,19 +1761,90 @@ stg_writeTArrayzh (P_ tarray,    // :: TArray a
     return ();
 }
 
-stg_writeTArrayWordzh (P_ tarray,    // :: TArray a
+stg_writeTArrayWordSTMzh (P_ tarray,    // :: TArray a
                           W_ index,     // :: Word
                           W_ new_value) // :: Word
 {
     W_ trec;
 
     // Call to stmWriteTArrayWordSTM may allocate
-    MAYBE_GC_PNN (stg_writeTArrayWordzh, tarray, index, new_value);
+    MAYBE_GC_PNN (stg_writeTArrayWordSTMzh, tarray, index, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTArrayWord(MyCapability() "ptr", trec "ptr", tarray "ptr", index,
                              new_value);
     return ();
+}
+
+stg_writeTArrayzh (P_ tarray,    // :: TArray a
+                   W_ index,     // :: Word
+                   P_ new_value) // :: a
+{
+    W_ htm;
+    P_ htrec;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        StgStmMutArrPtrs_payload(tarray,index) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+
+        // TArrays are always on the mut list after they are
+        // promoted.  We only need to dirty the header.  We
+        // also want to avoid the conflict, so check first.
+
+        W_ info;
+
+        info = StgHeader_info(tarray);
+        if (info == stg_STM_MUT_ARR_PTRS_CLEAN_info)
+        {
+            SET_INFO(tarray,stg_STM_MUT_ARR_PTRS_DIRTY_info);
+        }
+
+        // We do not need to do this:
+        //    ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
+
+        return ();
+    } else {
+        jump stg_writeTArraySTMzh(tarray,index,new_value);
+    }
+}
+
+stg_writeTArrayWordzh (P_ tarray,    // :: TArray a
+                       W_ index,     // :: Word
+                       W_ new_value) // :: Word
+{
+    W_ htm;
+    P_ htrec;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        StgStmMutArrPtrs_payload(tarray, StgStmMutArrPtrs_ptrs(tarray) + index) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tarray),
+            index);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+
+        // We only need to dirty the header if a pointer
+        // changes.  Mutating a word comes at no cost.
+        return ();
+    } else {
+        jump stg_writeTArrayWordSTMzh(tarray, index, new_value);
+    }
 }
 
 stg_resetSTMStatszh ()
