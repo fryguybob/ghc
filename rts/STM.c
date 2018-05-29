@@ -1649,8 +1649,8 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
         // Either the entry is an update or we're not using a read phase:
         // write the value back to the TVar, unlocking it if necessary.
 
-        TRACE("%p : writing 0x%012x to %p[%d], waking waiters, version: %ld", trec,
-                      e -> new_value.ptr, s, e -> offset, s -> num_updates);
+        TRACE("%p : writing 0x%012x to %p[%d], waking waiters", trec,
+                      e -> new_value.ptr, s, e -> offset);
         unpark_waiters_on(cap, bloom_add_array(0, s -> hash_id, e -> offset));
         // Perform write
         s -> payload[e -> offset] = e -> new_value.ptr;
@@ -2171,7 +2171,7 @@ void stmInitMutCon(StgClosure* obj) {
 }
 
 /*......................................................................*/
-
+/*
 void stmDebugTRefIndex(StgWord a,
                         StgWord b,
                         StgWord c,
@@ -2191,7 +2191,7 @@ void stmDebugTRefIndex(StgWord a,
   if (index != indexCmm) {
     barf("TRef cmm indexing wrong.");
   }
-}
+}*/
 
 StgClosure *stmReadTRef(Capability *cap,
                         StgTRecHeader *trec,

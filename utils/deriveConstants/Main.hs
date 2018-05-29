@@ -519,7 +519,6 @@ wanteds os = concat
           ,closureSize  C "StgTVar"
           ,closureField C "StgTVar" "current_value"
           ,closureField C "StgTVar" "hash_id"
-          ,closureField C "StgTVar" "num_updates"
 
           ,closureSize  C "StgWeak"
           ,closureField C "StgWeak" "link"

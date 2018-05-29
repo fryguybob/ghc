@@ -1641,23 +1641,8 @@ stg_writeTRefzh (P_ obj,           // :: Ref# s a
 
         StgHTRecHeader_write_set(htrec) = filter;
 
-		// TODO: check that the following is still the case:
-        // TArrays are always on the mut list after they are
-        // promoted.  We only need to dirty the header.  We
-        // also want to avoid the conflict, so check first.
-
-//        W_ info;
-
-		// TODO: TRef dirty is more complicated
-//        info = StgHeader_info(tref);
-//        if (info == stg_STM_MUT_ARR_PTRS_CLEAN_info)
-//        {
-//            SET_INFO(tref,stg_STM_MUT_ARR_PTRS_DIRTY_info);
- //       }
-
-        // We do not need to do this:
-        //    ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
-
+		// TODO: TRef dirty is more complicated, but perhaps we could
+        // inline it here somehow.
         ccall dirty_MUT_CON_EXT(MyCapability() "ptr", tref "ptr");
 
         return ();
@@ -1797,20 +1782,16 @@ stg_writeTArrayzh (P_ tarray,    // :: TArray a
 
         StgHTRecHeader_write_set(htrec) = filter;
 
-        // TArrays are always on the mut list after they are
-        // promoted.  We only need to dirty the header.  We
-        // also want to avoid the conflict, so check first.
+        // TODO: This is not enough, we need to add to the mut list
+        // in this version.  We should try both ways though.
+        // W_ info;
+        // info = StgHeader_info(tarray);
+        // if (info == stg_STM_MUT_ARR_PTRS_CLEAN_info)
+        // {
+        //     SET_INFO(tarray,stg_STM_MUT_ARR_PTRS_DIRTY_info);
+        // }
 
-        W_ info;
-
-        info = StgHeader_info(tarray);
-        if (info == stg_STM_MUT_ARR_PTRS_CLEAN_info)
-        {
-            SET_INFO(tarray,stg_STM_MUT_ARR_PTRS_DIRTY_info);
-        }
-
-        // We do not need to do this:
-        //    ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
+        ccall dirty_TARRAY(MyCapability() "ptr", tarray "ptr");
 
         return ();
     } else {

@@ -491,10 +491,10 @@ INFO_TABLE(stg_MVAR_DIRTY,3,0,MVAR_DIRTY,"MVAR","MVAR")
    STM
    -------------------------------------------------------------------------- */
 
-INFO_TABLE(stg_TVAR_CLEAN, 1, 2, TVAR, "TVAR", "TVAR")
+INFO_TABLE(stg_TVAR_CLEAN, 1, 1, TVAR, "TVAR", "TVAR")
 { foreign "C" barf("TVAR_CLEAN object entered!") never returns; }
 
-INFO_TABLE(stg_TVAR_DIRTY, 1, 2, TVAR, "TVAR", "TVAR")
+INFO_TABLE(stg_TVAR_DIRTY, 1, 1, TVAR, "TVAR", "TVAR")
 { foreign "C" barf("TVAR_DIRTY object entered!") never returns; }
 
 INFO_TABLE(stg_TREC_CHUNK, 0, 0, TREC_CHUNK, "TREC_CHUNK", "TREC_CHUNK")
