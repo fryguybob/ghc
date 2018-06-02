@@ -68,9 +68,9 @@ module DataCon (
 
 import {-# SOURCE #-} MkId( DataConBoxer )
 import Type
-import TyCoRep ( Type(..) )
+import TyCoRep ( Type(..), isLiftedTypeKind )
 import {-# SOURCE #-} TysWiredIn ( intTy, mkTupleTy )
-import TysPrim ( mkRefPrimTy, realWorldTy )
+import TysPrim ( mkRefPrimTy, mkRefUPrimTy, realWorldTy )
 import ForeignCall ( CType )
 import Coercion
 import Unify
@@ -1188,7 +1188,9 @@ dataConFullSigForPat MkData {dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs,
 
 mkMutTys :: HsMutableInfo -> Type -> Type
 mkMutTys HsImmutable t = t
-mkMutTys HsMutable t = mkRefPrimTy realWorldTy t -- mkAppTy act t
+mkMutTys HsMutable t
+    | isLiftedTypeKind (typeKind t) = mkRefPrimTy  realWorldTy t -- mkAppTy act t
+    | otherwise                     = mkRefUPrimTy realWorldTy t -- mkAppTy act t
 mkMutTys HsMutableArray t = mkRefPrimTy realWorldTy t
 -- TODO: Instead of realWorld this needs to be a type variable, but
 -- I'm not sure how to do that (probably in TcM from the place that

@@ -2012,18 +2012,18 @@ primop  WriteRefOp "writeRef#" GenPrimOp
         can_fail         = True
         code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
 
--- primop  ReadRefOp_word "readRefWord#" GenPrimOp
---   Ref# s Word# -> State# s -> (# State# s, Word# #)
---   {Dereference a mutable field.}
---   with has_side_effects = True
---        can_fail = True
---
---primop  WriteRefOp_word "writeRefWord#" GenPrimOp
---   Ref# s Word# -> Word# -> State# s -> State# s
---   {Write to a mutable field at a given reference.}
---   with has_side_effects = True
---        can_fail         = True
---
+primop  ReadRefOp_int "readRefInt#" GenPrimOp
+   RefU# s Int# -> State# s -> (# State# s, Int# #)
+   {Read a mutable field unlifted value.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefOp_int "writeRefInt#" GenPrimOp
+   RefU# s Int# -> Int# -> State# s -> State# s
+   {Write to a mutable field's unlifted value.}
+   with has_side_effects = True
+        can_fail         = True
+
 ------------------------------------------------------------------------
 section "Exceptions"
 ------------------------------------------------------------------------

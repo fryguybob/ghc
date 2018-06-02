@@ -38,6 +38,7 @@ module TysPrim(
         voidPrimTyCon,          voidPrimTy,
         statePrimTyCon,         mkStatePrimTy,
         refPrimTyCon,           mkRefPrimTy,
+        refUPrimTyCon,          mkRefUPrimTy,
         refAddrTyCon,           refAddrTy,
         refIndexTyCon,          mkRefIndexTy,
         refAddrAltTyCon,        refAddrAltTy,
@@ -87,7 +88,7 @@ module TysPrim(
 import {-# SOURCE #-} TysWiredIn
   ( runtimeRepTy, liftedTypeKind
   , vecRepDataConTyCon, ptrRepUnliftedDataConTyCon
-  , voidRepDataConTy, intRepDataConTy, refRepDataConTy
+  , voidRepDataConTy, intRepDataConTy, refRepDataConTy, refURepDataConTy
   , wordRepDataConTy, int64RepDataConTy, word64RepDataConTy, addrRepDataConTy
   , floatRepDataConTy, doubleRepDataConTy
   , vec2DataConTy, vec4DataConTy, vec8DataConTy, vec16DataConTy, vec32DataConTy
@@ -146,6 +147,7 @@ primTyCons
     , stableNamePrimTyCon
     , statePrimTyCon
 	, refPrimTyCon
+    , refUPrimTyCon
     , voidPrimTyCon
     , proxyPrimTyCon
     , threadIdPrimTyCon
@@ -178,7 +180,7 @@ mkBuiltInPrimTc fs unique tycon
                   BuiltInSyntax
 
 
-charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, refPrimTyConName, refAddrTyConName, refIndexTyConName, refAddrAltTyConName, refIndexAltTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, stmMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName :: Name
+charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, refPrimTyConName, refUPrimTyConName, refAddrTyConName, refIndexTyConName, refAddrAltTyConName, refIndexAltTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, stmMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName :: Name
 charPrimTyConName             = mkPrimTc (fsLit "Char#") charPrimTyConKey charPrimTyCon
 intPrimTyConName              = mkPrimTc (fsLit "Int#") intPrimTyConKey  intPrimTyCon
 int32PrimTyConName            = mkPrimTc (fsLit "Int32#") int32PrimTyConKey int32PrimTyCon
@@ -191,6 +193,7 @@ floatPrimTyConName            = mkPrimTc (fsLit "Float#") floatPrimTyConKey floa
 doublePrimTyConName           = mkPrimTc (fsLit "Double#") doublePrimTyConKey doublePrimTyCon
 statePrimTyConName            = mkPrimTc (fsLit "State#") statePrimTyConKey statePrimTyCon
 refPrimTyConName              = mkPrimTc (fsLit "Ref#") refPrimTyConKey refPrimTyCon
+refUPrimTyConName             = mkPrimTc (fsLit "RefU#") refUPrimTyConKey refUPrimTyCon
 refAddrTyConName              = mkPrimTc (fsLit "RefAddr#") refAddrTyConKey refAddrTyCon
 refIndexTyConName             = mkPrimTc (fsLit "RefIndex#") refIndexTyConKey refIndexTyCon
 refAddrAltTyConName           = mkPrimTc (fsLit "RefAddrAlt#") refAddrAltTyConKey refAddrAltTyCon
@@ -685,6 +688,18 @@ refPrimTyCon = mkPrimTyCon refPrimTyConName binders result_kind roles
     roles       = [Nominal,Nominal]
     binders     = map (const (Anon liftedTypeKind)) roles
     result_kind = tYPE refRepDataConTy
+
+-- TODO: When we move to a newer GHC I think we can do better here.
+-- Right now, we will assume Int#.
+mkRefUPrimTy :: Type -> Type -> Type
+mkRefUPrimTy s a = TyConApp refUPrimTyCon [s, a]
+
+refUPrimTyCon :: TyCon
+refUPrimTyCon = mkPrimTyCon refUPrimTyConName binders result_kind roles
+  where
+    roles       = [Nominal,Nominal]
+    binders     = [Anon liftedTypeKind, Anon (tYPE intRepDataConTy)]
+    result_kind = tYPE refURepDataConTy
 
 -- Durring unarise a Ref# is split into an address and an index.
 -- When stored the address part will be a pointer and the index an

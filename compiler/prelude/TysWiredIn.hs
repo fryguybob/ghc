@@ -98,7 +98,7 @@ module TysWiredIn (
         voidRepDataConTy, intRepDataConTy,
         wordRepDataConTy, int64RepDataConTy, word64RepDataConTy, addrRepDataConTy,
         floatRepDataConTy, doubleRepDataConTy, unboxedTupleRepDataConTy,
-        refRepDataConTy,
+        refRepDataConTy, refURepDataConTy,
 
         vec2DataConTy, vec4DataConTy, vec8DataConTy, vec16DataConTy, vec32DataConTy,
         vec64DataConTy,
@@ -302,7 +302,7 @@ runtimeRepSimpleDataConNames
       , fsLit "VoidRep", fsLit "IntRep"
       , fsLit "WordRep", fsLit "Int64Rep", fsLit "Word64Rep"
       , fsLit "AddrRep", fsLit "FloatRep", fsLit "DoubleRep"
-      , fsLit "UnboxedTupleRep", fsLit "RefRep" ]
+      , fsLit "UnboxedTupleRep", fsLit "RefRep", fsLit "RefURep" ]
       runtimeRepSimpleDataConKeys
       runtimeRepSimpleDataCons
 
@@ -830,7 +830,7 @@ runtimeRepSimpleDataCons@(ptrRepLiftedDataCon : ptrRepUnliftedDataCon : _)
   = zipWithLazy mk_runtime_rep_dc
     [ PtrRep, PtrRep, VoidRep, IntRep, WordRep, Int64Rep
     , Word64Rep, AddrRep, FloatRep, DoubleRep
-    , panic "unboxed tuple PrimRep", panic "mutable field PrimRep" ]
+    , panic "unboxed tuple PrimRep", panic "mutable field PrimRep", panic "mutable field PrimRep" ]
     runtimeRepSimpleDataConNames
   where
     mk_runtime_rep_dc primrep name
@@ -839,10 +839,11 @@ runtimeRepSimpleDataCons@(ptrRepLiftedDataCon : ptrRepUnliftedDataCon : _)
 -- See Note [Wiring in RuntimeRep]
 voidRepDataConTy, intRepDataConTy, wordRepDataConTy, int64RepDataConTy,
   word64RepDataConTy, addrRepDataConTy, floatRepDataConTy, doubleRepDataConTy,
-  unboxedTupleRepDataConTy, refRepDataConTy :: Type
+  unboxedTupleRepDataConTy, refRepDataConTy, refURepDataConTy :: Type
 [_, _, voidRepDataConTy, intRepDataConTy, wordRepDataConTy, int64RepDataConTy,
    word64RepDataConTy, addrRepDataConTy, floatRepDataConTy, doubleRepDataConTy,
-   unboxedTupleRepDataConTy, refRepDataConTy] = map (mkTyConTy . promoteDataCon)
+   unboxedTupleRepDataConTy, refRepDataConTy, refURepDataConTy]
+        = map (mkTyConTy . promoteDataCon)
                                    runtimeRepSimpleDataCons
 
 vecCountTyCon :: TyCon
@@ -892,6 +893,9 @@ int8ElemRepDataConTy, int16ElemRepDataConTy, int32ElemRepDataConTy,
 -- The type ('PtrRepLifted)
 ptrRepLiftedTy :: Type
 ptrRepLiftedTy = mkTyConTy $ promoteDataCon ptrRepLiftedDataCon
+
+ptrRepUnliftedTy :: Type
+ptrRepUnliftedTy = mkTyConTy $ promoteDataCon ptrRepUnliftedDataCon
 
 {- *********************************************************************
 *                                                                      *
