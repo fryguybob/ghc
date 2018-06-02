@@ -60,6 +60,7 @@ module TyCon(
         isTyConWithSrcDataCons,
         isTcTyCon,
         isRefTyCon,
+        isRefUTyCon,
         isRefAddrTyCon,
         isRefIndexTyCon,
 
@@ -1734,6 +1735,11 @@ isRefTyCon :: TyCon -> Bool
 isRefTyCon tc@(PrimTyCon {})
   = hasKey tc refPrimTyConKey
 isRefTyCon _ = False
+
+isRefUTyCon :: TyCon -> Bool
+isRefUTyCon tc@(PrimTyCon {})
+  = hasKey tc refUPrimTyConKey
+isRefUTyCon _ = False
 
 isRefAddrTyCon :: TyCon -> Bool
 isRefAddrTyCon tc@(PrimTyCon {})

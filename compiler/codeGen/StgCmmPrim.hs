@@ -648,6 +648,15 @@ emitPrimOp dflags [] WriteRefOp  args@[addr,_,_] = pprTrace "WriteRefPtr:" (ppr 
             (cmmUntag dflags addr,AddrHint)]
     emitComment $ mkFastString "End WriteRefPtr"
 
+emitPrimOp dflags res ReadRefOp_int  args = pprTrace "ReadRefInt:" (ppr (args, res)) $ do
+    emitComment $ mkFastString "Begin ReadRefInt"
+    doIndexOffAddrOpAs Nothing (bWord dflags) b8 res args
+    emitComment $ mkFastString "End ReadRefInt"
+emitPrimOp dflags [] WriteRefOp_int  args@[addr,_,_] = pprTrace "WriteRefInt:" (ppr args) $ do
+    emitComment $ mkFastString "Begin WriteRefInt"
+    doWriteOffAddrOp Nothing b8 [] args
+    emitComment $ mkFastString "End WriteRefPtr"
+
 {-
 emitPrimOp dflags res ReadRefOp_word args = pprTrace "ReadRefWord:" (ppr (args, res)) $
     doIndexByteArrayOp Nothing (bWord dflags) res args
