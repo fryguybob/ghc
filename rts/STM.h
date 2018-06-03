@@ -234,6 +234,26 @@ void stmWriteTRef(Capability *cap,
                   StgClosure *new_value);
 
 
+/*
+ * Return the logical contents of 'tref' within the context of the
+ * thread's current transaction.
+ */
+
+StgInt stmReadTRefInt(Capability *cap,
+                      StgTRecHeader *trec,
+                      StgClosure *tarray,
+                      StgWord index);
+
+/* Update the logical contents of 'tref' within the context of the
+ * thread's current transaction.
+ */
+
+void stmWriteTRefInt(Capability *cap,
+                     StgTRecHeader *trec,
+                     StgClosure *tarray,
+                     StgWord index,
+                     StgInt new_value);
+
 /* ----- TArray ----- */
 
 typedef StgStmMutArrPtrs StgTArray;

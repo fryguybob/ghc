@@ -2524,6 +2524,55 @@ StgClosure *stmReadTRef(Capability *cap,
 
 /*......................................................................*/
 
+StgInt stmReadTRefInt(Capability *cap,
+                      StgTRecHeader *trec,
+                      StgClosure* obj,
+                      StgWord pre_tag_index) {
+
+  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
+  StgTRecHeader *entry_in = NULL;
+  StgInt result = 0;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmReadTRefInt(%p[%d])", trec, tarray, index);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE ||
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      result = (StgInt)(entry -> new_value.word);
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      TRACE("%p : stmReadTRefInt copied from %p", trec, entry_in);
+      new_entry -> tarray = tarray;
+      new_entry -> offset = index;
+      new_entry -> expected_value.word = entry -> expected_value.word;
+      new_entry -> new_value.word = entry -> new_value.word;
+      result = (StgInt)(new_entry -> new_value.word);
+    }
+  } else {
+    // No entry found
+    StgInt current_value = (StgInt)read_array_current_value(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    TRACE("%p : stmReadTRefInt new entry with value %d", trec, current_value);
+    new_entry -> tarray = tarray;
+    new_entry -> offset = index;
+    new_entry -> expected_value.word = current_value;
+    new_entry -> new_value.word = (StgWord)current_value;
+    result = current_value;
+  }
+
+  TRACE("%p : stmReadTRefInt(%p[%d])=%d", trec, tarray, index, result);
+  return result;
+}
+
+/*......................................................................*/
+
 void stmWriteTRef(Capability *cap,
                   StgTRecHeader *trec,
                   StgClosure *obj,
@@ -2567,8 +2616,54 @@ void stmWriteTRef(Capability *cap,
   }
 
   TRACE("%p : stmWriteTRef done", trec);
-}/*......................................................................*/
+}
 
+/*......................................................................*/
+
+void stmWriteTRefInt(Capability *cap,
+                     StgTRecHeader *trec,
+                     StgClosure *obj,
+                     StgWord pre_tag_index,
+                     StgInt new_value) {
+
+  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+  // TODO: improve this code by using this representation more directly
+  // instead of reusing the existing get_array_entry_for.
+  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
+  // StgWord index = (pre_tag_index + tag - sizeof(StgTArray)) / 8;
+  StgTRecHeader *entry_in = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmWriteTRefInt(%p[%d], %d)", trec, tarray, index, new_value);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE ||
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      entry -> new_value.word = (StgWord)new_value;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> offset = index;
+      new_entry -> expected_value.word = entry -> expected_value.word;
+      new_entry -> new_value.word = (StgWord)new_value;
+    }
+  } else {
+    // No entry found
+    StgClosure *current_value = read_array_current_value(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> offset = index;
+    new_entry -> expected_value.word = (StgWord)current_value;
+    new_entry -> new_value.word = (StgWord)new_value;
+  }
+
+  TRACE("%p : stmWriteTRefInt done", trec);
+}
 
 
 /*......................................................................*/

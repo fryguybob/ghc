@@ -1474,6 +1474,20 @@ stg_readTRefzh (P_ tref, W_ index)
     return (result);
 }
 
+stg_readTRefIntzh (P_ tref, W_ index)
+{
+    P_ trec;
+    W_ result;
+
+    // Call to stmReadTRef may allocate
+    MAYBE_GC_PN (stg_readTRefIntzh, tref, index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    (result) = ccall stmReadTRefInt(MyCapability() "ptr", trec "ptr", tref "ptr", index);
+
+    return (result);
+}
+
 stg_writeTRefzh (P_ tref,      // :: Ref# s a
                  W_ index,     // :: Word
                  P_ new_value) // :: a
@@ -1487,6 +1501,21 @@ stg_writeTRefzh (P_ tref,      // :: Ref# s a
                        new_value "ptr");
     return ();
 }
+
+stg_writeTRefIntzh (P_ tref,      // :: RefU# s a
+                    W_ index,     // :: Word
+                    P_ new_value) // :: a
+{
+    W_ trec;
+    // Call to stmWriteTRefIntSTM may allocate
+    MAYBE_GC_PNP (stg_writeTRefIntzh, tref, index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTRefInt(MyCapability() "ptr", trec "ptr", tref "ptr", index,
+                          new_value "ptr");
+    return ();
+}
+
 
 stg_readTArrayzh (P_ tarray, W_ index)
 {
@@ -1505,14 +1534,14 @@ stg_readTArrayzh (P_ tarray, W_ index)
 stg_readTArrayWordzh (P_ tarray, W_ index)
 {
     P_ trec;
-    P_ result;
+    W_ result;
 
    // Call to stmReadTArrayWordSTM may allocate
     MAYBE_GC_PN (stg_readTArrayWordzh, tarray, index);
 
     trec = StgTSO_trec(CurrentTSO);
-    ("ptr" result) = ccall stmReadTArrayWord(MyCapability() "ptr", trec "ptr",
-                                             tarray "ptr", index);
+    (result) = ccall stmReadTArrayWord(MyCapability() "ptr", trec "ptr",
+                                       tarray "ptr", index);
     return (result);
 }
 
