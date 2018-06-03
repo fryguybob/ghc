@@ -1601,6 +1601,56 @@ stg_readTRefzh (P_ obj, W_ pre_tag_index)
 	}
 }
 
+stg_readTRefIntSTMzh (P_ tref, W_ index)
+{
+    P_ trec;
+    W_ result;
+
+    // Call to stmReadTRefSTM may allocate
+    MAYBE_GC_PN (stg_readTRefIntSTMzh, tref, index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    (result) = ccall stmReadTRefInt(MyCapability() "ptr", trec "ptr", tref "ptr", index);
+    //P_ obj;
+    //W_ tindex;
+
+    //obj  = UNTAG(tref);
+    //tindex = (GETTAG(tref) + index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+
+    //ccall stmDebugTRefIndex(GETTAG(tref) + index, OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader, WDS(1), obj "ptr", tindex,  tref "ptr", index);
+    return (result);
+}
+
+stg_readTRefIntzh (P_ obj, W_ pre_tag_index)
+{
+    W_ result;
+    P_ htrec;
+    P_ tref;
+    W_ htm;
+    W_ index;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        tref  = UNTAG(obj);
+        index = (GETTAG(obj) + pre_tag_index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+        result = StgStmMutArrPtrs_payload(tref,index);
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tref),
+            index);
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+    } else {
+        jump stg_readTRefIntSTMzh(obj, pre_tag_index);
+    }
+}
+
 stg_writeTRefSTMzh (P_ tref,      // :: Ref# s a
                     W_ index,     // :: Word
                     P_ new_value) // :: a
@@ -1635,7 +1685,7 @@ stg_writeTRefzh (P_ obj,           // :: Ref# s a
         htrec = StgTSO_trec(CurrentTSO);
 
         (W_ filter) = call stg_bloom_add_array(
-            StgHTRecHeader_read_set(htrec),
+            StgHTRecHeader_write_set(htrec),
             StgStmMutArrPtrs_hash_id(tref),
             index);
 
@@ -1648,6 +1698,51 @@ stg_writeTRefzh (P_ obj,           // :: Ref# s a
         return ();
     } else {
         jump stg_writeTRefSTMzh(obj,pre_tag_index,new_value);
+    }
+}
+
+stg_writeTRefIntSTMzh (P_ tref,      // :: RefU# s a
+                       W_ index,     // :: Word
+                       P_ new_value) // :: a
+{
+    W_ trec;
+    // Call to stmWriteTRefIntSTM may allocate
+    MAYBE_GC_PNP (stg_writeTRefIntSTMzh, tref, index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTRefInt(MyCapability() "ptr", trec "ptr", tref "ptr", index,
+                          new_value "ptr");
+    return ();
+}
+
+stg_writeTRefIntzh (P_ obj,           // :: RefU# s a
+                    W_ pre_tag_index, // :: Word
+                    P_ new_value)     // :: a
+{
+    W_ htm;
+    W_ index;
+    P_ tref;
+    P_ htrec;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        tref  = UNTAG(obj);
+        index = (GETTAG(obj) + pre_tag_index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+
+        StgStmMutArrPtrs_payload(tref,index) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_write_set(htrec),
+            StgStmMutArrPtrs_hash_id(tref),
+            index);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+        return ();
+    } else {
+        jump stg_writeTRefIntSTMzh(obj,pre_tag_index,new_value);
     }
 }
 
@@ -1668,14 +1763,14 @@ stg_readTArraySTMzh (P_ tarray, W_ index)
 stg_readTArrayWordSTMzh (P_ tarray, W_ index)
 {
     P_ trec;
-    P_ result;
+    W_ result;
 
    // Call to stmReadTArrayWordSTM may allocate
     MAYBE_GC_PN (stg_readTArrayWordSTMzh, tarray, index);
 
     trec = StgTSO_trec(CurrentTSO);
-    ("ptr" result) = ccall stmReadTArrayWord(MyCapability() "ptr", trec "ptr",
-                                             tarray "ptr", index);
+    (result) = ccall stmReadTArrayWord(MyCapability() "ptr", trec "ptr",
+                                       tarray "ptr", index);
     return (result);
 }
 
@@ -1776,7 +1871,7 @@ stg_writeTArrayzh (P_ tarray,    // :: TArray a
         htrec = StgTSO_trec(CurrentTSO);
 
         (W_ filter) = call stg_bloom_add_array(
-            StgHTRecHeader_read_set(htrec),
+            StgHTRecHeader_write_set(htrec),
             StgStmMutArrPtrs_hash_id(tarray),
             index);
 
@@ -1814,7 +1909,7 @@ stg_writeTArrayWordzh (P_ tarray,    // :: TArray a
         htrec = StgTSO_trec(CurrentTSO);
 
         (W_ filter) = call stg_bloom_add_array(
-            StgHTRecHeader_read_set(htrec),
+            StgHTRecHeader_write_set(htrec),
             StgStmMutArrPtrs_hash_id(tarray),
             index);
 
