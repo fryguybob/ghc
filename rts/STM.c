@@ -2049,6 +2049,7 @@ static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
                                             StgTArray *tarray,
                                             StgHalfWord index) {
 
+  ASSERT (index >= 0);
   ASSERT (index < tarray -> ptrs);
 
   StgClosure *result;
@@ -2065,6 +2066,7 @@ static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
 static StgWord read_array_current_value_word(StgTRecHeader *trec STG_UNUSED,
                                              StgTArray *tarray,
                                              StgHalfWord index) {
+  ASSERT (index >= 0);
   ASSERT (index < tarray -> words);
 
   StgWord result;
@@ -2248,7 +2250,7 @@ StgInt stmReadTRefInt(Capability *cap,
                       StgWord pre_tag_index) {
 
   StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
-  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
+  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord) - tarray -> ptrs;
   StgTRecHeader *entry_in = NULL;
   StgInt result = 0;
   TArrayRecEntry *entry = NULL;
@@ -2257,7 +2259,7 @@ StgInt stmReadTRefInt(Capability *cap,
   ASSERT (trec -> state == TREC_ACTIVE ||
           trec -> state == TREC_CONDEMNED);
 
-  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+  entry = get_array_entry_for(trec, tarray, 1, index, &entry_in);
 
   if (entry != NULL) {
     if (entry_in == trec) {
@@ -2268,18 +2270,18 @@ StgInt stmReadTRefInt(Capability *cap,
       TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
       TRACE("%p : stmReadTRefInt copied from %p", trec, entry_in);
       new_entry -> tarray = tarray;
-      new_entry -> offset = index;
+      new_entry -> offset = tarray -> ptrs + index;
       new_entry -> expected_value.word = entry -> expected_value.word;
       new_entry -> new_value.word = entry -> new_value.word;
       result = (StgInt)(new_entry -> new_value.word);
     }
   } else {
     // No entry found
-    StgInt current_value = (StgInt)read_array_current_value(trec, tarray, index);
+    StgInt current_value = (StgInt)read_array_current_value_word(trec, tarray, index);
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
     TRACE("%p : stmReadTRefInt new entry with value %d", trec, current_value);
     new_entry -> tarray = tarray;
-    new_entry -> offset = index;
+    new_entry -> offset = tarray -> ptrs + index;
     new_entry -> expected_value.word = current_value;
     new_entry -> new_value.word = (StgWord)current_value;
     result = current_value;
@@ -2347,7 +2349,7 @@ void stmWriteTRefInt(Capability *cap,
   StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
   // TODO: improve this code by using this representation more directly
   // instead of reusing the existing get_array_entry_for.
-  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
+  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord) - tarray -> ptrs;
   // StgWord index = (pre_tag_index + tag - sizeof(StgTArray)) / 8;
   StgTRecHeader *entry_in = NULL;
   TArrayRecEntry *entry = NULL;
@@ -2356,7 +2358,7 @@ void stmWriteTRefInt(Capability *cap,
   ASSERT (trec -> state == TREC_ACTIVE ||
           trec -> state == TREC_CONDEMNED);
 
-  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+  entry = get_array_entry_for(trec, tarray, 1, index, &entry_in);
 
   if (entry != NULL) {
     if (entry_in == trec) {
@@ -2366,16 +2368,16 @@ void stmWriteTRefInt(Capability *cap,
       // Entry found in another trec
       TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
       new_entry -> tarray = tarray;
-      new_entry -> offset = index;
+      new_entry -> offset = tarray -> ptrs + index;
       new_entry -> expected_value.word = entry -> expected_value.word;
       new_entry -> new_value.word = (StgWord)new_value;
     }
   } else {
     // No entry found
-    StgClosure *current_value = read_array_current_value(trec, tarray, index);
+    StgClosure *current_value = read_array_current_value_word(trec, tarray, index);
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
     new_entry -> tarray = tarray;
-    new_entry -> offset = index;
+    new_entry -> offset = tarray -> ptrs + index;
     new_entry -> expected_value.word = (StgWord)current_value;
     new_entry -> new_value.word = (StgWord)new_value;
   }
