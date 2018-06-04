@@ -2656,11 +2656,11 @@ void stmWriteTRefInt(Capability *cap,
     }
   } else {
     // No entry found
-    StgClosure *current_value = read_array_current_value_word(trec, tarray, index);
+    StgWord current_value = read_array_current_value_word(trec, tarray, index);
     TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
     new_entry -> tarray = tarray;
     new_entry -> offset = tarray -> ptrs + index;
-    new_entry -> expected_value.word = (StgWord)current_value;
+    new_entry -> expected_value.word = current_value;
     new_entry -> new_value.word = (StgWord)new_value;
   }
 
