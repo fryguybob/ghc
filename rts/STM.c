@@ -2242,53 +2242,6 @@ StgClosure *stmReadTRef(Capability *cap,
 
 /*......................................................................*/
 
-void stmWriteTRef(Capability *cap,
-                  StgTRecHeader *trec,
-                  StgClosure *obj,
-                  StgWord pre_tag_index,
-                  StgClosure *new_value) {
-
-  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
-  // TODO: improve this code by using this representation more directly
-  // instead of reusing the existing get_array_entry_for.
-  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
-  // StgWord index = (pre_tag_index + tag - sizeof(StgTArray)) / 8;
-  StgTRecHeader *entry_in = NULL;
-  TArrayRecEntry *entry = NULL;
-  TRACE("%p : stmWriteTRef(%p[%d], %p)", trec, tarray, index, new_value);
-  ASSERT (trec != NO_TREC);
-  ASSERT (trec -> state == TREC_ACTIVE ||
-          trec -> state == TREC_CONDEMNED);
-
-  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
-
-  if (entry != NULL) {
-    if (entry_in == trec) {
-      // Entry found in our trec
-      entry -> new_value.ptr = new_value;
-    } else {
-      // Entry found in another trec
-      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
-      new_entry -> tarray = tarray;
-      new_entry -> offset = index;
-      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
-      new_entry -> new_value.ptr = new_value;
-    }
-  } else {
-    // No entry found
-    StgClosure *current_value = read_array_current_value(trec, tarray, index);
-    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
-    new_entry -> tarray = tarray;
-    new_entry -> offset = index;
-    new_entry -> expected_value.ptr = current_value;
-    new_entry -> new_value.ptr = new_value;
-  }
-
-  TRACE("%p : stmWriteTRef done", trec);
-}
-
-/*......................................................................*/
-
 StgInt stmReadTRefInt(Capability *cap,
                       StgTRecHeader *trec,
                       StgClosure* obj,
@@ -2334,6 +2287,53 @@ StgInt stmReadTRefInt(Capability *cap,
 
   TRACE("%p : stmReadTRefInt(%p[%d])=%d", trec, tarray, index, result);
   return result;
+}
+
+/*......................................................................*/
+
+void stmWriteTRef(Capability *cap,
+                  StgTRecHeader *trec,
+                  StgClosure *obj,
+                  StgWord pre_tag_index,
+                  StgClosure *new_value) {
+
+  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+  // TODO: improve this code by using this representation more directly
+  // instead of reusing the existing get_array_entry_for.
+  StgWord index = ((((StgWord)obj) + pre_tag_index) - (StgWord)(tarray -> payload))/sizeof(StgWord);
+  // StgWord index = (pre_tag_index + tag - sizeof(StgTArray)) / 8;
+  StgTRecHeader *entry_in = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmWriteTRef(%p[%d], %p)", trec, tarray, index, new_value);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE ||
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_array_entry_for(trec, tarray, 0, index, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      entry -> new_value.ptr = new_value;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> offset = index;
+      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
+      new_entry -> new_value.ptr = new_value;
+    }
+  } else {
+    // No entry found
+    StgClosure *current_value = read_array_current_value(trec, tarray, index);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> offset = index;
+    new_entry -> expected_value.ptr = current_value;
+    new_entry -> new_value.ptr = new_value;
+  }
+
+  TRACE("%p : stmWriteTRef done", trec);
 }
 
 /*......................................................................*/
