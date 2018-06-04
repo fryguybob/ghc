@@ -1701,13 +1701,13 @@ stg_writeTRefzh (P_ obj,           // :: Ref# s a
     }
 }
 
-stg_writeTRefIntSTMzh (P_ tref,      // :: RefU# s a
+stg_writeTRefIntSTMzh (P_ tref,      // :: RefU# s Int#
                        W_ index,     // :: Word
-                       P_ new_value) // :: a
+                       W_ new_value) // :: Int#
 {
     W_ trec;
     // Call to stmWriteTRefIntSTM may allocate
-    MAYBE_GC_PNP (stg_writeTRefIntSTMzh, tref, index, new_value);
+    MAYBE_GC_PNN (stg_writeTRefIntSTMzh, tref, index, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTRefInt(MyCapability() "ptr", trec "ptr", tref "ptr", index,
@@ -1715,9 +1715,9 @@ stg_writeTRefIntSTMzh (P_ tref,      // :: RefU# s a
     return ();
 }
 
-stg_writeTRefIntzh (P_ obj,           // :: RefU# s a
+stg_writeTRefIntzh (P_ obj,           // :: RefU# s Int#
                     W_ pre_tag_index, // :: Word
-                    P_ new_value)     // :: a
+                    W_ new_value)     // :: Int#
 {
     W_ htm;
     W_ index;
