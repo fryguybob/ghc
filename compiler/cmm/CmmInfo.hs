@@ -218,7 +218,7 @@ mkInfoTableContents dflags
            ; return ( Just (toStgHalfWord dflags (fromIntegral con_tag))
                     , Nothing, [descr_lit], [decl]) }
 
-    mk_pieces (MutConstr con_tag con_descr other _ ext_hdr) _no_srt
+    mk_pieces (MutConstr con_tag con_descr other _ ext_hdr _) _no_srt
       = do { (descr_lit, decl) <- newStringLit con_descr
            ; return ( Just (toStgHalfWord dflags (fromIntegral con_tag)), Nothing
                     , if ext_hdr

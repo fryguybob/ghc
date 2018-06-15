@@ -539,6 +539,7 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
        ; return (DCR { dcr_wrap_id = wrap_id
                      , dcr_boxer   = mk_boxer boxers
                      , dcr_arg_tys = rep_tys
+                     , dcr_alt_tys = rep_alt_tys
                      , dcr_stricts = rep_strs
                      , dcr_bangs   = arg_ibangs }) }
 
@@ -546,12 +547,15 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
     (univ_tvs, ex_tvs, eq_spec, theta, orig_arg_tys, _orig_res_ty)
       = dataConFullSig data_con
 
+    orig_alt_tys = dataConAltTys data_con
+
     res_ty_args  = substTyVars (mkTvSubstPrs (map eqSpecPair eq_spec)) univ_tvs
 
     tycon        = dataConTyCon data_con       -- The representation TyCon (not family)
     wrap_ty      = dataConUserType data_con
     ev_tys       = eqSpecPreds eq_spec ++ theta
     all_arg_tys  = ev_tys ++ orig_arg_tys
+    all_alt_tys  = ev_tys ++ orig_alt_tys
     ev_ibangs    = map (const HsLazy) ev_tys
     orig_bangs   = dataConSrcBangs data_con
 
@@ -585,8 +589,12 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
     (rep_tys_w_strs, wrappers)
       = unzip (zipWith dataConArgRep all_arg_tys (ev_ibangs ++ arg_ibangs))
 
+    rep_alt_tys_w_strs
+      = map fst (zipWith dataConArgRep all_alt_tys (ev_ibangs ++ arg_ibangs))
+
     (unboxers, boxers) = unzip wrappers
     (rep_tys, rep_strs) = unzip (concat rep_tys_w_strs)
+    rep_alt_tys = map fst (concat rep_alt_tys_w_strs)
 
     wrapper_reqd = not (isNewTyCon tycon)  -- Newtypes have only a worker
                 && (any isBanged (ev_ibangs ++ arg_ibangs)

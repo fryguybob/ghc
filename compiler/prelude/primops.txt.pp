@@ -2024,6 +2024,31 @@ primop  WriteRefOp_int "writeRefInt#" GenPrimOp
    with has_side_effects = True
         can_fail         = True
 
+primop  ReadRefArrayOp "readRefArray#" GenPrimOp
+   RefArray# s a -> Int# -> State# s -> (# State# s, a #)
+   {Dereference a mutable field.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefArrayOp "writeRefArray#" GenPrimOp
+   RefArray# s a -> Int# -> a -> State# s -> State# s
+   {Write to a mutable field at a given reference.}
+   with has_side_effects = True
+        can_fail         = True
+        code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
+
+primop  ReadRefArrayOp_int "readRefArrayInt#" GenPrimOp
+   RefUArray# s Int# -> Int# -> State# s -> (# State# s, Int# #)
+   {Read a mutable field unlifted value.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefArrayOp_int "writeRefArrayInt#" GenPrimOp
+   RefUArray# s Int# -> Int# -> Int# -> State# s -> State# s
+   {Write to a mutable field's unlifted value.}
+   with has_side_effects = True
+        can_fail         = True
+
 ------------------------------------------------------------------------
 section "Exceptions"
 ------------------------------------------------------------------------

@@ -273,7 +273,7 @@ unariseIdBinder' :: UniqSupply -> UnariseEnv
                     UnariseEnv,      -- What to expand to at occurrence sites
                     [Id])            -- What to expand to at binding site
 unariseIdBinder' us rho x HsImmutable = unariseIdBinder us rho x
-unariseIdBinder' us rho x HsMutable   = case repType (idType x) of
+unariseIdBinder' us rho x _           = case repType (idType x) of
     UbxRefRep ty -> let (us0, us1) = splitUniqSupply us
                         -- we need to know later that these fields came from a Ref
                         -- so we use special types RefAddr# and RefIndex#.

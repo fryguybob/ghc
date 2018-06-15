@@ -657,25 +657,31 @@ emitPrimOp dflags [] WriteRefOp_int  args@[addr,_,_] = pprTrace "WriteRefInt:" (
     doWriteOffAddrOp Nothing b8 [] args
     emitComment $ mkFastString "End WriteRefPtr"
 
-{-
-emitPrimOp dflags res ReadRefOp_word args = pprTrace "ReadRefWord:" (ppr (args, res)) $
-    doIndexByteArrayOp Nothing (bWord dflags) res args
-emitPrimOp dflags res WriteRefOp_word args = pprTrace "WriteRefWord:" (ppr (args, res)) $
-    doWriteByteArrayOp Nothing (bWord dflags) res args
+emitPrimOp dflags res ReadRefArrayOp  args@[addr,off,index] = pprTrace "ReadRefArrayPtr:" (ppr (args, res)) $ do
+    emitComment $ mkFastString "Begin ReadRefArrayPtr"
+    doIndexOffAddrOpAs Nothing (bWord dflags) (bWord dflags) res [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1]
+    emitComment $ mkFastString "End ReadRefArrayPtr"
+emitPrimOp dflags [] WriteRefArrayOp  args@[addr,off,index,val] = pprTrace "WriteRefArrayPtr:" (ppr args) $ do
+    emitComment $ mkFastString "Begin WriteRefArrayPtr"
+    emitPrimCall [] MO_WriteBarrier []
+    doWriteOffAddrOp Nothing (bWord dflags) [] [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1, val]
+    emitCCall
+        [{-no results-}]
+        (CmmLit (CmmLabel mkDirty_MUT_CON_Label))
+        [(CmmReg (CmmGlobal BaseReg), AddrHint),
+            (cmmUntag dflags addr,AddrHint)]
+    emitComment $ mkFastString "End WriteRefArrayPtr"
 
-emitPrimOp dflags [res] ReadMutVarOp [mutv]
-  = emitAssign (CmmLocal res) (cmmLoadIndexW dflags mutv (fixedHdrSizeW dflags) (gcWord dflags))
+emitPrimOp dflags res ReadRefArrayOp_int  args@[addr,off,index] = pprTrace "ReadRefArrayInt:" (ppr (args, res)) $ do
+    emitComment $ mkFastString "Begin ReadRefArrayInt"
+    doIndexOffAddrOpAs Nothing (bWord dflags) (bWord dflags) res [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1]
+    emitComment $ mkFastString "End ReadRefArrayInt"
+emitPrimOp dflags [] WriteRefArrayOp_int  args@[addr,off,index,val] = pprTrace "WriteRefArrayInt:" (ppr args) $ do
+    emitComment $ mkFastString "Begin WriteRefArrayInt"
+    emitPrimCall [] MO_WriteBarrier []
+    doWriteOffAddrOp Nothing (bWord dflags) [] [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1, val]
+    emitComment $ mkFastString "End WriteRefArrayPtr"
 
-emitPrimOp dflags res@[] WriteMutVarOp [mutv,var]
-   = do -- Without this write barrier, other CPUs may see this pointer before
-        -- the writes for the closure it points to have occurred.
-        emitPrimCall res MO_WriteBarrier []
-        emitStore (cmmOffsetW dflags mutv (fixedHdrSizeW dflags)) var
-        emitCCall
-                [{-no results-}]
-                (CmmLit (CmmLabel mkDirty_MUT_VAR_Label))
-                [(CmmReg (CmmGlobal BaseReg), AddrHint), (mutv,AddrHint)]
--}
 -- count leading zeros
 emitPrimOp _      [res] Clz8Op  [w] = emitClzCall res w W8
 emitPrimOp _      [res] Clz16Op [w] = emitClzCall res w W16

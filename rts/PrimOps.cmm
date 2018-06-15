@@ -435,6 +435,35 @@ stg_newSTMArrayzh ( W_ np /* ptrs */, W_ n /* words */, gcptr init )
     return (arr);
 }
 
+stg_initMutConArrayzh ( gcptr init, W_ start, W_ end )
+{
+    W_ p;
+
+    p = start;
+  for:
+    if (p < end) {
+        W_[p] = init;
+        p = p + WDS(1);
+        goto for;
+    }
+
+    return ();
+}
+
+stg_newMutConArrayzh ( W_ bodySize, W_ arraySize )
+{
+    gcptr arr;
+    W_ p;
+
+    again: MAYBE_GC(again);
+    ("ptr" arr) = ccall allocate(MyCapability() "ptr", bodySize + arraySize);
+    TICK_ALLOC_PRIM(SIZEOF_StgHeader, WDS(bodySize + arraySize), 0);
+
+    p = arr + WDS(bodySize);
+    call stg_initMutConArrayzh(arr, p, p + WDS(arraySize));
+    return (arr);
+}
+
 stg_unsafeThawSmallArrayzh ( gcptr arr )
 {
     // See stg_unsafeThawArrayzh
