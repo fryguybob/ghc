@@ -2334,7 +2334,6 @@ static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
                                             StgTArray *tarray,
                                             StgHalfWord index) {
 
-  ASSERT (index >= 0);
   ASSERT (index < tarray -> ptrs);
 
   StgClosure *result;
@@ -2360,7 +2359,6 @@ static StgClosure *read_array_current_value(StgTRecHeader *trec STG_UNUSED,
 static StgWord read_array_current_value_word(StgTRecHeader *trec STG_UNUSED,
                                              StgTArray *tarray,
                                              StgHalfWord index) {
-  ASSERT (index >= 0);
   ASSERT (index < tarray -> words);
 
   StgWord result;

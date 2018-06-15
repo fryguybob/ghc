@@ -48,12 +48,14 @@ import DynFlags
 import FastString( mkFastString, fsLit )
 import Panic( sorry )
 
+import Outputable
+
 #if __GLASGOW_HASKELL__ >= 709
 import Prelude hiding ((<*>))
 #endif
 
 import Control.Monad (when)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, listToMaybe)
 
 -----------------------------------------------------------
 --              Initialise dynamic heap objects
@@ -109,7 +111,6 @@ allocDynClosureCmm mb_id info_tbl lf_info use_cc _blame_cc amodes_w_offsets = do
   let info_ptr = CmmLit (CmmLabel (cit_lbl info_tbl))
   allocHeapClosure rep info_ptr use_cc amodes_w_offsets
 
-
 -- | Low-level heap object allocation.
 allocHeapClosure
   :: SMRep                            -- ^ representation of the object
@@ -118,30 +119,80 @@ allocHeapClosure
   -> [(CmmExpr,ByteOff)]              -- ^ payload
   -> FCode CmmExpr                    -- ^ returns the address of the object
 allocHeapClosure rep info_ptr use_cc payload = do
-  profDynAlloc rep use_cc
+    case handleMutArray of
+      Nothing -> allocHeapClosureWithAllocate rep info_ptr use_cc payload
+      Just arraySize -> do
+        profDynAlloc rep use_cc
 
-  virt_hp <- getVirtHp
+        virt_hp <- getVirtHp
 
-  -- Find the offset of the info-ptr word
-  let info_offset = virt_hp + 1
+        -- Find the offset of the info-ptr word
+        let info_offset = virt_hp + 1
             -- info_offset is the VirtualHpOffset of the first
             -- word of the new object
             -- Remember, virtHp points to last allocated word,
             -- ie 1 *before* the info-ptr word of new object.
 
-  base <- getHpRelOffset info_offset
-  emitComment $ mkFastString "allocHeapClosure"
-  emitSetDynHdr base info_ptr use_cc
+        base <- getHpRelOffset info_offset
+        emitComment $ mkFastString "allocHeapClosure"
+        emitSetDynHdr base info_ptr use_cc
 
-  -- Fill in the fields
-  hpStore base payload
+        -- Fill in the fields
+        hpStore base payload
 
-  -- Bump the virtual heap pointer
+        -- Bump the virtual heap pointer
+        dflags <- getDynFlags
+        setVirtHp (virt_hp + heapClosureSizeW dflags rep + arraySize)
+
+        when (arraySize > 0) $ do
+            let s = cmmOffsetW dflags base (heapClosureSizeW dflags rep)
+                e = cmmOffsetW dflags s arraySize
+            pprTrace "allocHeapClosure" (ppr (arraySize, base, s, e))
+                $ emitCall (NativeNodeCall, NativeReturn)
+                    (CmmLit (CmmLabel mkInitMutConArray_Label))
+                    -- TODO: Should this be reversed?
+                    [base, s, e] >> return ()
+
+        return base
+  where
+    isMutArrayRep = case rep of
+        HeapRep False _ _ (MutConstr _ _ _ _ _ True) -> True
+        _                                            -> False
+
+    handleMutArray
+      | isMutArrayRep
+      , Just l <- fst <$> safeLast payload
+      , Just s <- constIntExpr l
+      , s >= 0 && s < 4096 `div` 8 = Just (fromInteger s)
+      | isMutArrayRep              = Nothing
+      | otherwise                  = Just 0
+
+    constIntExpr :: CmmExpr -> Maybe Integer
+    constIntExpr (CmmLit (CmmInt n _)) = Just n
+    constIntExpr _                     = Nothing
+
+    safeLast = listToMaybe . reverse
+
+allocHeapClosureWithAllocate
+  :: SMRep                            -- ^ representation of the object
+  -> CmmExpr                          -- ^ info pointer
+  -> CmmExpr                          -- ^ cost centre
+  -> [(CmmExpr,ByteOff)]              -- ^ payload
+  -> FCode CmmExpr                    -- ^ returns the address of the object
+allocHeapClosureWithAllocate rep info_ptr use_cc payload = do
   dflags <- getDynFlags
-  setVirtHp (virt_hp + heapClosureSizeW dflags rep)
+  base <- newTemp (gcWord dflags)
+  let b = pprTrace "allocHeapClosureWithAllocate" (ppr (heapClosureSizeW dflags rep, fst (last payload))) $ CmmReg (CmmLocal base)
+  _ <- withSequel (AssignTo [base] True) $
+         emitCall (NativeNodeCall, NativeReturn)
+           (CmmLit (CmmLabel mkNewMutConArray_Label))
+           [ CmmLit (mkIntCLit dflags $ heapClosureSizeW dflags rep), fst (last payload) ]
+           -- TODO: I don't understand why this needs to be reversed.
+           -- [ CmmLit (mkIntCLit dflags $ heapClosureSizeW dflags rep), fst (last payload) ]
+  emitSetDynHdr b info_ptr use_cc
+  hpStore b payload
 
-  return base
-
+  return b
 
 emitSetDynHdr :: CmmExpr -> CmmExpr -> CmmExpr -> FCode ()
 emitSetDynHdr base info_ptr ccs

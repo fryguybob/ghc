@@ -54,6 +54,11 @@ module CLabel (
         mkSplitMarkerLabel,
         mkDirty_MUT_VAR_Label,
         mkDirty_MUT_CON_Label,
+        mkDirty_MUT_CON_EXT_Label,
+        mkDirty_MUT_CON_ARR_Label,
+        mkDirty_MUT_CON_ARR_EXT_Label,
+        mkNewMutConArray_Label,
+        mkInitMutConArray_Label,
         mkSTMInitMutCon_Label,
         mkUpdInfoLabel,
         mkBHUpdInfoLabel,
@@ -426,7 +431,9 @@ mkDirty_MUT_VAR_Label, mkSplitMarkerLabel, mkUpdInfoLabel,
     mkCAFBlackHoleInfoTableLabel, mkCAFBlackHoleEntryLabel,
     mkArrWords_infoLabel, mkSMAP_FROZEN_infoLabel, mkSMAP_FROZEN0_infoLabel,
     mkSMAP_DIRTY_infoLabel, mkSTMMAP_DIRTY_infoLabel,
-    mkDirty_MUT_CON_Label, mkSTMInitMutCon_Label :: CLabel
+    mkDirty_MUT_CON_Label, mkDirty_MUT_CON_EXT_Label,
+    mkDirty_MUT_CON_ARR_Label, mkDirty_MUT_CON_ARR_EXT_Label,
+    mkSTMInitMutCon_Label :: CLabel
 mkDirty_MUT_VAR_Label           = mkForeignLabel (fsLit "dirty_MUT_VAR") Nothing ForeignLabelInExternalPackage IsFunction
 mkSplitMarkerLabel              = CmmLabel rtsUnitId (fsLit "__stg_split_marker")    CmmCode
 mkUpdInfoLabel                  = CmmLabel rtsUnitId (fsLit "stg_upd_frame")         CmmInfo
@@ -445,8 +452,12 @@ mkSMAP_FROZEN_infoLabel         = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_P
 mkSMAP_FROZEN0_infoLabel        = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_PTRS_FROZEN0") CmmInfo
 mkSMAP_DIRTY_infoLabel          = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_PTRS_DIRTY") CmmInfo
 mkSTMMAP_DIRTY_infoLabel        = CmmLabel rtsUnitId (fsLit "stg_STM_MUT_ARR_PTRS_DIRTY") CmmInfo
+mkNewMutConArray_Label          = CmmLabel rtsUnitId (fsLit "stg_newMutConArrayzh")  CmmCode
+mkInitMutConArray_Label         = CmmLabel rtsUnitId (fsLit "stg_initMutConArrayzh") CmmCode
 mkDirty_MUT_CON_Label           = mkForeignLabel (fsLit "dirty_MUT_CON") Nothing ForeignLabelInExternalPackage IsFunction
-mkDirty_MUT_EXT_CON_Label       = mkForeignLabel (fsLit "dirty_MUT_CON_EXT") Nothing ForeignLabelInExternalPackage IsFunction
+mkDirty_MUT_CON_EXT_Label       = mkForeignLabel (fsLit "dirty_MUT_CON_EXT") Nothing ForeignLabelInExternalPackage IsFunction
+mkDirty_MUT_CON_ARR_Label       = mkForeignLabel (fsLit "dirty_MUT_CON_ARR") Nothing ForeignLabelInExternalPackage IsFunction
+mkDirty_MUT_CON_ARR_EXT_Label   = mkForeignLabel (fsLit "dirty_MUT_CON_ARR_EXT") Nothing ForeignLabelInExternalPackage IsFunction
 mkSTMInitMutCon_Label           = mkForeignLabel (fsLit "stmInitMutCon") Nothing ForeignLabelInExternalPackage IsFunction
 
 -----

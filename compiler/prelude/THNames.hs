@@ -629,39 +629,39 @@ overlapTyConKey         = mkPreludeTyConUnique 233
 *                                                                      *
 ********************************************************************* -}
 
--- DataConUniques available: 101-150
+-- DataConUniques available: 103-150
 -- If you want to change this, make sure you check in PrelNames
 
 -- data Inline = ...
 noInlineDataConKey, inlineDataConKey, inlinableDataConKey :: Unique
-noInlineDataConKey  = mkPreludeDataConUnique 101
-inlineDataConKey    = mkPreludeDataConUnique 102
-inlinableDataConKey = mkPreludeDataConUnique 103
+noInlineDataConKey  = mkPreludeDataConUnique 103
+inlineDataConKey    = mkPreludeDataConUnique 104
+inlinableDataConKey = mkPreludeDataConUnique 105
 
 -- data RuleMatch = ...
 conLikeDataConKey, funLikeDataConKey :: Unique
-conLikeDataConKey = mkPreludeDataConUnique 104
-funLikeDataConKey = mkPreludeDataConUnique 105
+conLikeDataConKey = mkPreludeDataConUnique 106
+funLikeDataConKey = mkPreludeDataConUnique 107
 
 -- data Phases = ...
 allPhasesDataConKey, fromPhaseDataConKey, beforePhaseDataConKey :: Unique
-allPhasesDataConKey   = mkPreludeDataConUnique 106
-fromPhaseDataConKey   = mkPreludeDataConUnique 107
-beforePhaseDataConKey = mkPreludeDataConUnique 108
+allPhasesDataConKey   = mkPreludeDataConUnique 108
+fromPhaseDataConKey   = mkPreludeDataConUnique 109
+beforePhaseDataConKey = mkPreludeDataConUnique 110
 
 -- newtype TExp a = ...
 tExpDataConKey :: Unique
-tExpDataConKey = mkPreludeDataConUnique 109
+tExpDataConKey = mkPreludeDataConUnique 111
 
 -- data Overlap = ..
 overlappableDataConKey,
   overlappingDataConKey,
   overlapsDataConKey,
   incoherentDataConKey :: Unique
-overlappableDataConKey = mkPreludeDataConUnique 110
-overlappingDataConKey  = mkPreludeDataConUnique 111
-overlapsDataConKey     = mkPreludeDataConUnique 112
-incoherentDataConKey   = mkPreludeDataConUnique 113
+overlappableDataConKey = mkPreludeDataConUnique 112
+overlappingDataConKey  = mkPreludeDataConUnique 113
+overlapsDataConKey     = mkPreludeDataConUnique 114
+incoherentDataConKey   = mkPreludeDataConUnique 115
 
 
 

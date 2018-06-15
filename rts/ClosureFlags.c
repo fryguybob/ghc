@@ -93,9 +93,13 @@ StgWord16 closure_flags[] = {
  [MUT_CONSTR_CLEAN]           =  (_HNF|     _NS|         _MUT                ),
  [MUT_CONSTR_DIRTY]           =  (_HNF|     _NS|         _MUT                ),
  [MUT_CONSTR_EXT_CLEAN]       =  (_HNF|     _NS|         _MUT                ),
- [MUT_CONSTR_EXT_DIRTY]       =  (_HNF|     _NS|         _MUT                )
+ [MUT_CONSTR_EXT_DIRTY]       =  (_HNF|     _NS|         _MUT                ),
+ [MUT_CONSTR_ARR_CLEAN]       =  (_HNF|     _NS|         _MUT                ),
+ [MUT_CONSTR_ARR_DIRTY]       =  (_HNF|     _NS|         _MUT                ),
+ [MUT_CONSTR_ARR_EXT_CLEAN]   =  (_HNF|     _NS|         _MUT                ),
+ [MUT_CONSTR_ARR_EXT_DIRTY]   =  (_HNF|     _NS|         _MUT                )
 };
 
-#if N_CLOSURE_TYPES != 73
+#if N_CLOSURE_TYPES != 77
 #error Closure types changed: update ClosureFlags.c!
 #endif

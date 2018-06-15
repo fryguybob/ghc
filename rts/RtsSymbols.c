@@ -548,6 +548,8 @@
       SymI_HasProto(dirty_MUT_VAR)                                      \
       SymI_HasProto(dirty_MUT_CON)                                      \
       SymI_HasProto(dirty_MUT_CON_EXT)                                  \
+      SymI_HasProto(dirty_MUT_CON_ARR)                                  \
+      SymI_HasProto(dirty_MUT_CON_ARR_EXT)                              \
       SymI_HasProto(dirty_TVAR)                                         \
       SymI_HasProto(dirty_TARRAY)                                       \
       SymI_HasProto(stg_forkzh)                                         \

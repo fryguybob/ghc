@@ -16,8 +16,8 @@ module StgCmmClosure (
         ConTagZ, dataConTagZ,
 
         idPrimRep, isVoidRep, isGcPtrRep, addIdReps, addArgReps,
-        argPrimRep,
-		isRefAddrAlt,
+        argPrimRep, 
+        isRefAddrAlt,
         isRefIndexAlt,
         idPrimRepForAlt,
         addIdRepsForAlt,
@@ -1038,6 +1038,7 @@ mkDataConInfoTable dflags data_con is_static ptr_wds nonptr_wds
                   = MutConstr (dataConTagZ data_con) (dataConIdentity data_con)
                               (CmmLabel (mkConDirtyInfoTableLabel name NoCafRefs))
                               True (dataConWrapperIsSTM data_con)
+                              (hasMutableArrayField data_con)
       | otherwise = Constr    (dataConTagZ data_con) (dataConIdentity data_con)
 
    prof | not (gopt Opt_SccProfilingOn dflags) = NoProfilingInfo
@@ -1062,6 +1063,7 @@ mkDataConDirtyInfoTable dflags data_con ptr_wds nonptr_wds
    cl_type = MutConstr (dataConTagZ data_con) (dataConIdentity data_con)
                        (CmmLabel (mkConInfoTableLabel name NoCafRefs))
                        False (dataConWrapperIsSTM data_con)
+                       (hasMutableArrayField data_con)
 
    prof | not (gopt Opt_SccProfilingOn dflags) = NoProfilingInfo
         | otherwise                            = ProfilingInfo ty_descr val_descr

@@ -1806,7 +1806,7 @@ repType ty
       = go rec_nts ty2
 
     go rec_nts (TyConApp tc [_,ty])
-      | isRefTyCon tc || isRefUTyCon tc
+      | isRefTyCon tc || isRefUTyCon tc || isRefArrayTyCon tc || isRefUArrayTyCon tc
       = UbxRefRep ty
 
     go rec_nts (TyConApp tc tys)        -- Expand newtypes

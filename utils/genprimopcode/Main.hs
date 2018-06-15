@@ -841,6 +841,10 @@ ppType (TyApp (TyCon "Ref#") [x,y])      = "mkRefPrimTy " ++ ppType x
                                            ++ " " ++ ppType y
 ppType (TyApp (TyCon "RefU#") [x,y])     = "mkRefUPrimTy " ++ ppType x
                                            ++ " " ++ ppType y
+ppType (TyApp (TyCon "RefArray#") [x,y]) = "mkRefArrayPrimTy " ++ ppType x
+                                           ++ " " ++ ppType y
+ppType (TyApp (TyCon "RefUArray#") [x,y])= "mkRefUArrayPrimTy " ++ ppType x
+                                           ++ " " ++ ppType y
 
 ppType (TyApp (VecTyCon _ pptc) [])      = pptc
 

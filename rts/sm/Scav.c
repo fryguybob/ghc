@@ -634,6 +634,80 @@ scavenge_block (bdescr *bd)
         break;
     }
 
+    case MUT_CONSTR_ARR_CLEAN:
+    {
+        StgPtr end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        break;
+    }
+    case MUT_CONSTR_ARR_DIRTY:
+    {
+        StgPtr end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        break;
+    }
+
+    case MUT_CONSTR_ARR_EXT_CLEAN:
+    {
+        StgPtr end;
+        StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs + o;
+        for (p = (P_)((StgClosure *)p)->payload + o; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
+        }
+        p += info->layout.payload.nptrs;
+        break;
+    }
+    case MUT_CONSTR_ARR_EXT_DIRTY:
+    {
+        StgPtr end;
+        StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs + o;
+        for (p = (P_)((StgClosure *)p)->payload + o; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
+        }
+        p += info->layout.payload.nptrs;
+        break;
+    }
+
     case BCO: {
         StgBCO *bco = (StgBCO *)p;
         evacuate((StgClosure **)&bco->instrs);
@@ -1160,6 +1234,80 @@ scavenge_mark_stack(void)
             break;
         }
 
+        case MUT_CONSTR_ARR_CLEAN:
+        {
+            StgPtr end;
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+            for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            p += info->layout.payload.nptrs-1; // Size field
+            end = p + *p;
+            for (; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (gct->failed_to_evac) { // change to dirty
+               ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+            }
+            break;
+        }
+        case MUT_CONSTR_ARR_DIRTY:
+        {
+            StgPtr end;
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+            for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            p += info->layout.payload.nptrs-1; // Size field
+            end = p + *p;
+            for (; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (!gct->failed_to_evac) { // change to clean
+               ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+            }
+            break;
+        }
+
+        case MUT_CONSTR_ARR_EXT_CLEAN:
+        {
+            StgPtr end;
+            StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs + o;
+            for (p = (P_)((StgClosure *)p)->payload + o; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            p += info->layout.payload.nptrs-1; // Size field
+            end = p + *p;
+            for (; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (gct->failed_to_evac) { // change to dirty
+               ((StgClosure *)q)->header.info =
+                    GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
+            }
+            break;
+        }
+        case MUT_CONSTR_ARR_EXT_DIRTY:
+        {
+            StgPtr end;
+            StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs + o;
+            for (p = (P_)((StgClosure *)p)->payload + o; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            p += info->layout.payload.nptrs-1; // Size field
+            end = p + *p;
+            for (; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (!gct->failed_to_evac) { // change to clean
+               ((StgClosure *)q)->header.info =
+                    GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
+            }
+            break;
+        }
+
         case BCO: {
             StgBCO *bco = (StgBCO *)p;
             evacuate((StgClosure **)&bco->instrs);
@@ -1611,6 +1759,78 @@ scavenge_one(StgPtr p)
         break;
     }
 
+    case MUT_CONSTR_ARR_CLEAN:
+    {
+        StgPtr q = p, end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        break;
+    }
+    case MUT_CONSTR_ARR_DIRTY:
+    {
+        StgPtr q = p, end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        break;
+    }
+
+    case MUT_CONSTR_ARR_EXT_CLEAN:
+    {
+        StgPtr q = p, end;
+        StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs + o;
+        for (p = (P_)((StgClosure *)p)->payload + o; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
+        }
+        break;
+    }
+    case MUT_CONSTR_ARR_EXT_DIRTY:
+    {
+        StgPtr q = p, end;
+        StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs + o;
+        for (p = (P_)((StgClosure *)p)->payload + o; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        p += info->layout.payload.nptrs-1; // Size field
+        end = p + *p;
+        for (; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
+        }
+        break;
+    }
+
     case WEAK:
         scavengeLiveWeak((StgWeak *)p);
         break;
@@ -1988,9 +2208,13 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
                 break;
             case MUT_CONSTR_CLEAN:
             case MUT_CONSTR_EXT_CLEAN:
+            case MUT_CONSTR_ARR_CLEAN:
+            case MUT_CONSTR_ARR_EXT_CLEAN:
                 barf("MUT_CONSTR_CLEAN on mutable list");
             case MUT_CONSTR_DIRTY:
             case MUT_CONSTR_EXT_DIRTY:
+            case MUT_CONSTR_ARR_DIRTY:
+            case MUT_CONSTR_ARR_EXT_DIRTY:
                 mutlist_CONSTR++; break;
                 break;
             default:

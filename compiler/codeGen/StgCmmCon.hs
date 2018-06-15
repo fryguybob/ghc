@@ -267,7 +267,8 @@ buildDynCon' dflags _ binder actually_bound ccs con args
 -- that these have the right representations for a matching constructor.
 -- Specifically, in bindConArgs RefAddr#s need to have a void representation
 -- and RefIndex#s need to have the representation that matches the
--- representation of the mutable field.  We can then bind the address register
+-- representation of the mutable field unless it is a mutable array.
+-- We can then bind the address register
 -- to the object pointer and the index register to the offset without actually
 -- emitting a load.
 --

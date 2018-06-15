@@ -616,6 +616,25 @@ loop:
       copy_tag(p,info,q,mut_constr_ext_sizeW_fromITBL(INFO_PTR_TO_STRUCT(info)),gen_no,tag);
       return;
 
+  case MUT_CONSTR_ARR_CLEAN:
+  case MUT_CONSTR_ARR_DIRTY:
+  {
+      const StgInfoTable* i = INFO_PTR_TO_STRUCT(info);
+      StgInt dynSize = (StgInt)*((P_)((StgClosure*)p)->payload + i->layout.payload.ptrs + i->layout.payload.nptrs - 1);
+      copy_tag(p,info,q,sizeW_fromITBL(i)+dynSize,gen_no,tag);
+      return;
+  }
+
+  case MUT_CONSTR_ARR_EXT_CLEAN:
+  case MUT_CONSTR_ARR_EXT_DIRTY:
+  {
+      const StgInfoTable* i = INFO_PTR_TO_STRUCT(info);
+      StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(i));
+      StgInt dynSize = (StgInt)*((P_)((StgClosure*)p)->payload + o + i->layout.payload.ptrs + i->layout.payload.nptrs - 1);
+      copy_tag(p,info,q,mut_constr_ext_sizeW_fromITBL(i),gen_no,tag);
+      return;
+  }
+
   case BLACKHOLE:
   {
       StgClosure *r;
@@ -948,6 +967,10 @@ selector_loop:
       case MUT_CONSTR_DIRTY:
       case MUT_CONSTR_EXT_CLEAN:
       case MUT_CONSTR_EXT_DIRTY:
+      case MUT_CONSTR_ARR_CLEAN:
+      case MUT_CONSTR_ARR_DIRTY:
+      case MUT_CONSTR_ARR_EXT_CLEAN:
+      case MUT_CONSTR_ARR_EXT_DIRTY:
           goto bale_out; // TODO: I don't think we can select a Ref#!!!
                          // Is this or should this be ruled out elsewhere?
                          // I don't see cases for other mutable objects.

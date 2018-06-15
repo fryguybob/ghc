@@ -327,7 +327,7 @@ typedef struct {
   StgHeader                  header;
   StgClosure                *volatile current_value;
   StgWord                    hash_id;
-  StgInt                     volatile num_updates;
+  StgWord                    volatile num_updates;
 } StgTVar;
 
 /* new_value == expected_value for read-only accesses */

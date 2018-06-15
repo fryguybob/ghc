@@ -1761,6 +1761,13 @@ refIndexAltTyConKey = mkPreludeTyConUnique 189
 refUPrimTyConKey :: Unique
 refUPrimTyConKey = mkPreludeTyConUnique 190
 
+-- RefArray#
+refArrayPrimTyConKey :: Unique
+refArrayPrimTyConKey = mkPreludeTyConUnique 191
+
+refUArrayPrimTyConKey :: Unique
+refUArrayPrimTyConKey = mkPreludeTyConUnique 192
+
 ---------------- Template Haskell -------------------
 --      THNames.hs: USES TyConUniques 200-299
 -----------------------------------------------------
@@ -1894,17 +1901,17 @@ runtimeRepSimpleDataConKeys :: [Unique]
 ptrRepLiftedDataConKey, ptrRepUnliftedDataConKey :: Unique
 runtimeRepSimpleDataConKeys@(
   ptrRepLiftedDataConKey : ptrRepUnliftedDataConKey : _)
-  = map mkPreludeDataConUnique [72..84]
+  = map mkPreludeDataConUnique [72..86]
 
 -- See Note [Wiring in RuntimeRep] in TysWiredIn
 -- VecCount
 vecCountDataConKeys :: [Unique]
-vecCountDataConKeys = map mkPreludeDataConUnique [85..90]
+vecCountDataConKeys = map mkPreludeDataConUnique [87..92]
 
 -- See Note [Wiring in RuntimeRep] in TysWiredIn
 -- VecElem
 vecElemDataConKeys :: [Unique]
-vecElemDataConKeys = map mkPreludeDataConUnique [91..100]
+vecElemDataConKeys = map mkPreludeDataConUnique [93..102]
 
 
 ---------------- Template Haskell -------------------
