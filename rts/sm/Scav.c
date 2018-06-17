@@ -2216,7 +2216,6 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
             case MUT_CONSTR_ARR_DIRTY:
             case MUT_CONSTR_ARR_EXT_DIRTY:
                 mutlist_CONSTR++; break;
-                break;
             default:
                 mutlist_OTHERS++; break;
             }

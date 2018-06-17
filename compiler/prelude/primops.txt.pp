@@ -2269,6 +2269,20 @@ primop WriteTRefOp "writeTRef#" GenPrimOp
    out_of_line = True
    has_side_effects = True
 
+primop ReadTRefArrayOp "readTRefArray#" GenPrimOp
+    RefArray# s a -> Int# ->  State# s -> (# State# s, a #)
+   {Read contents of {\tt RefArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop WriteTRefArrayOp "writeTRefArray#" GenPrimOp
+    RefArray# s a -> Int# -> a -> State# s -> State# s
+   {Write contents of {\tt RefArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
 primop ReadTArrayOp "readTArray#" GenPrimOp
     STMMutableArray# s a
     -> Word# -> State# s -> (# State# s, a #)

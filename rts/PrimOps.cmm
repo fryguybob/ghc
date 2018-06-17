@@ -1462,6 +1462,12 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
     jump fun(arg1,arg2,arg3);
 }
 
+stg_gc_prim_pnnp (P_ arg1, W_ arg2, W_ arg3, W_ arg4, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2,arg3,arg4);
+}
+
 #define GC_PRIM_PN(fun,arg1,arg2)               \
         jump stg_gc_prim_pn(arg1,arg2,fun);
 
@@ -1470,6 +1476,9 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
 
 #define GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
         jump stg_gc_prim_pnn(arg1,arg2,arg3,fun);
+
+#define GC_PRIM_PNNP(fun,arg1,arg2,arg3,arg4)   \
+        jump stg_gc_prim_pnnp(arg1,arg2,arg3,arg4,fun);
 
 #define MAYBE_GC_PN(fun,arg1,arg2)              \
     if (CHECK_GC()) {                           \
@@ -1488,6 +1497,13 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
         HpAlloc = 0;                            \
         GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
    }
+
+#define MAYBE_GC_PNNP(fun,arg1,arg2,arg3,arg4)  \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PNNP(fun,arg1,arg2,arg3,arg4)   \
+   }
+
 
 stg_readTRefzh (P_ tref, W_ index)
 {
@@ -1522,7 +1538,7 @@ stg_writeTRefzh (P_ tref,      // :: Ref# s a
                  P_ new_value) // :: a
 {
     W_ trec;
-    // Call to stmWriteTRefSTM may allocate
+    // Call to stmWriteTRef may allocate
     MAYBE_GC_PNP (stg_writeTRefzh, tref, index, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
@@ -1536,12 +1552,41 @@ stg_writeTRefIntzh (P_ tref,      // :: RefU# s a
                     W_ new_value) // :: a
 {
     W_ trec;
-    // Call to stmWriteTRefIntSTM may allocate
+    // Call to stmWriteTRefInt may allocate
     MAYBE_GC_PNN (stg_writeTRefIntzh, tref, index, new_value);
 
     trec = StgTSO_trec(CurrentTSO);
     ccall stmWriteTRefInt(MyCapability() "ptr", trec "ptr", tref "ptr", index,
                           new_value);
+    return ();
+}
+
+stg_readTRefArrayzh (P_ tref, W_ index, W_ array_index)
+{
+    P_ trec;
+    P_ result;
+
+    // Call to stmReadTRefArray may allocate
+    MAYBE_GC_PNN (stg_readTRefArrayzh, tref, index, array_index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ("ptr" result) = ccall stmReadTRefArray(MyCapability() "ptr", trec "ptr",
+                                            tref "ptr", index, array_index);
+    return (result);
+}
+
+stg_writeTRefArrayzh (P_ tref,        // :: RefArray# s a
+                      W_ index,       // :: Word
+                      W_ array_index, // :: Word
+                      P_ new_value)   // :: a
+{
+    W_ trec;
+    // Call to stmWriteTRefArray may allocate
+    MAYBE_GC_PNNP (stg_writeTRefArrayzh, tref, index, array_index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTRefArray(MyCapability() "ptr", trec "ptr", tref "ptr", index,
+                            array_index, new_value "ptr");
     return ();
 }
 

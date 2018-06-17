@@ -1820,6 +1820,31 @@ static TArrayRecEntry *get_array_entry_for(StgTRecHeader *trec, StgTArray *tarra
 
 /*......................................................................*/
 
+static TArrayRecEntry *get_refarray_entry_for(StgTRecHeader *trec, StgTArray *tarray,
+                                              StgWord offset,
+                                              StgTRecHeader **in) {
+  TArrayRecEntry *result = NULL;
+  TRACE("%p : get_array_entry_for TArray %p[%d]", trec, tarray, offset);
+  ASSERT(trec != NO_TREC);
+
+  do {
+    FOR_EACH_ARRAY_ENTRY(trec, e, {
+      if (e -> tarray == tarray && e -> offset == offset) {
+        result = e;
+        if (in != NULL) {
+          *in = trec;
+        }
+        BREAK_FOR_EACH;
+      }
+    });
+    trec = trec -> enclosing_trec;
+  } while (result == NULL && trec != NO_TREC);
+
+  return result;
+}
+
+/*......................................................................*/
+
 static int DiffHeapUse(bdescr* bs, bdescr* be, int s, int e)
 {
     int total = 0;
@@ -2017,7 +2042,13 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
 
     FOR_EACH_ARRAY_ENTRY(trec, e, {
      if (e -> expected_value.ptr != e -> new_value.ptr) {
-        if (e -> offset < e -> tarray -> ptrs) // If this is a ptr access
+        // TODO: For non-pointer mutable arrays, I think we can get away with
+        // setting words to include the mutable array if it is an array of
+        // non-pointer values.  This would improve the following check for
+        // updates to non-pointer fields.  We could use the info-table's nptrs
+        // field to find the size field.
+        if (e -> offset < e -> tarray -> ptrs ||
+            e -> offset > e -> tarray -> ptrs + e -> tarray -> words) // If this is a ptr access
         {
             dirty_TARRAY_or_MUT_CON(cap, e -> tarray);
         }
@@ -2381,6 +2412,24 @@ static StgWord read_array_current_value_word(StgTRecHeader *trec STG_UNUSED,
 
 /*......................................................................*/
 
+static StgClosure *read_refarray_current_value(StgTRecHeader *trec STG_UNUSED,
+                                               StgTArray *tarray,
+                                               StgHalfWord index) {
+
+  ASSERT (index >= tarray -> ptrs + tarray -> words);
+  ASSERT (index < tarray -> ptrs + tarray -> words
+                  + tarray -> payload[tarray -> ptrs + tarray -> words - 1]);
+
+  StgClosure *result;
+  result = (StgClosure*)tarray -> payload[index];
+
+  TRACE("%p : read_refarray_current_value(%p[%d])=%p array size = ", trec, tarray, index, result,
+    tarray -> payload[tarray -> ptrs + tarray -> words - 1]);
+  return result;
+}
+
+/*......................................................................*/
+
 StgClosure *stmReadTVar(Capability *cap,
                         StgTRecHeader *trec,
                         StgTVar *tvar) {
@@ -2665,7 +2714,99 @@ void stmWriteTRefInt(Capability *cap,
   TRACE("%p : stmWriteTRefInt done", trec);
 }
 
+/*......................................................................*/
 
+StgClosure* stmReadTRefArray(Capability *cap,
+                             StgTRecHeader *trec,
+                             StgClosure* obj,
+                             StgWord pre_tag_index,
+                             StgInt array_index) {
+  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+  StgWord offset = (((StgWord)obj) + pre_tag_index - (StgWord)(tarray -> payload))/sizeof(StgWord) + array_index + 1;
+  StgTRecHeader *entry_in = NULL;
+  StgClosure *result = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmReadTRefArray(%p[%d]) array index %d", trec, tarray, offset, array_index);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE ||
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_refarray_entry_for(trec, tarray, offset, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      result = entry -> new_value.ptr;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      TRACE("%p : stmReadTRefArray copied from %p", trec, entry_in);
+      new_entry -> tarray = tarray;
+      new_entry -> offset = offset;
+      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
+      new_entry -> new_value.ptr = entry -> new_value.ptr;
+      result = new_entry -> new_value.ptr;
+    }
+  } else {
+    // No entry found
+    StgClosure *current_value = read_refarray_current_value(trec, tarray, offset);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    TRACE("%p : stmReadTRefArray new entry with value %p", trec, current_value);
+    new_entry -> tarray = tarray;
+    new_entry -> offset = offset;
+    new_entry -> expected_value.ptr = current_value;
+    new_entry -> new_value.ptr = current_value;
+    result = current_value;
+  }
+
+  TRACE("%p : stmReadTRefArray(%p[%d])=%p", trec, tarray, offset, result);
+  return result;
+}
+
+/*......................................................................*/
+
+void stmWriteTRefArray(Capability *cap,
+                       StgTRecHeader *trec,
+                       StgClosure *obj,
+                       StgWord pre_tag_index,
+                       StgWord array_index,
+                       StgClosure *new_value) {
+
+  StgTArray *tarray = (StgTArray*)UNTAG_CLOSURE(obj);
+  StgWord offset = (((StgWord)obj) + pre_tag_index - (StgWord)(tarray -> payload))/sizeof(StgWord) + array_index + 1;
+  StgTRecHeader *entry_in = NULL;
+  TArrayRecEntry *entry = NULL;
+  TRACE("%p : stmWriteTRefArray(%p[%d], %p) array index %d", trec, tarray, offset, new_value, array_index);
+  ASSERT (trec != NO_TREC);
+  ASSERT (trec -> state == TREC_ACTIVE ||
+          trec -> state == TREC_CONDEMNED);
+
+  entry = get_refarray_entry_for(trec, tarray, offset, &entry_in);
+
+  if (entry != NULL) {
+    if (entry_in == trec) {
+      // Entry found in our trec
+      entry -> new_value.ptr = new_value;
+    } else {
+      // Entry found in another trec
+      TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+      new_entry -> tarray = tarray;
+      new_entry -> offset = offset;
+      new_entry -> expected_value.ptr = entry -> expected_value.ptr;
+      new_entry -> new_value.ptr = new_value;
+    }
+  } else {
+    // No entry found
+    StgClosure *current_value = read_refarray_current_value(trec, tarray, offset);
+    TArrayRecEntry *new_entry = get_new_array_entry(cap, trec);
+    new_entry -> tarray = tarray;
+    new_entry -> offset = offset;
+    new_entry -> expected_value.ptr = current_value;
+    new_entry -> new_value.ptr = new_value;
+  }
+
+  TRACE("%p : stmWriteTRefArray done", trec);
+}
 /*......................................................................*/
 
 StgClosure *stmReadTArray(Capability *cap,
