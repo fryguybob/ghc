@@ -642,8 +642,8 @@ scavenge_block (bdescr *bd)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (gct->failed_to_evac) { // change to dirty
@@ -659,8 +659,8 @@ scavenge_block (bdescr *bd)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (!gct->failed_to_evac) { // change to clean
@@ -678,14 +678,13 @@ scavenge_block (bdescr *bd)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (gct->failed_to_evac) { // change to dirty
            ((StgClosure *)q)->header.info = GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
         }
-        p += info->layout.payload.nptrs;
         break;
     }
     case MUT_CONSTR_ARR_EXT_DIRTY:
@@ -697,14 +696,13 @@ scavenge_block (bdescr *bd)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (!gct->failed_to_evac) { // change to clean
            ((StgClosure *)q)->header.info = GET_MUT_CON_EXT_OTHER(itbl_to_mut_con_ext_itbl(info));
         }
-        p += info->layout.payload.nptrs;
         break;
     }
 
@@ -1242,8 +1240,8 @@ scavenge_mark_stack(void)
                 evacuate((StgClosure **)p);
             }
             p += info->layout.payload.nptrs-1; // Size field
-            end = p + *p;
-            for (; p < end; p++) {
+            end = p + *p + 1;
+            for (p = p + 1; p < end; p++) {
                 evacuate((StgClosure **)p);
             }
             if (gct->failed_to_evac) { // change to dirty
@@ -1259,8 +1257,8 @@ scavenge_mark_stack(void)
                 evacuate((StgClosure **)p);
             }
             p += info->layout.payload.nptrs-1; // Size field
-            end = p + *p;
-            for (; p < end; p++) {
+            end = p + *p + 1;
+            for (p = p + 1; p < end; p++) {
                 evacuate((StgClosure **)p);
             }
             if (!gct->failed_to_evac) { // change to clean
@@ -1278,8 +1276,8 @@ scavenge_mark_stack(void)
                 evacuate((StgClosure **)p);
             }
             p += info->layout.payload.nptrs-1; // Size field
-            end = p + *p;
-            for (; p < end; p++) {
+            end = p + *p + 1;
+            for (p = p + 1; p < end; p++) {
                 evacuate((StgClosure **)p);
             }
             if (gct->failed_to_evac) { // change to dirty
@@ -1297,8 +1295,8 @@ scavenge_mark_stack(void)
                 evacuate((StgClosure **)p);
             }
             p += info->layout.payload.nptrs-1; // Size field
-            end = p + *p;
-            for (; p < end; p++) {
+            end = p + *p + 1;
+            for (p = p + 1; p < end; p++) {
                 evacuate((StgClosure **)p);
             }
             if (!gct->failed_to_evac) { // change to clean
@@ -1767,8 +1765,8 @@ scavenge_one(StgPtr p)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (gct->failed_to_evac) { // change to dirty
@@ -1784,8 +1782,8 @@ scavenge_one(StgPtr p)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (!gct->failed_to_evac) { // change to clean
@@ -1803,8 +1801,8 @@ scavenge_one(StgPtr p)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (gct->failed_to_evac) { // change to dirty
@@ -1821,8 +1819,8 @@ scavenge_one(StgPtr p)
             evacuate((StgClosure **)p);
         }
         p += info->layout.payload.nptrs-1; // Size field
-        end = p + *p;
-        for (; p < end; p++) {
+        end = p + *p + 1;
+        for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
         if (!gct->failed_to_evac) { // change to clean

@@ -2049,6 +2049,10 @@ primop  WriteRefArrayOp_int "writeRefArrayInt#" GenPrimOp
    with has_side_effects = True
         can_fail         = True
 
+primop  RefArraySizeOp "refArraySize#" GenPrimOp
+   RefArray# s a -> Int#
+   {The size of a RefArray#.}
+
 ------------------------------------------------------------------------
 section "Exceptions"
 ------------------------------------------------------------------------

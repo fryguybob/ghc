@@ -620,7 +620,7 @@ loop:
   case MUT_CONSTR_ARR_DIRTY:
   {
       const StgInfoTable* i = INFO_PTR_TO_STRUCT(info);
-      StgInt dynSize = (StgInt)*((P_)((StgClosure*)p)->payload + i->layout.payload.ptrs + i->layout.payload.nptrs - 1);
+      StgInt dynSize = (StgInt)*(q->payload + i->layout.payload.ptrs + i->layout.payload.nptrs - 1);
       copy_tag(p,info,q,sizeW_fromITBL(i)+dynSize,gen_no,tag);
       return;
   }
@@ -630,8 +630,8 @@ loop:
   {
       const StgInfoTable* i = INFO_PTR_TO_STRUCT(info);
       StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(i));
-      StgInt dynSize = (StgInt)*((P_)((StgClosure*)p)->payload + o + i->layout.payload.ptrs + i->layout.payload.nptrs - 1);
-      copy_tag(p,info,q,mut_constr_ext_sizeW_fromITBL(i),gen_no,tag);
+      StgInt dynSize = (StgInt)*(q->payload + o + i->layout.payload.ptrs + i->layout.payload.nptrs - 1);
+      copy_tag(p,info,q,mut_constr_ext_sizeW_fromITBL(i)+dynSize,gen_no,tag);
       return;
   }
 
