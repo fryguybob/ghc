@@ -179,10 +179,17 @@ static int shake(void) {
 static void dirty_TARRAY_or_MUT_CON(Capability *cap, StgTArray *s)
 {
     StgInfoTable *info = INFO_PTR_TO_STRUCT(s->header.info);
-    if (info->type == MUT_CONSTR_EXT_CLEAN)
+    switch (info->type) {
+    case MUT_CONSTR_EXT_CLEAN:
         dirty_MUT_CON_EXT(cap,(StgClosure*)s);
-    else if (info->type != MUT_CONSTR_EXT_DIRTY)
+        break;
+    case MUT_CONSTR_ARR_EXT_CLEAN:
+        dirty_MUT_CON_ARR_EXT(cap,(StgClosure*)s);
+        break;
+    case STM_MUT_ARR_PTRS_CLEAN:
         dirty_TARRAY(cap,s); // unlocking is due to a write.
+        break;
+    }
 }
 
 /*......................................................................*/
