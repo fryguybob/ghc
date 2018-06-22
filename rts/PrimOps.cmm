@@ -449,6 +449,23 @@ stg_initMutConArrayzh ( gcptr init, W_ start, W_ end )
     return ();
 }
 
+// TODO: This is only for debugging to tell which code
+// path in code gen was used.
+stg_initMutConArrayAlloczh ( gcptr init, W_ start, W_ end )
+{
+    W_ p;
+
+    p = start;
+  for:
+    if (p < end) {
+        W_[p] = init;
+        p = p + WDS(1);
+        goto for;
+    }
+
+    return ();
+}
+
 stg_newMutConArrayzh ( W_ bodySize, W_ arraySize )
 {
     gcptr arr;
@@ -459,7 +476,7 @@ stg_newMutConArrayzh ( W_ bodySize, W_ arraySize )
     TICK_ALLOC_PRIM(SIZEOF_StgHeader, WDS(bodySize + arraySize), 0);
 
     p = arr + WDS(bodySize);
-    call stg_initMutConArrayzh(arr, p, p + WDS(arraySize));
+    call stg_initMutConArrayAlloczh(arr, p, p + WDS(arraySize));
     return (arr);
 }
 
@@ -1462,7 +1479,7 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
     jump fun(arg1,arg2,arg3);
 }
 
-stg_gc_prim_pnnp (P_ arg1, W_ arg2, W_ arg3, W_ arg4, W_ fun)
+stg_gc_prim_pnnp (P_ arg1, W_ arg2, W_ arg3, P_ arg4, W_ fun)
 {
     call stg_gc_noregs ();
     jump fun(arg1,arg2,arg3,arg4);

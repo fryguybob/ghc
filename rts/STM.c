@@ -189,6 +189,14 @@ static void dirty_TARRAY_or_MUT_CON(Capability *cap, StgTArray *s)
     case STM_MUT_ARR_PTRS_CLEAN:
         dirty_TARRAY(cap,s); // unlocking is due to a write.
         break;
+    case MUT_CONSTR_EXT_DIRTY:
+    case MUT_CONSTR_ARR_EXT_DIRTY:
+    case STM_MUT_ARR_PTRS_DIRTY:
+        break;
+    default:
+        TRACE("Invalid closure, expected TArray or STM mut con.");
+        ASSERT(FALSE);
+        break;
     }
 }
 
@@ -2054,8 +2062,8 @@ StgBool stmCommitTransaction(Capability *cap, StgTRecHeader *trec) {
         // non-pointer values.  This would improve the following check for
         // updates to non-pointer fields.  We could use the info-table's nptrs
         // field to find the size field.
-        if (e -> offset < e -> tarray -> ptrs ||
-            e -> offset > e -> tarray -> ptrs + e -> tarray -> words) // If this is a ptr access
+        if ((e -> offset < e -> tarray -> ptrs) ||
+            (e -> offset >= (e -> tarray -> ptrs + e -> tarray -> words))) // If this is a ptr access
         {
             dirty_TARRAY_or_MUT_CON(cap, e -> tarray);
         }
@@ -2430,7 +2438,7 @@ static StgClosure *read_refarray_current_value(StgTRecHeader *trec STG_UNUSED,
   StgClosure *result;
   result = (StgClosure*)tarray -> payload[index];
 
-  TRACE("%p : read_refarray_current_value(%p[%d])=%p array size = ", trec, tarray, index, result,
+  TRACE("%p : read_refarray_current_value(%p[%d])=%p array size = %ld", trec, tarray, index, result,
     tarray -> payload[tarray -> ptrs + tarray -> words - 1]);
   return result;
 }

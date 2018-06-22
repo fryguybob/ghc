@@ -2026,13 +2026,26 @@ primop  WriteRefOp_int "writeRefInt#" GenPrimOp
 
 primop  ReadRefArrayOp "readRefArray#" GenPrimOp
    RefArray# s a -> Int# -> State# s -> (# State# s, a #)
-   {Dereference a mutable field.}
+   {Dereference a mutable array field.}
    with has_side_effects = True
         can_fail = True
 
 primop  WriteRefArrayOp "writeRefArray#" GenPrimOp
    RefArray# s a -> Int# -> a -> State# s -> State# s
-   {Write to a mutable field at a given reference.}
+   {Write to a mutable array field at a given reference.}
+   with has_side_effects = True
+        can_fail         = True
+        code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
+
+primop  ReadRefArrayExtOp "readRefArrayExt#" GenPrimOp
+   RefArray# s a -> Int# -> State# s -> (# State# s, a #)
+   {Dereference a mutable array field with extended context.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefArrayExtOp "writeRefArrayExt#" GenPrimOp
+   RefArray# s a -> Int# -> a -> State# s -> State# s
+   {Write to a mutable array field with extended context at a given reference.}
    with has_side_effects = True
         can_fail         = True
         code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
