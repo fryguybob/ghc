@@ -71,6 +71,7 @@ INLINE_HEADER StgThunkInfoTable *itbl_to_thunk_itbl(const StgInfoTable *i) {retu
 INLINE_HEADER StgConInfoTable *itbl_to_con_itbl(const StgInfoTable *i) {return (StgConInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgMutConInfoTable *itbl_to_mut_con_itbl(const StgInfoTable *i) {return (StgMutConInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgMutConExtInfoTable *itbl_to_mut_con_ext_itbl(const StgInfoTable *i) {return (StgMutConExtInfoTable *)(i + 1) - 1;}
+EXTERN_INLINE StgMutConExtInfoTable *itbl_to_mut_con_ext_itbl_ext(const StgInfoTable *i) {return (StgMutConExtInfoTable *)(i + 1) - 1;}
 #else
 EXTERN_INLINE StgInfoTable *INFO_PTR_TO_STRUCT(const StgInfoTable *info);
 EXTERN_INLINE StgInfoTable *INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgInfoTable *)info;}
@@ -87,6 +88,7 @@ INLINE_HEADER StgThunkInfoTable *itbl_to_thunk_itbl(const StgInfoTable *i) {retu
 INLINE_HEADER StgConInfoTable *itbl_to_con_itbl(const StgInfoTable *i) {return (StgConInfoTable *)i;}
 INLINE_HEADER StgMutConInfoTable *itbl_to_mut_con_itbl(const StgInfoTable *i) {return (StgMutConInfoTable *)i;}
 INLINE_HEADER StgMutConExtInfoTable *itbl_to_mut_con_ext_itbl(const StgInfoTable *i) {return (StgMutConExtInfoTable *)i;}
+EXTERN_INLINE StgMutConExtInfoTable *itbl_to_mut_con_ext_itbl_ext(const StgInfoTable *i) {return (StgMutConExtInfoTable *)i;}
 #endif
 
 EXTERN_INLINE StgInfoTable *get_itbl(const StgClosure *c);
@@ -349,6 +351,9 @@ EXTERN_INLINE StgOffset stm_mut_arr_ptrs_sizeW( StgStmMutArrPtrs* x )
 INLINE_HEADER StgOffset mut_constr_ext_sizeW_fromITBL( const StgInfoTable* itbl )
 { return sizeW_fromITBL(itbl) + (StgOffset)GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(itbl)); }
 
+EXTERN_INLINE StgOffset mut_constr_ext_sizeW_fromITBL_ext( const StgInfoTable* itbl )
+{ return sizeW_fromITBL(itbl) + (StgOffset)GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl_ext(itbl)); }
+
 EXTERN_INLINE StgWord stack_sizeW ( StgStack *stack );
 EXTERN_INLINE StgWord stack_sizeW ( StgStack *stack )
 { return sizeofW(StgStack) + stack->stack_size; }
@@ -414,6 +419,15 @@ closure_sizeW_ (StgClosure *p, StgInfoTable *info)
     case STM_MUT_ARR_PTRS_CLEAN:
     case STM_MUT_ARR_PTRS_DIRTY:
         return stm_mut_arr_ptrs_sizeW((StgStmMutArrPtrs*)p);
+    case MUT_CONSTR_EXT_CLEAN:
+    case MUT_CONSTR_EXT_DIRTY:
+        return mut_constr_ext_sizeW_fromITBL_ext(info);
+    case MUT_CONSTR_ARR_EXT_CLEAN:
+    case MUT_CONSTR_ARR_EXT_DIRTY:
+    {
+        StgWord c = mut_constr_ext_sizeW_fromITBL_ext(info);
+        return c + ((StgWord*)p)[c-1];
+    }
     case TSO:
         return sizeofW(StgTSO);
     case STACK:

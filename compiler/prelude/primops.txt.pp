@@ -2026,13 +2026,26 @@ primop  WriteRefOp_int "writeRefInt#" GenPrimOp
 
 primop  ReadRefArrayOp "readRefArray#" GenPrimOp
    RefArray# s a -> Int# -> State# s -> (# State# s, a #)
-   {Dereference a mutable field.}
+   {Dereference a mutable array field.}
    with has_side_effects = True
         can_fail = True
 
 primop  WriteRefArrayOp "writeRefArray#" GenPrimOp
    RefArray# s a -> Int# -> a -> State# s -> State# s
-   {Write to a mutable field at a given reference.}
+   {Write to a mutable array field at a given reference.}
+   with has_side_effects = True
+        can_fail         = True
+        code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
+
+primop  ReadRefArrayExtOp "readRefArrayExt#" GenPrimOp
+   RefArray# s a -> Int# -> State# s -> (# State# s, a #)
+   {Dereference a mutable array field with extended context.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefArrayExtOp "writeRefArrayExt#" GenPrimOp
+   RefArray# s a -> Int# -> a -> State# s -> State# s
+   {Write to a mutable array field with extended context at a given reference.}
    with has_side_effects = True
         can_fail         = True
         code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
@@ -2048,6 +2061,10 @@ primop  WriteRefArrayOp_int "writeRefArrayInt#" GenPrimOp
    {Write to a mutable field's unlifted value.}
    with has_side_effects = True
         can_fail         = True
+
+primop  RefArraySizeOp "refArraySize#" GenPrimOp
+   RefArray# s a -> Int#
+   {The size of a RefArray#.}
 
 ------------------------------------------------------------------------
 section "Exceptions"
@@ -2265,6 +2282,20 @@ primop ReadTRefOp "readTRef#" GenPrimOp
 primop WriteTRefOp "writeTRef#" GenPrimOp
     Ref# s a -> a -> State# s -> State# s
    {Write contents of {\tt Ref\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop ReadTRefArrayOp "readTRefArray#" GenPrimOp
+    RefArray# s a -> Int# ->  State# s -> (# State# s, a #)
+   {Read contents of {\tt RefArray\#}.  Result is not yet evaluated.}
+   with
+   out_of_line = True
+   has_side_effects = True
+
+primop WriteTRefArrayOp "writeTRefArray#" GenPrimOp
+    RefArray# s a -> Int# -> a -> State# s -> State# s
+   {Write contents of {\tt RefArray\#}.  Result is not yet evaluated.}
    with
    out_of_line = True
    has_side_effects = True

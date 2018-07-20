@@ -308,6 +308,23 @@ checkClosure( StgClosure* p )
             return mut_constr_ext_sizeW_fromITBL(info);
         }
 
+    case MUT_CONSTR_ARR_EXT_CLEAN:
+    case MUT_CONSTR_ARR_EXT_DIRTY:
+        {
+            nat i;
+            StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(info));
+            for (i = 0; i < info->layout.payload.ptrs; i++) {
+                ASSERT(LOOKS_LIKE_CLOSURE_PTR(p->payload[i+o]));
+            }
+            StgWord sz = mut_constr_ext_sizeW_fromITBL(info);
+            StgInt dynSize = ((StgWord*)p)[sz-1];
+            o = o + info->layout.payload.ptrs + info->layout.payload.nptrs;
+            for (i = 0; i < dynSize; i++) {
+                ASSERT(LOOKS_LIKE_CLOSURE_PTR(p->payload[i+o]));
+            }
+            return sz + dynSize;
+        }
+
     case BLOCKING_QUEUE:
     {
         StgBlockingQueue *bq = (StgBlockingQueue *)p;

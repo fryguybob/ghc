@@ -667,10 +667,25 @@ emitPrimOp dflags [] WriteRefArrayOp  args@[addr,off,index,val] = pprTrace "Writ
     doWriteOffAddrOp Nothing (bWord dflags) [] [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1, val]
     emitCCall
         [{-no results-}]
-        (CmmLit (CmmLabel mkDirty_MUT_CON_Label))
+        (CmmLit (CmmLabel mkDirty_MUT_CON_ARR_Label))
         [(CmmReg (CmmGlobal BaseReg), AddrHint),
             (cmmUntag dflags addr,AddrHint)]
     emitComment $ mkFastString "End WriteRefArrayPtr"
+
+emitPrimOp dflags res ReadRefArrayExtOp  args@[addr,off,index] = pprTrace "ReadRefArrayExtPtr:" (ppr (args, res)) $ do
+    emitComment $ mkFastString "Begin ReadRefArrayExtPtr"
+    doIndexOffAddrOpAs Nothing (bWord dflags) (bWord dflags) res [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1]
+    emitComment $ mkFastString "End ReadRefArrayExtPtr"
+emitPrimOp dflags [] WriteRefArrayExtOp  args@[addr,off,index,val] = pprTrace "WriteRefArrayExtPtr:" (ppr args) $ do
+    emitComment $ mkFastString "Begin WriteRefArrayExtPtr"
+    emitPrimCall [] MO_WriteBarrier []
+    doWriteOffAddrOp Nothing (bWord dflags) [] [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1, val]
+    emitCCall
+        [{-no results-}]
+        (CmmLit (CmmLabel mkDirty_MUT_CON_ARR_EXT_Label))
+        [(CmmReg (CmmGlobal BaseReg), AddrHint),
+            (cmmUntag dflags addr,AddrHint)]
+    emitComment $ mkFastString "End WriteRefArrayExtPtr"
 
 emitPrimOp dflags res ReadRefArrayOp_int  args@[addr,off,index] = pprTrace "ReadRefArrayInt:" (ppr (args, res)) $ do
     emitComment $ mkFastString "Begin ReadRefArrayInt"
@@ -681,6 +696,12 @@ emitPrimOp dflags [] WriteRefArrayOp_int  args@[addr,off,index,val] = pprTrace "
     emitPrimCall [] MO_WriteBarrier []
     doWriteOffAddrOp Nothing (bWord dflags) [] [cmmOffsetExpr dflags addr off, cmmOffset dflags index 1, val]
     emitComment $ mkFastString "End WriteRefArrayPtr"
+
+-- This is the same as ReadRefInt.  The RefArray# is a reference to the size field.
+emitPrimOp dflags res RefArraySizeOp args = pprTrace "RefArraySizeInt:" (ppr (args, res)) $ do
+    emitComment $ mkFastString "Begin RefArraySize"
+    doIndexOffAddrOpAs Nothing (bWord dflags) b8 res args
+    emitComment $ mkFastString "End RefArraySize"
 
 -- count leading zeros
 emitPrimOp _      [res] Clz8Op  [w] = emitClzCall res w W8

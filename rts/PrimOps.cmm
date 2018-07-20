@@ -450,6 +450,23 @@ stg_initMutConArrayzh ( gcptr init, W_ start, W_ end )
     return ();
 }
 
+// TODO: This is only for debugging to tell which code
+// path in code gen was used.
+stg_initMutConArrayAlloczh ( gcptr init, W_ start, W_ end )
+{
+    W_ p;
+
+    p = start;
+  for:
+    if (p < end) {
+        W_[p] = init;
+        p = p + WDS(1);
+        goto for;
+    }
+
+    return ();
+}
+
 stg_newMutConArrayzh ( W_ bodySize, W_ arraySize )
 {
     gcptr arr;
@@ -460,7 +477,7 @@ stg_newMutConArrayzh ( W_ bodySize, W_ arraySize )
     TICK_ALLOC_PRIM(SIZEOF_StgHeader, WDS(bodySize + arraySize), 0);
 
     p = arr + WDS(bodySize);
-    call stg_initMutConArrayzh(arr, p, p + WDS(arraySize));
+    call stg_initMutConArrayAlloczh(arr, p, p + WDS(arraySize));
     return (arr);
 }
 
@@ -1551,6 +1568,12 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
     jump fun(arg1,arg2,arg3);
 }
 
+stg_gc_prim_pnnp (P_ arg1, W_ arg2, W_ arg3, P_ arg4, W_ fun)
+{
+    call stg_gc_noregs ();
+    jump fun(arg1,arg2,arg3,arg4);
+}
+
 #define GC_PRIM_PN(fun,arg1,arg2)               \
         jump stg_gc_prim_pn(arg1,arg2,fun);
 
@@ -1559,6 +1582,9 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
 
 #define GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
         jump stg_gc_prim_pnn(arg1,arg2,arg3,fun);
+
+#define GC_PRIM_PNNP(fun,arg1,arg2,arg3,arg4)   \
+        jump stg_gc_prim_pnnp(arg1,arg2,arg3,arg4,fun);
 
 #define MAYBE_GC_PN(fun,arg1,arg2)              \
     if (CHECK_GC()) {                           \
@@ -1576,6 +1602,12 @@ stg_gc_prim_pnn (P_ arg1, W_ arg2, W_ arg3, W_ fun)
     if (CHECK_GC()) {                           \
         HpAlloc = 0;                            \
         GC_PRIM_PNN(fun,arg1,arg2,arg3)         \
+   }
+
+#define MAYBE_GC_PNNP(fun,arg1,arg2,arg3,arg4)  \
+    if (CHECK_GC()) {                           \
+        HpAlloc = 0;                            \
+        GC_PRIM_PNNP(fun,arg1,arg2,arg3,arg4)   \
    }
 
 stg_readTRefSTMzh (P_ tref, W_ index)
@@ -1772,6 +1804,99 @@ stg_writeTRefIntzh (P_ obj,           // :: RefU# s Int#
         return ();
     } else {
         jump stg_writeTRefIntSTMzh(obj,pre_tag_index,new_value);
+    }
+}
+
+stg_readTRefArraySTMzh (P_ tref, W_ index, W_ array_index)
+{
+    P_ trec;
+    P_ result;
+
+    // Call to stmReadTRefArray may allocate
+    MAYBE_GC_PNN (stg_readTRefArraySTMzh, tref, index, array_index);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ("ptr" result) = ccall stmReadTRefArray(MyCapability() "ptr", trec "ptr",
+                                            tref "ptr", index, array_index);
+    return (result);
+}
+
+stg_readTRefArrayzh (P_ obj, W_ pre_tag_index, W_ array_index)
+{
+    P_ result;
+    P_ htrec;
+    P_ tref;
+    W_ htm;
+    W_ index;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        tref  = UNTAG(obj);
+        index = 1 + array_index + (GETTAG(obj) + pre_tag_index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+        result = StgStmMutArrPtrs_payload(tref,index);
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_read_set(htrec),
+            StgStmMutArrPtrs_hash_id(tref),
+            index);
+
+        StgHTRecHeader_read_set(htrec) = filter;
+
+        return (result);
+    } else {
+        jump stg_readTRefArraySTMzh(obj, pre_tag_index, array_index);
+    }
+}
+
+stg_writeTRefArraySTMzh (P_ tref,        // :: RefArray# s a
+                         W_ index,       // :: Word
+                         W_ array_index, // :: Word
+                         P_ new_value)   // :: a
+{
+    W_ trec;
+    // Call to stmWriteTRefArraySTM may allocate
+    MAYBE_GC_PNNP (stg_writeTRefArraySTMzh, tref, index, array_index, new_value);
+
+    trec = StgTSO_trec(CurrentTSO);
+    ccall stmWriteTRefArray(MyCapability() "ptr", trec "ptr", tref "ptr", index,
+                            array_index, new_value "ptr");
+    return ();
+}
+
+stg_writeTRefArrayzh (P_ obj,           // :: RefArray# s a
+                      W_ pre_tag_index, // :: Word
+                      W_ array_index,   // :: Word
+                      P_ new_value)     // :: a
+{
+    W_ htm;
+    W_ index;
+    P_ tref;
+    P_ htrec;
+
+    (htm) = prim %xtest();
+
+    if (htm != 0) {
+        tref  = UNTAG(obj);
+        index = 1 + array_index + (GETTAG(obj) + pre_tag_index - OFFSET_StgStmMutArrPtrs_payload - SIZEOF_StgHeader)/WDS(1);
+
+        StgStmMutArrPtrs_payload(tref,index) = new_value;
+
+        htrec = StgTSO_trec(CurrentTSO);
+
+        (W_ filter) = call stg_bloom_add_array(
+            StgHTRecHeader_write_set(htrec),
+            StgStmMutArrPtrs_hash_id(tref),
+            index);
+
+        StgHTRecHeader_write_set(htrec) = filter;
+
+        ccall dirty_MUT_CON_ARR_EXT(MyCapability() "ptr", tref "ptr");
+        return ();
+    } else {
+        jump stg_writeTRefArraySTMzh(obj,pre_tag_index,array_index,new_value);
     }
 }
 

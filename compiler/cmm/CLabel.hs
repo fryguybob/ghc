@@ -433,7 +433,8 @@ mkDirty_MUT_VAR_Label, mkSplitMarkerLabel, mkUpdInfoLabel,
     mkSMAP_DIRTY_infoLabel, mkSTMMAP_DIRTY_infoLabel,
     mkDirty_MUT_CON_Label, mkDirty_MUT_CON_EXT_Label,
     mkDirty_MUT_CON_ARR_Label, mkDirty_MUT_CON_ARR_EXT_Label,
-    mkSTMInitMutCon_Label :: CLabel
+    mkSTMInitMutCon_Label, mkNewMutConArray_Label,
+    mkInitMutConArray_Label :: CLabel
 mkDirty_MUT_VAR_Label           = mkForeignLabel (fsLit "dirty_MUT_VAR") Nothing ForeignLabelInExternalPackage IsFunction
 mkSplitMarkerLabel              = CmmLabel rtsUnitId (fsLit "__stg_split_marker")    CmmCode
 mkUpdInfoLabel                  = CmmLabel rtsUnitId (fsLit "stg_upd_frame")         CmmInfo
