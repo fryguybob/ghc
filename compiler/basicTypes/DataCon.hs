@@ -38,6 +38,7 @@ module DataCon (
         dataConEqSpec, dataConTheta,
         dataConStupidTheta,
         dataConInstArgTys, dataConOrigArgTys, dataConOrigResTy,
+        dataConInstAltTys,
         dataConInstOrigArgTys, dataConRepArgTys, dataConAltRepArgTys,
         dataConFieldLabels, dataConFieldType,
         dataConSrcBangs,
@@ -375,7 +376,8 @@ data DataCon
                 --      data instance T [a] where MkT :: a -> T [a]
                 -- The OrigResTy is T [a], but the dcRepTyCon might be :T123
 
-        dcAltRepArgTys :: [Type], -- Types for pattern matching.
+        dcAltArgTys :: [Type],    -- Types for pattern matching.
+        dcAltRepArgTys :: [Type], -- Representation for pattern matching.
 
         -- Now the strictness annotations and field labels of the constructor
         dcSrcBangs :: [HsSrcBang],
@@ -868,6 +870,7 @@ mkDataCon tycon_name name declared_infix prom_info
                   dcOrigArgTys = orig_arg_tys,
                   dcOrigAltTys = orig_alt_tys,
                   dcOrigResTy = orig_res_ty,
+                  dcAltArgTys = alt_arg_tys,
                   dcAltRepArgTys = alt_rep_arg_tys,
                   dcRepTyCon = rep_tycon,
                   dcSrcBangs = arg_stricts,
@@ -889,18 +892,34 @@ mkDataCon tycon_name name declared_infix prom_info
 
     tag = assoc "mkDataCon" (tyConDataCons rep_tycon `zip` [fIRST_TAG..]) con
     rep_arg_tys = dataConRepArgTys con
-    alt_rep_arg_tys
-      | is_mutable = pprTrace "alt_rep_arg_tys: " (ppr (orig_arg_tys, orig_alt_tys,
+    alt_arg_tys
+      | is_mutable = pprTrace "alt_arg_tys: " (ppr (orig_arg_tys, orig_alt_tys,
                         zipWith mkMutTys mutable_fields (dataConRepAltTys con)))
                    $ zipWith mkMutTys mutable_fields (dataConRepAltTys con)
       | otherwise  = rep_arg_tys
+
+    alt_rep_arg_tys -- Includes unpacking and strictness
+      | is_mutable = pprTrace "alt_rep_arg_tys: " (ppr (orig_arg_tys, orig_alt_tys,
+                        zipWith mkMutTys mutable_fields (dcrConAltRepArgTys con)))
+                   $ zipWith mkMutTys mutable_fields (dcrConAltRepArgTys con)
+      | otherwise  = dcrConAltRepArgTys con
 
     rep_ty = mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
                mkFunTys rep_arg_tys $
                mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
 
     alt_rep_ty
-      | is_mutable = mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+      | is_mutable = pprTrace "alt_rep_ty: " (ppr 
+                       ( dcrConAltRepArgTys con
+                       , rep_ty
+                       , mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+                           mkFunTys alt_rep_arg_tys $
+                           mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+                       , mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
+                           mkFunTys alt_arg_tys $
+                           mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+                       )) $
+                     mkForAllTys univ_bndrs $ mkForAllTys ex_bndrs $
                        mkFunTys alt_rep_arg_tys $
                        mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
       | otherwise = rep_ty
@@ -1193,14 +1212,14 @@ dataConFullSigForPat :: DataCon
 dataConFullSigForPat MkData {dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs,
                         dcEqSpec = eq_spec, dcOtherTheta = theta,
                         dcOrigArgTys = arg_tys, dcOrigResTy = res_ty,
-                        dcAltRepArgTys = alt_rep_arg_tys,
+                        dcAltArgTys = alt_arg_tys,
                         dcWrapperAction = wrap_act}
   = case wrap_act of
       Just _ ->
         pprTrace "forPat: "
           (ppr ( univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty
-               , alt_rep_arg_tys ))
-          (univ_tvs, ex_tvs, eq_spec, theta, alt_rep_arg_tys, res_ty)
+               , alt_arg_tys ))
+          (univ_tvs, ex_tvs, eq_spec, theta, alt_arg_tys, res_ty)
       Nothing -> (univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty)
       -- TODO: merge some of this with dcAltRepTy
 
@@ -1274,11 +1293,29 @@ dataConInstArgTys :: DataCon    -- ^ A datacon with no existentials or equality 
                   -> [Type]     -- ^ Instantiated at these types
                   -> [Type]
 dataConInstArgTys dc@(MkData {dcUnivTyVars = univ_tvs,
-                              dcExTyVars = ex_tvs}) inst_tys
+                              dcExTyVars = ex_tvs,
+                              dcAltArgTys = alt_arg_tys}) inst_tys
  = ASSERT2( length univ_tvs == length inst_tys
           , text "dataConInstArgTys" <+> ppr dc $$ ppr univ_tvs $$ ppr inst_tys)
    ASSERT2( null ex_tvs, ppr dc )
-   map (substTyWith univ_tvs inst_tys) (dataConRepArgTys dc)
+   map (substTyWith univ_tvs inst_tys) alt_arg_tys -- (dataConRepArgTys dc)
+
+-- | Finds the instantiated types of the arguments required to construct a 'DataCon' representation
+-- NB: these INCLUDE any dictionary args
+--     but EXCLUDE the data-declaration context, which is discarded
+-- It's all post-flattening etc; this is a representation type
+dataConInstAltTys :: DataCon    -- ^ A datacon with no existentials or equality constraints
+                                -- However, it can have a dcTheta (notably it can be a
+                                -- class dictionary, with superclasses)
+                  -> [Type]     -- ^ Instantiated at these types
+                  -> [Type]
+dataConInstAltTys dc@(MkData {dcUnivTyVars = univ_tvs,
+                              dcExTyVars = ex_tvs,
+                              dcAltRepArgTys = alt_rep_arg_tys}) inst_tys
+ = ASSERT2( length univ_tvs == length inst_tys
+          , text "dataConInstAltTys" <+> ppr dc $$ ppr univ_tvs $$ ppr inst_tys)
+   ASSERT2( null ex_tvs, ppr dc )
+   map (substTyWith univ_tvs inst_tys) alt_rep_arg_tys
 
 -- | Returns just the instantiated /value/ argument types of a 'DataCon',
 -- (excluding dictionary args)
@@ -1321,15 +1358,26 @@ dataConRepAltTys (MkData { dcRep = rep
                          , dcOtherTheta = theta
                          , dcOrigAltTys = orig_alt_tys })
   = case rep of
-      NoDataConRep -> ASSERT( null eq_spec ) theta ++ orig_alt_tys
-      DCR { dcr_alt_tys = alt_tys } -> alt_tys
+      NoDataConRep -> pprTrace "dataConRepAltTys NoDataConRep" (ppr (orig_alt_tys, theta))
+                        $ ASSERT( null eq_spec ) theta ++ orig_alt_tys
+      DCR { dcr_alt_tys = alt_tys } -> pprTrace "dataConRepAltTys DCR" (ppr (alt_tys, orig_alt_tys, theta))
+                                        $ theta ++ orig_alt_tys  -- alt_tys
 
 -- TODO: I don't fully understand how this is used, but in
 -- dataConInstPat we need to see mutable field information
 -- hence this version of dataConRepArgTys that should be used
 -- when the arguments are needed for a pattern.
 dataConAltRepArgTys :: DataCon -> [Type]
-dataConAltRepArgTys = dcAltRepArgTys
+dataConAltRepArgTys (MkData { dcAltRepArgTys = alt_rep_arg_tys }) = alt_rep_arg_tys
+
+dcrConAltRepArgTys :: DataCon -> [Type]
+dcrConAltRepArgTys (MkData { dcRep = rep
+                         , dcEqSpec = eq_spec
+                         , dcOtherTheta = theta
+                         , dcOrigAltTys = orig_alt_tys })
+  = case rep of
+      NoDataConRep -> ASSERT( null eq_spec ) theta ++ orig_alt_tys
+      DCR { dcr_alt_tys = alt_tys } -> alt_tys
 
 -- | The string @package:module.name@ identifying a constructor, which is attached
 -- to its info table and used by the GHCi debugger and the heap profiler

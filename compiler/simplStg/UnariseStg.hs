@@ -136,7 +136,7 @@ unariseExpr _ rho (StgApp f args)
     StgConApp (tupleDataCon Unboxed (length tys))
               (map StgVarArg (unariseId rho f))
   | null args
-  , UbxRefRep ty <- repType (idType f)
+  , UbxRefRep _ <- repType (idType f)
   = StgConApp (tupleDataCon Unboxed 2)
               (map StgVarArg (unariseId rho f))
   | otherwise
@@ -273,7 +273,7 @@ unariseIdBinder' :: UniqSupply -> UnariseEnv
                     UnariseEnv,      -- What to expand to at occurrence sites
                     [Id])            -- What to expand to at binding site
 unariseIdBinder' us rho x HsImmutable = unariseIdBinder us rho x
-unariseIdBinder' us rho x _           = case repType (idType x) of
+unariseIdBinder' us rho x HsMutable   = case repType (idType x) of
     UbxRefRep ty -> let (us0, us1) = splitUniqSupply us
                         -- we need to know later that these fields came from a Ref
                         -- so we use special types RefAddr# and RefIndex#.
@@ -285,6 +285,19 @@ unariseIdBinder' us rho x _           = case repType (idType x) of
                         rho' = extendVarEnv rho x ys
                     in  (us1, rho', ys)
     rep          -> pprPanic "Mutable field in alt that is not a Ref#"
+                             (ppr (rep, x))
+unariseIdBinder' us rho x _           = case repType (idType x) of
+    UbxRefRep ty -> let (us0, us1) = splitUniqSupply us
+                        -- we need to know later that these fields came from a Ref
+                        -- so we use special types RefAddr# and RefIndex#.
+                        -- Specifically these came from a binding of a mutable
+                        -- field so they should have a void representation for
+                        -- the Addr and index representation that matches the
+                        -- type of the mutable field.
+                        ys   = unboxedTupleBindersFrom us0 x [refAddrAltTy, mkRefIndexAltTy intPrimTy]
+                        rho' = extendVarEnv rho x ys
+                    in  (us1, rho', ys)
+    rep          -> pprPanic "Mutable field in alt that is not a RefArray#"
                              (ppr (rep, x))
 
 unariseIdBinder :: UniqSupply -> UnariseEnv
