@@ -221,7 +221,10 @@ cgDataCon data_con
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
              ptr_wds, --  #ptr_wds
-             arg_things) = mkVirtConstrOffsets dflags ext_hdr arg_reps
+             arg_things)
+                | hasMutableFields data_con = pprTrace "cgDataCon: " (ppr (arg_reps, mkVirtConstrOffsets dflags ext_hdr [(a,(b,c)) | (b,(a,c)) <- zip [(0::Int)..] arg_reps]))
+                    $ mkVirtConstrOffsets dflags ext_hdr arg_reps
+                | otherwise = mkVirtConstrOffsets dflags ext_hdr arg_reps
 
             -- TODO: We need some design work for how to do this in general
             ext_hdr

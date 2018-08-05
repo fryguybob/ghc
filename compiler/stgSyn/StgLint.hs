@@ -240,7 +240,7 @@ lintAlt scrut_ty (DataAlt con, args, _, rhs) = do
                                   not (isNewTyCon tycon) -> do
          let
            cons    = tyConDataCons tycon
-           arg_tys = dataConInstArgTys con tys_applied
+           arg_tys = dataConInstAltTys con tys_applied
                 -- This does not work for existential constructors
 
          checkL (con `elem` cons) (mkAlgAltMsg2 scrut_ty con)

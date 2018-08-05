@@ -768,8 +768,9 @@ dataConArgUnpack arg_ty
       -- NB: check for an *algebraic* data type
       -- A recursive newtype might mean that
       -- 'arg_ty' is a newtype
-  , let rep_tys = dataConInstArgTys con tc_args
+  , let rep_tys = dataConInstAltTys con tc_args
   = ASSERT( isVanillaDataCon con )
+    pprTrace "dataConArgUnpack:" (ppr (arg_ty, rep_tys))
     ( rep_tys `zip` dataConRepStrictness con
     ,( \ arg_id ->
        do { rep_ids <- mapM newLocal rep_tys
@@ -779,7 +780,8 @@ dataConArgUnpack arg_ty
           ; return (rep_ids, unbox_fn) }
      , Boxer $ \ subst ->
        do { rep_ids <- mapM (newLocal . TcType.substTyUnchecked subst) rep_tys
-          ; return (rep_ids, Var (dataConWorkId con)
+          ; return $ pprTrace "dataConArgUnpack: Boxer" (ppr (arg_ty, rep_tys, rep_ids))
+                $ (rep_ids, Var (dataConWorkId con)
                              `mkTyApps` (substTysUnchecked subst tc_args)
                              `mkVarApps` rep_ids ) } ) )
   | otherwise
