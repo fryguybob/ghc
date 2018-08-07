@@ -512,8 +512,8 @@ GarbageCollect (nat collect_gen,
                    mutlist_TVAR,
                    mutlist_TREC_CHUNK, mutlist_TREC_HEADER,
                    mutlist_WAKEUP_CHUNK,
-                   mutlist_OTHERS,
-                   mutlist_CONSTR);
+                   mutlist_CONSTR,
+                   mutlist_OTHERS);
     }
 
     bdescr *next, *prev;

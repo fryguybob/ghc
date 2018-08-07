@@ -552,7 +552,8 @@ update_fwd_large( bdescr *bd )
         thread_(&tc->prev_chunk);
         for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
           thread_(&e->tarray);
-          if (e->offset < e->tarray->ptrs) {
+          if (e->offset < e->tarray->ptrs ||
+                (e->offset >= (e->tarray->ptrs + e->tarray->words))) {
             thread(&e->expected_value.ptr);
             thread(&e->new_value.ptr);
           }
@@ -808,7 +809,8 @@ thread_obj (StgInfoTable *info, StgPtr p)
         thread_(&tc->prev_chunk);
         for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
           thread_(&e->tarray);
-          if (e->offset < e->tarray->ptrs) {
+          if (e->offset < e->tarray->ptrs ||
+                (e->offset >= (e->tarray->ptrs + e->tarray->words))) {
             thread(&e->expected_value.ptr);
             thread(&e->new_value.ptr);
           }
