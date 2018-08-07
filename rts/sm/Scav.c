@@ -679,6 +679,7 @@ scavenge_block (bdescr *bd)
         }
         p += info->layout.payload.nptrs-1; // Size field
         end = p + *p + 1;
+        debugTrace(DEBUG_gc,"scav MUT_CON_ARR_EXT_CLEAN %p count %d", q, *p);
         for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
@@ -697,6 +698,7 @@ scavenge_block (bdescr *bd)
         }
         p += info->layout.payload.nptrs-1; // Size field
         end = p + *p + 1;
+        debugTrace(DEBUG_gc,"scav MUT_CON_ARR_EXT_DIRTY %p count %d", q, *p);
         for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
@@ -970,7 +972,8 @@ scavenge_block (bdescr *bd)
         evacuate((StgClosure **)&tc->prev_chunk);
         for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
           evacuate((StgClosure **)&e->tarray);
-          if (e->offset < e->tarray->ptrs) {
+          if (e->offset < e->tarray->ptrs ||
+                (e->offset >= (e->tarray->ptrs + e->tarray->words))) {
             evacuate((StgClosure **)&e->expected_value.ptr);
             evacuate((StgClosure **)&e->new_value.ptr);
           }
@@ -1277,6 +1280,7 @@ scavenge_mark_stack(void)
             }
             p += info->layout.payload.nptrs-1; // Size field
             end = p + *p + 1;
+            debugTrace(DEBUG_gc,"scav MUT_CON_ARR_EXT_CLEAN %p count %d", q, *p);
             for (p = p + 1; p < end; p++) {
                 evacuate((StgClosure **)p);
             }
@@ -1296,6 +1300,7 @@ scavenge_mark_stack(void)
             }
             p += info->layout.payload.nptrs-1; // Size field
             end = p + *p + 1;
+            debugTrace(DEBUG_gc,"scav MUT_CON_ARR_EXT_DIRTY %p count %d", q, *p);
             for (p = p + 1; p < end; p++) {
                 evacuate((StgClosure **)p);
             }
@@ -1567,7 +1572,8 @@ scavenge_mark_stack(void)
             evacuate((StgClosure **)&tc->prev_chunk);
             for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
               evacuate((StgClosure **)&e->tarray);
-              if (e->offset < e->tarray->ptrs) {
+              if (e->offset < e->tarray->ptrs ||
+                    (e->offset >= (e->tarray->ptrs + e->tarray->words))) {
                 evacuate((StgClosure **)&e->expected_value.ptr);
                 evacuate((StgClosure **)&e->new_value.ptr);
               }
@@ -1802,6 +1808,7 @@ scavenge_one(StgPtr p)
         }
         p += info->layout.payload.nptrs-1; // Size field
         end = p + *p + 1;
+        debugTrace(DEBUG_gc,"scav MUT_CON_ARR_EXT_CLEAN %p count %d", q, *p);
         for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
@@ -1820,6 +1827,7 @@ scavenge_one(StgPtr p)
         }
         p += info->layout.payload.nptrs-1; // Size field
         end = p + *p + 1;
+        debugTrace(DEBUG_gc,"scav MUT_CON_ARR_EXT_DIRTY %p count %d", q, *p);
         for (p = p + 1; p < end; p++) {
             evacuate((StgClosure **)p);
         }
@@ -2076,7 +2084,8 @@ scavenge_one(StgPtr p)
         evacuate((StgClosure **)&tc->prev_chunk);
         for (i = 0; i < tc -> next_entry_idx; i ++, e++ ) {
           evacuate((StgClosure **)&e->tarray);
-          if (e->offset < e->tarray->ptrs) {
+          if (e->offset < e->tarray->ptrs ||
+                (e->offset >= (e->tarray->ptrs + e->tarray->words))) {
             evacuate((StgClosure **)&e->expected_value.ptr);
             evacuate((StgClosure **)&e->new_value.ptr);
           }

@@ -462,7 +462,8 @@ checkClosure( StgClosure* p )
         for (i = 0; i < tc -> next_entry_idx; i ++) {
           TArrayRecEntry* e = &tc->entries[i];
           ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->tarray));
-          if (e->offset < e->tarray->ptrs) {
+          if (e->offset < e->tarray->ptrs ||
+                (e->offset >= (e->tarray->ptrs + e->tarray->words))) {
               ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->expected_value.ptr));
               ASSERT(LOOKS_LIKE_CLOSURE_PTR(e->new_value.ptr));
           }

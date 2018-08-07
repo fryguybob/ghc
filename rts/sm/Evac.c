@@ -631,6 +631,7 @@ loop:
       const StgInfoTable* i = INFO_PTR_TO_STRUCT(info);
       StgWord o = GET_MUT_CON_EXT_SIZE(itbl_to_mut_con_ext_itbl(i));
       StgInt dynSize = (StgInt)*(q->payload + o + i->layout.payload.ptrs + i->layout.payload.nptrs - 1);
+      debugTrace(DEBUG_gc,"evac MUT_CON_ARR_EXT_DIRTY %p count %d", q, dynSize);
       copy_tag(p,info,q,mut_constr_ext_sizeW_fromITBL(i)+dynSize,gen_no,tag);
       return;
   }
