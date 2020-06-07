@@ -38,6 +38,9 @@ module GHC.Hs.Type (
         SrcStrictness(..), SrcUnpackedness(..),
         getBangType, getBangStrictness,
 
+        HsMutableInfo(..),
+        getMutable,
+
         ConDeclField(..), LConDeclField, pprConDeclFields,
 
         HsConDetails(..),
@@ -84,7 +87,8 @@ import GHC.Types.Id ( Id )
 import GHC.Types.Name( Name, NamedThing(getName) )
 import GHC.Types.Name.Reader ( RdrName )
 import GHC.Core.DataCon( HsSrcBang(..), HsImplBang(..),
-                         SrcStrictness(..), SrcUnpackedness(..) )
+                         SrcStrictness(..), SrcUnpackedness(..),
+                         HsMutableInfo(..) )
 import GHC.Builtin.Types( mkTupleStr )
 import GHC.Core.Type
 import GHC.Hs.Doc
@@ -126,6 +130,10 @@ getBangStrictness :: LHsType a -> HsSrcBang
 getBangStrictness                 (L _ (HsBangTy _ s _))     = s
 getBangStrictness (L _ (HsDocTy _ (L _ (HsBangTy _ s _)) _)) = s
 getBangStrictness _ = (HsSrcBang NoSourceText NoSrcUnpack NoSrcStrict)
+
+getMutable :: LHsType a -> HsMutableInfo
+getMutable (L _ (HsMutableTy i _)) = i
+getMutable _ = HsImmutable
 
 {-
 ************************************************************************
@@ -792,6 +800,10 @@ data HsType pass
       --         'ApiAnnotation.AnnBang' @\'!\'@
 
       -- For details on above see note [Api annotations] in GHC.Parser.Annotation
+
+  | HsMutableTy HsMutableInfo  -- A mutable field type
+                (LHsType pass)
+      -- TODO: RY Read about 'Api annotations'
 
   | HsRecTy     (XRecTy pass)
                 [LConDeclField pass]    -- Only in data type declarations
@@ -1657,6 +1669,7 @@ ppr_mono_ty (HsQualTy { hst_ctxt = ctxt, hst_body = ty })
   = sep [pprLHsContextAlways ctxt, ppr_mono_lty ty]
 
 ppr_mono_ty (HsBangTy _ b ty)   = ppr b <> ppr_mono_lty ty
+ppr_mono_ty (HsMutableTy m ty)  = ppr m <+> ppr_mono_lty ty
 ppr_mono_ty (HsRecTy _ flds)      = pprConDeclFields flds
 ppr_mono_ty (HsTyVar _ prom (L _ name))
   | isPromoted prom = quote (pprPrefixOcc name)
@@ -1759,6 +1772,7 @@ hsTypeNeedsParens p = go
     go (HsOpTy{})            = p >= opPrec
     go (HsParTy{})           = False
     go (HsDocTy _ (L _ t) _) = go t
+    go (HsMutableTy _ (L _ t)) = go t
     go (XHsType{})           = False
 
 maybeAddSpace :: [LHsType pass] -> SDoc -> SDoc
@@ -1801,6 +1815,7 @@ lhsTypeHasLeadingPromotionQuote ty
     go (HsParTy{})           = False
     go (HsDocTy _ t _)       = goL t
     go (XHsType{})           = False
+    go (HsMutableTy{})       = False
 
 -- | @'parenthesizeHsType' p ty@ checks if @'hsTypeNeedsParens' p ty@ is
 -- true, and if so, surrounds @ty@ with an 'HsParTy'. Otherwise, it simply

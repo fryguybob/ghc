@@ -144,6 +144,7 @@ data Extension
    | ImportQualifiedPost
    | CUSKs
    | StandaloneKindSignatures
+   | MutableFields
    deriving (Eq, Enum, Show, Generic, Bounded)
 -- 'Ord' and 'Bounded' are provided for GHC API users (see discussions
 -- in https://gitlab.haskell.org/ghc/ghc/merge_requests/2707 and

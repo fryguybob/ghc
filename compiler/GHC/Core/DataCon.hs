@@ -13,6 +13,7 @@ module GHC.Core.DataCon (
         SrcStrictness(..), SrcUnpackedness(..),
         HsSrcBang(..), HsImplBang(..),
         StrictnessMark(..),
+        HsMutableInfo(..),
         ConTag,
 
         -- ** Equality specs
@@ -704,6 +705,16 @@ data SrcUnpackedness = SrcUnpack -- ^ {-# UNPACK #-} specified
 -- StrictnessMark is internal only, used to indicate strictness
 -- of the DataCon *worker* fields
 data StrictnessMark = MarkedStrict | NotMarkedStrict
+
+-- Mutable fields
+data HsMutableInfo
+  = HsImmutable
+  | HsMutable
+    deriving (Eq, Data.Data)
+
+instance Outputable HsMutableInfo where
+    ppr HsImmutable    = empty
+    ppr HsMutable      = text "mutable"
 
 -- | An 'EqSpec' is a tyvar/type pair representing an equality made in
 -- rejigging a GADT constructor
