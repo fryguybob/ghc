@@ -687,6 +687,7 @@ data Token
   | ITinstance
   | ITlet
   | ITmodule
+  | ITmutable
   | ITnewtype
   | ITof
   | ITqualified
@@ -933,7 +934,8 @@ reservedWordsFM = listToUFM $
 
          ( "rec",            ITrec,           xbit ArrowsBit .|.
                                               xbit RecursiveDoBit),
-         ( "proc",           ITproc,          xbit ArrowsBit)
+         ( "proc",           ITproc,          xbit ArrowsBit),
+         ( "mutable",        ITmutable,       xbit MutableFieldsBit)
      ]
 
 {-----------------------------------
@@ -2475,6 +2477,7 @@ data ExtBits
   | MultiWayIfBit
   | GadtSyntaxBit
   | ImportQualifiedPostBit
+  | MutableFieldsBit
 
   -- Flags that are updated once parsing starts
   | InRulePragBit
@@ -2561,6 +2564,7 @@ mkParserFlags' warningFlags extensionFlags thisPackage
       .|. MultiWayIfBit               `xoptBit` LangExt.MultiWayIf
       .|. GadtSyntaxBit               `xoptBit` LangExt.GADTSyntax
       .|. ImportQualifiedPostBit      `xoptBit` LangExt.ImportQualifiedPost
+      .|. MutableFieldsBit            `xoptBit` LangExt.MutableFields
     optBits =
           HaddockBit        `setBitIf` isHaddock
       .|. RawTokenStreamBit `setBitIf` rawTokStream

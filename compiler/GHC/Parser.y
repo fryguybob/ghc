@@ -92,7 +92,7 @@ import GHC.Builtin.Types ( unitTyCon, unitDataCon, tupleTyCon, tupleDataCon, nil
                            listTyCon_RDR, consDataCon_RDR, eqTyCon_RDR )
 }
 
-%expect 232 -- shift/reduce conflicts
+%expect 234 -- shift/reduce conflicts
 
 {- Last updated: 04 June 2018
 
@@ -504,6 +504,7 @@ are the most common patterns, rewritten as regular expressions for clarity:
  'stock'        { L _ ITstock }    -- for DerivingStrategies extension
  'anyclass'     { L _ ITanyclass } -- for DerivingStrategies extension
  'via'          { L _ ITvia }      -- for DerivingStrategies extension
+ 'mutable'      { L _ ITmutable }  -- for mutable fields extension
 
  'unit'         { L _ ITunit }
  'signature'    { L _ ITsignature }
@@ -1998,6 +1999,11 @@ is connected to the first type too.
 
 type :: { LHsType GhcPs }
         : btype                        { $1 }
+        | 'mutable'
+          btype '->' ctype             {% ams $2 [mu AnnRarrow $3] -- See note [GADT decl discards annotations]
+                                       >> ams (sLL $2 $> (HsFunTy noExtField
+                                                (L (getLoc $2) (HsMutableTy HsMutable $2)) $4))
+                                              [mu AnnRarrow $3] }
         | btype '->' ctype             {% ams $1 [mu AnnRarrow $2] -- See note [GADT decl discards annotations]
                                        >> ams (sLL $1 $> $ HsFunTy noExtField $1 $3)
                                               [mu AnnRarrow $2] }
@@ -2007,6 +2013,11 @@ typedoc :: { LHsType GhcPs }
         : btype                          { $1 }
         | btype docprev                  { sLL $1 $> $ HsDocTy noExtField $1 $2 }
         | docnext btype                  { sLL $1 $> $ HsDocTy noExtField $2 $1 }
+        | 'mutable'
+          btype '->'     ctypedoc        {% ams $2 [mu AnnRarrow $3] -- See note [GADT decl discards annotations]
+                                         >> ams (sLL $2 $> $ (HsFunTy noExtField
+                                                  (L (getLoc $2) (HsMutableTy HsMutable $2)) $4))
+                                                [mu AnnRarrow $3] }
         | btype '->'     ctypedoc        {% ams $1 [mu AnnRarrow $2] -- See note [GADT decl discards annotations]
                                          >> ams (sLL $1 $> $ HsFunTy noExtField $1 $3)
                                                 [mu AnnRarrow $2] }
@@ -2022,6 +2033,7 @@ typedoc :: { LHsType GhcPs }
                                                             (HsDocTy noExtField $2 $1))
                                                          $4)
                                                 [mu AnnRarrow $3] }
+
 
 -- See Note [Constr variations of non-terminals]
 constr_btype :: { LHsType GhcPs }
@@ -3658,6 +3670,7 @@ varid :: { Located RdrName }
         | 'forall'         { sL1 $1 $! mkUnqual varName (fsLit "forall") }
         | 'family'         { sL1 $1 $! mkUnqual varName (fsLit "family") }
         | 'role'           { sL1 $1 $! mkUnqual varName (fsLit "role") }
+        | 'mutable'        { sL1 $1 $! mkUnqual varName (fsLit "mutable") }
         -- If this changes relative to tyvarid, update 'checkRuleTyVarBndrNames'
         -- in GHC.Parser.PostProcess
         -- See Note [Parsing explicit foralls in Rules]
