@@ -119,7 +119,8 @@ uint32_t mutlist_MUTVARS,
     mutlist_TVAR_WATCH_QUEUE,
     mutlist_TREC_CHUNK,
     mutlist_TREC_HEADER,
-    mutlist_OTHERS;
+    mutlist_OTHERS,
+    mutlist_CONSTR;
 #endif
 
 /* Thread-local data for each GC thread
@@ -258,6 +259,7 @@ GarbageCollect (uint32_t collect_gen,
   mutlist_TREC_CHUNK = 0;
   mutlist_TREC_HEADER = 0;
   mutlist_OTHERS = 0;
+  mutlist_CONSTR = 0;
 #endif
 
   // attribute any costs to CCS_GC
@@ -588,12 +590,12 @@ GarbageCollect (uint32_t collect_gen,
         copied +=  mut_list_size;
 
         debugTrace(DEBUG_gc,
-                   "mut_list_size: %lu (%d vars, %d arrays, %d MVARs, %d TVARs, %d TVAR_WATCH_QUEUEs, %d TREC_CHUNKs, %d TREC_HEADERs, %d others)",
+                   "mut_list_size: %lu (%d vars, %d arrays, %d MVARs, %d TVARs, %d TVAR_WATCH_QUEUEs, %d TREC_CHUNKs, %d TREC_HEADERs, %d MUTABLE_CONSTRs, %d others)",
                    (unsigned long)(mut_list_size * sizeof(W_)),
                    mutlist_MUTVARS, mutlist_MUTARRS, mutlist_MVARS,
                    mutlist_TVAR, mutlist_TVAR_WATCH_QUEUE,
                    mutlist_TREC_CHUNK, mutlist_TREC_HEADER,
-                   mutlist_OTHERS);
+                   mutlist_CONSTR, mutlist_OTHERS);
     }
 
     bdescr *next, *prev;

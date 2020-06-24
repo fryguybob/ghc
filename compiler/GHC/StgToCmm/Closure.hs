@@ -16,6 +16,10 @@ module GHC.StgToCmm.Closure (
 
         idPrimRep, isVoidRep, isGcPtrRep, addIdReps, addArgReps,
         argPrimRep,
+        isRefAddrAlt,
+        isRefIndexAlt,
+        idPrimRepForAlt,
+        addIdRepsForAlt,
 
         NonVoid(..), fromNonVoid, nonVoidIds, nonVoidStgArgs,
         assertNonVoidIds, assertNonVoidStgArgs,
@@ -57,6 +61,7 @@ module GHC.StgToCmm.Closure (
 
         -- * InfoTables
         mkDataConInfoTable,
+        mkDataConDirtyInfoTable,
         cafBlackHoleInfoTable,
         indStaticInfoTable,
         staticClosureNeedsLink,
@@ -88,6 +93,7 @@ import GHC.Types.Basic
 import GHC.Utils.Outputable
 import GHC.Driver.Session
 import GHC.Utils.Misc
+import GHC.Builtin.Names
 
 import Data.Coerce (coerce)
 import qualified Data.ByteString.Char8 as BS8
@@ -188,6 +194,33 @@ addArgReps = map (\arg -> let arg' = fromNonVoid arg
 -- See Note [Post-unarisation invariants]
 argPrimRep :: StgArg -> PrimRep
 argPrimRep arg = typePrimRep1 (stgArgType arg)
+
+addIdRepsForAlt :: [NonVoid Id] -> [NonVoid (PrimRep, Id)]
+addIdRepsForAlt ids = [NonVoid (idPrimRepForAlt id', id') | id <- ids, let id' = fromNonVoid id]
+
+idPrimRepForAlt :: Id -> PrimRep
+idPrimRepForAlt id = case ty of
+    -- In a case alternative for a mutable field we treat the index with
+    -- the representation of the underlying mutable field.
+    TyConApp con [ty']
+      | con `hasKey` refIndexAltTyConKey -> typePrimRep1 ty'
+    TyConApp con _
+      | con `hasKey` refAddrAltTyConKey  -> VoidRep
+    _                                    -> typePrimRep1 ty
+  where
+    ty = idType id
+ 
+isRefIndexAlt :: Type -> Bool
+isRefIndexAlt arg =
+  case arg of
+    TyConApp con [_] -> con `hasKey` refIndexAltTyConKey
+    _                -> False
+
+isRefAddrAlt :: Type -> Bool
+isRefAddrAlt arg = 
+  case arg of
+    TyConApp con _ -> con `hasKey` refAddrAltTyConKey
+    _              -> False
 
 ------------------------------------------------------
 --                Building LambdaFormInfo
@@ -897,7 +930,38 @@ mkDataConInfoTable dflags data_con is_static ptr_wds nonptr_wds
    name = dataConName data_con
    info_lbl = mkConInfoTableLabel name NoCafRefs
    sm_rep = mkHeapRep dflags is_static ptr_wds nonptr_wds cl_type
-   cl_type = Constr (dataConTagZ data_con) (dataConIdentity data_con)
+   cl_type
+      | hasMutableFields data_con && not is_static
+                  = MutConstr (dataConTagZ data_con) (dataConIdentity data_con)
+                        (CmmLabel (mkConDirtyInfoTableLabel name NoCafRefs))
+                        True
+      | otherwise = Constr    (dataConTagZ data_con) (dataConIdentity data_con)
+                  -- We keep the *zero-indexed* tag in the srt_len field
+                  -- of the info table of a data constructor.
+
+   prof | not (gopt Opt_SccProfilingOn dflags) = NoProfilingInfo
+        | otherwise                            = ProfilingInfo ty_descr val_descr
+
+   ty_descr  = BS8.pack $ occNameString $ getOccName $ dataConTyCon data_con
+   val_descr = BS8.pack $ occNameString $ getOccName data_con
+
+mkDataConDirtyInfoTable :: DynFlags -> DataCon -> Bool -> Int -> Int -> CmmInfoTable
+mkDataConDirtyInfoTable dflags data_con is_static ptr_wds nonptr_wds
+ = CmmInfoTable { cit_lbl  = info_lbl
+                , cit_rep  = sm_rep
+                , cit_prof = prof
+                , cit_srt  = Nothing
+                , cit_clo  = Nothing }
+ where
+   name = dataConName data_con
+   info_lbl = mkConDirtyInfoTableLabel name NoCafRefs
+   sm_rep = mkHeapRep dflags is_static ptr_wds nonptr_wds cl_type
+   cl_type
+      | hasMutableFields data_con && not is_static
+                  = MutConstr (dataConTagZ data_con) (dataConIdentity data_con)
+                        (CmmLabel (mkConInfoTableLabel name NoCafRefs))
+                        False
+      | otherwise = Constr    (dataConTagZ data_con) (dataConIdentity data_con)
                   -- We keep the *zero-indexed* tag in the srt_len field
                   -- of the info table of a data constructor.
 

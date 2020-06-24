@@ -234,8 +234,8 @@ cgDataCon data_con
 
             nonptr_wds   = tot_wds - ptr_wds
 
-            dyn_info_tbl =
-              mkDataConInfoTable dflags data_con False ptr_wds nonptr_wds
+            dyn_info_tbl = mkDataConInfoTable      dflags data_con False ptr_wds nonptr_wds
+            mut_info_tbl = mkDataConDirtyInfoTable dflags data_con False ptr_wds nonptr_wds
 
             -- We're generating info tables, so we don't know and care about
             -- what the actual arguments are. Using () here as the place holder.
@@ -245,17 +245,20 @@ cgDataCon data_con
                        , rep_ty <- typePrimRep ty
                        , not (isVoidRep rep_ty) ]
 
-        ; emitClosureAndInfoTable dyn_info_tbl NativeDirectCall [] $
-            -- NB: the closure pointer is assumed *untagged* on
-            -- entry to a constructor.  If the pointer is tagged,
-            -- then we should not be entering it.  This assumption
-            -- is used in ldvEnter and when tagging the pointer to
-            -- return it.
-            -- NB 2: We don't set CC when entering data (WDP 94/06)
-            do { tickyEnterDynCon
-               ; ldvEnter (CmmReg nodeReg)
-               ; tickyReturnOldCon (length arg_reps)
-               ; void $ emitReturn [cmmOffsetB platform (CmmReg nodeReg) (tagForCon dflags data_con)]
-               }
-                    -- The case continuation code expects a tagged pointer
+            info_body = 
+              -- NB: the closure pointer is assumed *untagged* on
+              -- entry to a constructor.  If the pointer is tagged,
+              -- then we should not be entering it.  This assumption
+              -- is used in ldvEnter and when tagging the pointer to
+              -- return it.
+              -- NB 2: We don't set CC when entering data (WDP 94/06)
+              do { tickyEnterDynCon
+                ; ldvEnter (CmmReg nodeReg)
+                ; tickyReturnOldCon (length arg_reps)
+                ; void $ emitReturn [cmmOffsetB platform (CmmReg nodeReg) (tagForCon dflags data_con)]
+                } -- The case continuation code expects a tagged pointer
+
+        ; emitClosureAndInfoTable dyn_info_tbl NativeDirectCall [] info_body
+        ; when (hasMutableFields data_con)
+            (emitClosureAndInfoTable mut_info_tbl NativeDirectCall [] info_body)
         }

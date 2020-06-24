@@ -17,6 +17,7 @@ module GHC.StgToCmm.Env (
 
         bindArgsToRegs, bindToReg, rebindToReg,
         bindArgToReg, idToReg,
+        bindArgToOtherReg,
         getArgAmode, getNonVoidArgAmodes,
         getCgIdInfo,
         maybeLetNoEscape,
@@ -167,7 +168,8 @@ getNonVoidArgAmodes :: [StgArg] -> FCode [CmmExpr]
 --     so the result list may be shorter than the argument list
 getNonVoidArgAmodes [] = return []
 getNonVoidArgAmodes (arg:args)
-  | isVoidRep (argPrimRep arg) = getNonVoidArgAmodes args
+  | isVoidRep (argPrimRep arg)
+  && not (isRefAddrAlt (stgArgType arg)) = getNonVoidArgAmodes args
   | otherwise = do { amode  <- getArgAmode (NonVoid arg)
                    ; amodes <- getNonVoidArgAmodes args
                    ; return ( amode : amodes ) }
@@ -191,6 +193,10 @@ rebindToReg :: NonVoid Id -> FCode LocalReg
 rebindToReg nvid@(NonVoid id)
   = do  { info <- getCgIdInfo id
         ; bindToReg nvid (cg_lf info) }
+
+bindArgToOtherReg :: Id -> LocalReg -> FCode ()
+bindArgToOtherReg id reg = do
+    addBindC (mkCgIdInfo id (mkLFArgument id) (CmmReg (CmmLocal reg)))
 
 bindArgToReg :: NonVoid Id -> FCode LocalReg
 bindArgToReg nvid@(NonVoid id) = bindToReg nvid (mkLFArgument id)

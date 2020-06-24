@@ -136,6 +136,8 @@ isRetainer( const StgClosure *c )
     case SMALL_MUT_ARR_PTRS_CLEAN:
     case SMALL_MUT_ARR_PTRS_DIRTY:
     case BLOCKING_QUEUE:
+    case MUT_CONSTR_CLEAN:
+    case MUT_CONSTR_DIRTY:
 
         // thunks are retainers.
     case THUNK:

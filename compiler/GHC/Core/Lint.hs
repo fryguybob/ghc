@@ -1371,7 +1371,8 @@ lintCoreAlt scrut_ty alt_ty alt@(DataAlt con, args, rhs)
         -- type variables of the data constructor
         -- We've already check
       lintL (tycon == dataConTyCon con) (mkBadConMsg tycon con)
-    ; let con_payload_ty = piResultTys (dataConRepType con) tycon_arg_tys
+    ; let con_payload_ty = piResultTys (dataConAltRepType con) tycon_arg_tys
+        -- TODO: RY this was dataConRepType, need to update formalizm
 
         -- And now bring the new binders into scope
     ; lintBinders CasePatBind args $ \ args' -> do

@@ -167,6 +167,48 @@ To eliminate this case expression we need to map x1 to 1# in UnariseEnv:
 
 so that `f x1 x2` becomes `f 1# x`.
 
+Note [References to mutable fields]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+References to mutable constructor fields unarise like unboxed tuples, but
+with different representations depending on the use.  For instance,
+as a function argument a `Ref#` is a pointer and an index, but a `Ref#`
+in a case alt binds an index while the case scrutinee is the pointer.
+
+Suppose that a variable x : Ref# s t.
+
+  * At the binding site for x, make a fresh vars  xa:Ptr#, xi:Int#
+
+  * Extend the UnariseEnv   x :-> MultiVal [xa,xi]
+
+  * Replace the binding with a curried binding for xa,xi
+
+       Lambda:   \x.e                ==>   \xa xi. e
+       Case alt:
+         case v of y
+           MkT a b x c d -> e  ==>   let xi = offset of field - tag
+                                         xa = y
+                                     in  MkT a b _ c d -> e
+    
+    The index, in the pattern match needs the same representation as the field
+    to ensure we get the right layout for objects.
+
+  * Replace argument occurrences with a sequence of args via a lookup in
+    UnariseEnv
+
+       f a b x c d   ==>   f a b xa xi c d
+
+  * Replace tail-call occurrences with an unboxed tuple via a lookup in
+    UnariseEnv
+
+       x  ==>  (# x1, x2 #)
+
+    So, for example
+
+       f x = x    ==>   f xa xi = (# xa, xi #)
+
+By the end of this pass, we only have unboxed tuples in return positions.
+Ref#s are completely eliminated.
+
 Note [Unarisation and arity]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Because of unarisation, the arity that will be recorded in the generated info
@@ -190,6 +232,7 @@ STG programs after unarisation have these invariants:
   * Alt binders (binders in patterns) are always non-void.
 
   * Binders always have zero (for void arguments) or one PrimRep.
+
 -}
 
 {-# LANGUAGE CPP, TupleSections #-}
@@ -232,12 +275,12 @@ import qualified Data.IntMap as IM
 --   x :-> MultiVal [a,b,c] in rho
 --
 -- iff  x's typePrimRep is not a singleton, or equivalently
---      x's type is an unboxed tuple, sum or void.
+--      x's type is an unboxed tuple, sum, ref or void.
 --
 --    x :-> UnaryVal x'
 --
 -- iff x's RepType is UnaryRep or equivalently
---     x's type is not unboxed tuple, sum or void.
+--     x's type is not unboxed tuple, sum, ref or void.
 --
 -- So
 --     x :-> MultiVal [a] in rho
@@ -257,7 +300,7 @@ data UnariseVal
 
 instance Outputable UnariseVal where
   ppr (MultiVal args) = text "MultiVal" <+> ppr args
-  ppr (UnaryVal arg)   = text "UnaryVal" <+> ppr arg
+  ppr (UnaryVal arg)  = text "UnaryVal" <+> ppr arg
 
 -- | Extend the environment, checking the UnariseEnv invariant.
 extendRho :: UnariseEnv -> Id -> UnariseVal -> UnariseEnv
@@ -375,6 +418,10 @@ unariseMulti_maybe rho dc args ty_args
   | isUnboxedSumCon dc
   , let args1 = ASSERT(isSingleton args) (unariseConArgs rho args)
   = Just (mkUbxSum dc ty_args args1)
+
+  | isRefPrimCon dc || isRefUPrimCon dc
+  = pprTrace "unariseMulti_maybe" (ppr args)
+  $ Just (unariseConArgs rho args)
 
   | otherwise
   = Nothing
@@ -677,6 +724,11 @@ unariseArgBinder is_con_arg rho x =
       | isUnboxedSumType (idType x) || isUnboxedTupleType (idType x)
       -> do x' <- mkId (mkFastString "us") (primRepToType rep)
             return (extendRho rho x (MultiVal [StgVarArg x']), [x'])
+      | isRefPrimType (idType x) || isRefUPrimType (idType x)
+      -> do x' <- mkId (mkFastString "ra") (primRepToType rep)
+            y' <- mkId (mkFastString "ri") (primRepToType rep)
+            pprTrace "unariseArgBinder: " (ppr (x, idType x, rep, primRepToType rep, is_con_arg, x', y')) $ return ()      
+            return (extendRho rho x (MultiVal [StgVarArg x', StgVarArg y']), [x', y'])
       | otherwise
       -> return (rho, [x])
 

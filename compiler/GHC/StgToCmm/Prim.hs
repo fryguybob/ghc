@@ -416,6 +416,7 @@ emitPrimOp dflags = \case
   ReadArrayArrayOp_MutableArrayArray -> \[obj, ix] -> opAllDone $ \[res] -> do
     doReadPtrArrayOp res obj ix
   WriteArrayArrayOp_ByteArray -> \[obj,ix,v] -> opAllDone $ \[] -> do
+    pprTrace "WriteArrayArrayOp_ByteArray: " (ppr [obj,ix,v]) $ return ()
     doWritePtrArrayOp obj ix v
   WriteArrayArrayOp_MutableByteArray -> \[obj,ix,v] -> opAllDone $ \[] -> do
     doWritePtrArrayOp obj ix v
@@ -588,6 +589,32 @@ emitPrimOp dflags = \case
     doIndexByteArrayOp   (Just (mo_u_32ToWord platform)) b32  res args
   ReadByteArrayOp_Word64 -> \args -> opAllDone $ \res -> do
     doIndexByteArrayOp   Nothing b64  res args
+
+-- Mutable constructor field Ref# Ops (based on ReadByteArrayOp_Word)
+  ReadRefOp -> \args -> opAllDone $ \res -> do
+    doIndexOffAddrOpAs Nothing (bWord platform) b8 res args
+  WriteRefOp -> \args@[addr,idx,val] -> opAllDone $ \_ -> do
+    pprTrace "WriteRefOp: " (ppr args) $ return ()
+    platform <- getPlatform
+    let ty = cmmExprType platform val
+
+    tmp <- newTemp ty
+    doIndexOffAddrOpAs Nothing (bWord platform) b8 [tmp] [addr,idx]
+    whenUpdRemSetEnabled $ emitUpdRemSetPush (CmmReg (CmmLocal tmp))
+
+    emitPrimCall [] MO_WriteBarrier []
+    doWriteOffAddrOp Nothing b8 [] args
+    emitCCall
+      [{-no results-}]
+      (CmmLit (CmmLabel mkDirty_MUT_CON_Label))
+      [(CmmReg (CmmGlobal BaseReg), AddrHint),
+        (cmmUntag dflags addr, AddrHint)]
+
+  ReadRefOp_int -> \args -> opAllDone $ \res -> do
+    doIndexOffAddrOpAs Nothing (bWord platform) b8 res args
+  WriteRefOp_int -> \args -> opAllDone $ \_ -> do
+    pprTrace "WriteRefOp_int: " (ppr args) $ return ()
+    doWriteOffAddrOp Nothing b8 [] args
 
 -- IndexWord8ArrayAsXXX
 

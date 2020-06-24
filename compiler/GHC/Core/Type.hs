@@ -122,6 +122,7 @@ module GHC.Core.Type (
         isLiftedTypeKind, isUnliftedTypeKind,
         isLiftedRuntimeRep, isUnliftedRuntimeRep,
         isUnliftedType, mightBeUnliftedType, isUnboxedTupleType, isUnboxedSumType,
+        isRefPrimType, isRefUPrimType,
         isAlgType, isDataFamilyAppType,
         isPrimitiveType, isStrictType,
         isRuntimeRepTy, isRuntimeRepVar, isRuntimeRepKindedTy,
@@ -2048,10 +2049,23 @@ isUnboxedTupleType ty
   -- NB: Do not use typePrimRep, as that can't tell the difference between
   -- unboxed tuples and unboxed sums
 
-
 isUnboxedSumType :: Type -> Bool
 isUnboxedSumType ty
   = tyConAppTyCon (getRuntimeRep ty) `hasKey` sumRepDataConKey
+
+isRefPrimType :: Type -> Bool
+isRefPrimType ty
+  = case splitTyConApp_maybe ty of
+      Just (tc, ty_args) -> ASSERT( ty_args `lengthIs` tyConArity tc )
+                            isRefPrimTyCon tc
+      _                  -> False
+
+isRefUPrimType :: Type -> Bool
+isRefUPrimType ty
+  = case splitTyConApp_maybe ty of
+      Just (tc, ty_args) -> ASSERT( ty_args `lengthIs` tyConArity tc )
+                            isRefUPrimTyCon tc
+      _                  -> False
 
 -- | See "Type#type_classification" for what an algebraic type is.
 -- Should only be applied to /types/, as opposed to e.g. partially

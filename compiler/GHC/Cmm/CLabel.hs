@@ -21,6 +21,7 @@ module GHC.Cmm.CLabel (
         mkEntryLabel,
         mkRednCountsLabel,
         mkConInfoTableLabel,
+        mkConDirtyInfoTableLabel,
         mkApEntryLabel,
         mkApInfoTableLabel,
         mkClosureTableLabel,
@@ -42,6 +43,7 @@ module GHC.Cmm.CLabel (
         mkAsmTempDieLabel,
 
         mkDirty_MUT_VAR_Label,
+        mkDirty_MUT_CON_Label,
         mkNonmovingWriteBarrierEnabledLabel,
         mkUpdInfoLabel,
         mkBHUpdInfoLabel,
@@ -407,6 +409,7 @@ data IdLabelInfo
 
   | ConEntry            -- ^ Constructor entry point
   | ConInfoTable        -- ^ Corresponding info table
+  | ConDirtyInfoTable   -- ^ Info table for dirty mutable constructor
 
   | ClosureTable        -- ^ Table of closures for Enum tycons
 
@@ -484,12 +487,14 @@ mkInfoTableLabel            :: Name -> CafInfo -> CLabel
 mkEntryLabel                :: Name -> CafInfo -> CLabel
 mkClosureTableLabel         :: Name -> CafInfo -> CLabel
 mkConInfoTableLabel         :: Name -> CafInfo -> CLabel
+mkConDirtyInfoTableLabel    :: Name -> CafInfo -> CLabel
 mkBytesLabel                :: Name -> CLabel
 mkClosureLabel name         c     = IdLabel name c Closure
 mkInfoTableLabel name       c     = IdLabel name c InfoTable
 mkEntryLabel name           c     = IdLabel name c Entry
 mkClosureTableLabel name    c     = IdLabel name c ClosureTable
 mkConInfoTableLabel name    c     = IdLabel name c ConInfoTable
+mkConDirtyInfoTableLabel name c   = IdLabel name c ConDirtyInfoTable
 mkBytesLabel name                 = IdLabel name NoCafRefs Bytes
 
 mkBlockInfoTableLabel :: Name -> CafInfo -> CLabel
@@ -507,7 +512,8 @@ mkDirty_MUT_VAR_Label,
     mkTopTickyCtrLabel,
     mkCAFBlackHoleInfoTableLabel,
     mkSMAP_FROZEN_CLEAN_infoLabel, mkSMAP_FROZEN_DIRTY_infoLabel,
-    mkSMAP_DIRTY_infoLabel, mkBadAlignmentLabel :: CLabel
+    mkSMAP_DIRTY_infoLabel, mkBadAlignmentLabel,
+    mkDirty_MUT_CON_Label :: CLabel
 mkDirty_MUT_VAR_Label           = mkForeignLabel (fsLit "dirty_MUT_VAR") Nothing ForeignLabelInExternalPackage IsFunction
 mkNonmovingWriteBarrierEnabledLabel
                                 = CmmLabel rtsUnitId (fsLit "nonmoving_write_barrier_enabled") CmmData
@@ -525,6 +531,7 @@ mkSMAP_FROZEN_CLEAN_infoLabel   = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_P
 mkSMAP_FROZEN_DIRTY_infoLabel   = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_PTRS_FROZEN_DIRTY") CmmInfo
 mkSMAP_DIRTY_infoLabel          = CmmLabel rtsUnitId (fsLit "stg_SMALL_MUT_ARR_PTRS_DIRTY") CmmInfo
 mkBadAlignmentLabel             = CmmLabel rtsUnitId (fsLit "stg_badAlignment")      CmmEntry
+mkDirty_MUT_CON_Label           = mkForeignLabel (fsLit "dirty_MUT_CON") Nothing ForeignLabelInExternalPackage IsFunction
 
 mkSRTInfoLabel :: Int -> CLabel
 mkSRTInfoLabel n = CmmLabel rtsUnitId lbl CmmInfo
@@ -725,13 +732,14 @@ toSlowEntryLbl (IdLabel n c _) = IdLabel n c Slow
 toSlowEntryLbl l = pprPanic "toSlowEntryLbl" (ppr l)
 
 toEntryLbl :: CLabel -> CLabel
-toEntryLbl (IdLabel n c LocalInfoTable)  = IdLabel n c LocalEntry
-toEntryLbl (IdLabel n c ConInfoTable)    = IdLabel n c ConEntry
-toEntryLbl (IdLabel n _ BlockInfoTable)  = mkLocalBlockLabel (nameUnique n)
+toEntryLbl (IdLabel n c LocalInfoTable)    = IdLabel n c LocalEntry
+toEntryLbl (IdLabel n c ConInfoTable)      = IdLabel n c ConEntry
+toEntryLbl (IdLabel n c ConDirtyInfoTable) = IdLabel n c ConEntry
+toEntryLbl (IdLabel n _ BlockInfoTable)    = mkLocalBlockLabel (nameUnique n)
                               -- See Note [Proc-point local block entry-point].
-toEntryLbl (IdLabel n c _)               = IdLabel n c Entry
-toEntryLbl (CmmLabel m str CmmInfo)      = CmmLabel m str CmmEntry
-toEntryLbl (CmmLabel m str CmmRetInfo)   = CmmLabel m str CmmRet
+toEntryLbl (IdLabel n c _)                 = IdLabel n c Entry
+toEntryLbl (CmmLabel m str CmmInfo)        = CmmLabel m str CmmEntry
+toEntryLbl (CmmLabel m str CmmRetInfo)     = CmmLabel m str CmmRet
 toEntryLbl l = pprPanic "toEntryLbl" (ppr l)
 
 toInfoLbl :: CLabel -> CLabel
@@ -992,15 +1000,16 @@ labelType (LargeBitmapLabel _)                  = DataLabel
 idInfoLabelType :: IdLabelInfo -> CLabelType
 idInfoLabelType info =
   case info of
-    InfoTable     -> DataLabel
-    LocalInfoTable -> DataLabel
-    BlockInfoTable -> DataLabel
-    Closure       -> GcPtrLabel
-    ConInfoTable  -> DataLabel
-    ClosureTable  -> DataLabel
-    RednCounts    -> DataLabel
-    Bytes         -> DataLabel
-    _             -> CodeLabel
+    InfoTable         -> DataLabel
+    LocalInfoTable    -> DataLabel
+    BlockInfoTable    -> DataLabel
+    Closure           -> GcPtrLabel
+    ConInfoTable      -> DataLabel
+    ConDirtyInfoTable -> DataLabel
+    ClosureTable      -> DataLabel
+    RednCounts        -> DataLabel
+    Bytes             -> DataLabel
+    _                 -> CodeLabel
 
 
 -- -----------------------------------------------------------------------------
@@ -1305,18 +1314,19 @@ pprCLbl dflags = \case
 ppIdFlavor :: IdLabelInfo -> SDoc
 ppIdFlavor x = pp_cSEP <> text
                (case x of
-                       Closure          -> "closure"
-                       InfoTable        -> "info"
-                       LocalInfoTable   -> "info"
-                       Entry            -> "entry"
-                       LocalEntry       -> "entry"
-                       Slow             -> "slow"
-                       RednCounts       -> "ct"
-                       ConEntry         -> "con_entry"
-                       ConInfoTable     -> "con_info"
-                       ClosureTable     -> "closure_tbl"
-                       Bytes            -> "bytes"
-                       BlockInfoTable   -> "info"
+                       Closure           -> "closure"
+                       InfoTable         -> "info"
+                       LocalInfoTable    -> "info"
+                       Entry             -> "entry"
+                       LocalEntry        -> "entry"
+                       Slow              -> "slow"
+                       RednCounts        -> "ct"
+                       ConEntry          -> "con_entry"
+                       ConInfoTable      -> "con_info"
+                       ConDirtyInfoTable -> "con_info_dirty"
+                       ClosureTable      -> "closure_tbl"
+                       Bytes             -> "bytes"
+                       BlockInfoTable    -> "info"
                       )
 
 

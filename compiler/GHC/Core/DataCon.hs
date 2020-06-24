@@ -29,6 +29,7 @@ module GHC.Core.DataCon (
 
         -- ** Type deconstruction
         dataConRepType, dataConInstSig, dataConFullSig,
+        dataConFullSigForPat, dataConAltRepType,
         dataConName, dataConIdentity, dataConTag, dataConTagZ,
         dataConTyCon, dataConOrigTyCon,
         dataConUserType,
@@ -38,8 +39,10 @@ module GHC.Core.DataCon (
         dataConStupidTheta,
         dataConInstArgTys, dataConOrigArgTys, dataConOrigResTy,
         dataConInstOrigArgTys, dataConRepArgTys,
+        dataConInstAltTys, dataConAltRepArgTys,
         dataConFieldLabels, dataConFieldType, dataConFieldType_maybe,
         dataConSrcBangs,
+        dataConMutableFields, dataConWrapperAction, dataConWrapperDataCon,
         dataConSourceArity, dataConRepArity,
         dataConIsInfix,
         dataConWorkId, dataConWrapId, dataConWrapId_maybe,
@@ -50,11 +53,12 @@ module GHC.Core.DataCon (
 
         -- ** Predicates on DataCons
         isNullarySrcDataCon, isNullaryRepDataCon, isTupleDataCon, isUnboxedTupleCon,
-        isUnboxedSumCon,
+        isUnboxedSumCon, isRefPrimCon, isRefUPrimCon,
         isVanillaDataCon, classDataCon, dataConCannotMatch,
         dataConUserTyVarsArePermuted,
         isBanged, isMarkedStrict, eqHsBang, isSrcStrict, isSrcUnpacked,
         specialPromotedDc,
+        hasMutableFields,
 
         -- ** Promotion related functions
         promoteDataCon
@@ -66,6 +70,8 @@ import GHC.Prelude
 
 import {-# SOURCE #-} GHC.Types.Id.Make ( DataConBoxer )
 import GHC.Core.Type as Type
+import GHC.Core.TyCo.Rep ( Type(..) )
+import GHC.Builtin.Types.Prim ( mkRefPrimTy, mkRefUPrimTy, realWorldTy )
 import GHC.Core.Coercion
 import GHC.Core.Unify
 import GHC.Core.TyCon
@@ -420,7 +426,8 @@ data DataCon
                 -- differ from the DataCon's representation TyCon.  Example
                 --      data instance T [a] where MkT :: a -> T [a]
                 -- The OrigResTy is T [a], but the dcRepTyCon might be :T123
-
+        dcAltArgTys :: [Type],    -- Types for pattern matching.
+        dcAltRepArgTys :: [Type], -- Representation for pattern matching.
         -- Now the strictness annotations and field labels of the constructor
         dcSrcBangs :: [HsSrcBang],
                 -- See Note [Bangs on data constructor arguments]
@@ -429,6 +436,11 @@ data DataCon
                 --
                 -- Matches 1-1 with dcOrigArgTys
                 -- Hence length = dataConSourceArity dataCon
+
+        dcMutFields :: [HsMutableInfo],
+                -- Matches 1-1 with dcOrigArgTys
+        dcWrapperAction :: Maybe Type,             -- TODO: RY Comment
+        dcWrapperDataCon :: Maybe (DataCon, Type), -- TODO: RY Comment
 
         dcFields  :: [FieldLabel],
                 -- Field labels for this constructor, in the
@@ -467,6 +479,7 @@ data DataCon
         -- used in GHC.Core.Lint.
 
 
+        dcAltRepType :: Type,   -- Type for a case alternative.
         dcInfix :: Bool,        -- True <=> declared infix
                                 -- Used for Template Haskell and 'deriving' only
                                 -- The actual fixity is stored elsewhere
@@ -830,7 +843,18 @@ but the rep type is
         Trep :: Int# -> a -> T a
 Actually, the unboxed part isn't implemented yet!
 
+The dcAltRepType field contains the type of the representation of a constructor
+used in a case alternative.  With mutable fields this will have Ref# fields:
 
+    data M a where
+      MkM :: mutable a -> IO (M a)
+
+    MkM :: a -> IO (M a)
+
+    but
+
+    case m :: M a of
+      MkM (r :: Ref# RealWorld# a) -> ...
 
 ************************************************************************
 *                                                                      *
@@ -943,9 +967,11 @@ isMarkedStrict _               = True   -- All others are strict
 
 -- | Build a new data constructor
 mkDataCon :: Name
+          -> Name
           -> Bool           -- ^ Is the constructor declared infix?
           -> TyConRepName   -- ^  TyConRepName for the promoted TyCon
           -> [HsSrcBang]    -- ^ Strictness/unpack annotations, from user
+          -> [HsMutableInfo] -- ^ Mutable fields, from user
           -> [FieldLabel]   -- ^ Field labels for the constructor,
                             -- if it is a record, otherwise empty
           -> [TyVar]        -- ^ Universals.
@@ -967,8 +993,9 @@ mkDataCon :: Name
           -> DataCon
   -- Can get the tag from the TyCon
 
-mkDataCon name declared_infix prom_info
-          arg_stricts   -- Must match orig_arg_tys 1-1
+mkDataCon tycon_name name declared_infix prom_info
+          arg_stricts    -- Must match orig_arg_tys 1-1
+          mutable_fields -- Must match orig_arg_tys 1-1
           fields
           univ_tvs ex_tvs user_tvbs
           eq_spec theta
@@ -984,7 +1011,8 @@ mkDataCon name declared_infix prom_info
 
   = con
   where
-    is_vanilla = null ex_tvs && null eq_spec && null theta
+    is_vanilla = null ex_tvs && null eq_spec && null theta && not is_mutable
+    is_mutable = any (/= HsImmutable) mutable_fields
 
     con = MkData {dcName = name, dcUnique = nameUnique name,
                   dcVanilla = is_vanilla, dcInfix = declared_infix,
@@ -994,10 +1022,17 @@ mkDataCon name declared_infix prom_info
                   dcEqSpec = eq_spec,
                   dcOtherTheta = theta,
                   dcStupidTheta = stupid_theta,
-                  dcOrigArgTys = orig_arg_tys, dcOrigResTy = orig_res_ty,
+                  dcOrigArgTys = orig_arg_tys,
+                  dcOrigResTy = orig_res_ty,
+                  dcAltArgTys = alt_arg_tys,
+                  dcAltRepArgTys = alt_rep_arg_tys,
                   dcRepTyCon = rep_tycon,
                   dcSrcBangs = arg_stricts,
+                  dcMutFields = mutable_fields,
+                  dcWrapperAction = wrap_act,
+                  dcWrapperDataCon = wrap_dc,
                   dcFields = fields, dcTag = tag, dcRepType = rep_ty,
+                  dcAltRepType = alt_rep_ty,
                   dcWorkId = work_id,
                   dcRep = rep,
                   dcSourceArity = length orig_arg_tys,
@@ -1009,6 +1044,17 @@ mkDataCon name declared_infix prom_info
         -- dictionary arguments right here.
 
     rep_arg_tys = dataConRepArgTys con
+    alt_arg_tys
+      | is_mutable = pprTrace "alt_arg_tys: " (ppr (orig_arg_tys, -- TODO: RY debug tracing
+                        zipWith mkMutTys mutable_fields (dataConRepAltTys con)))
+                   $ zipWith mkMutTys mutable_fields (dataConRepAltTys con)
+      | otherwise  = rep_arg_tys
+
+    alt_rep_arg_tys -- Includes unpacking and strictness
+      | is_mutable = pprTrace "alt_rep_arg_tys: " (ppr (orig_arg_tys, -- TODO: RY debug tracing
+                        zipWith mkMutTys mutable_fields (dataConRepArgTys con)))
+                   $ zipWith mkMutTys mutable_fields (dataConRepArgTys con)
+      | otherwise  = dataConRepArgTys con    
 
     rep_ty =
       case rep of
@@ -1020,6 +1066,29 @@ mkDataCon name declared_infix prom_info
         DCR{} -> mkInfForAllTys univ_tvs $ mkTyCoInvForAllTys ex_tvs $
                  mkVisFunTys rep_arg_tys $
                  mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+
+    alt_rep_ty
+      | is_mutable = mkInfForAllTys univ_tvs $ mkTyCoInvForAllTys ex_tvs $
+                       mkVisFunTys alt_rep_arg_tys $
+                       mkTyConApp rep_tycon (mkTyVarTys univ_tvs)
+      | otherwise = rep_ty
+
+    -- TODO: RY: We want to allow data constructors that do not have mutable
+    -- fields, but do require construction in a context.  It is hard to tell if
+    -- we have one of these outside of typechecking.  So we are not going to do
+    -- that for now.  For now we will just check for mutable fields and allow
+    -- any wrapping action, but only use it when there are mutable fields.
+    (wrap_act, wrap_dc) =
+        case orig_res_ty of
+          TyConApp tc tys | tyConName tc /= tycon_name && is_mutable ->
+               case tyConDataCons tc of
+                 [dc] -> pprTrace "wrap_act = " (ppr (tc, tyConFamInst_maybe tc, -- TODO: RY Debug info
+                           tycon_name, isSystemName tycon_name, tys, name, tyConName tc))
+                           $ (Just (TyConApp tc (take (length tys - 1) tys)),
+                              Just (dc, last tys))
+                 dcs  -> pprPanic "Invalid data constructors for wrapper action."
+                           (ppr (tc, dcs))
+          _ -> (Nothing, Nothing)
 
       -- See Note [Promoted data constructors] in GHC.Core.TyCon
     prom_tv_bndrs = [ mkNamedTyConBinder (Invisible spec) tv
@@ -1084,14 +1153,32 @@ dataConOrigTyCon dc
   | Just (tc, _) <- tyConFamInst_maybe (dcRepTyCon dc) = tc
   | otherwise                                          = dcRepTyCon dc
 
+-- | The type of the action that the wrapper will create.  Mutable fields
+-- must be constructed in the context of some action such as IO, ST, or STM.
+dataConWrapperAction :: DataCon -> Maybe Type
+dataConWrapperAction dc = dcWrapperAction dc
+
+-- | The data constructor for the wrapper action.
+dataConWrapperDataCon :: DataCon -> Maybe (DataCon, Type)
+dataConWrapperDataCon dc = dcWrapperDataCon dc
+
 -- | The representation type of the data constructor, i.e. the sort
 -- type that will represent values of this type at runtime
 dataConRepType :: DataCon -> Type
 dataConRepType = dcRepType
 
+-- | The representation type of the data constructure when used as
+-- a case alternative.
+dataConAltRepType :: DataCon -> Type
+dataConAltRepType = dcAltRepType
+
 -- | Should the 'DataCon' be presented infix?
 dataConIsInfix :: DataCon -> Bool
 dataConIsInfix = dcInfix
+
+-- | Mutable field annotations, from user.
+dataConMutableFields :: DataCon -> [HsMutableInfo]
+dataConMutableFields = dcMutFields
 
 -- | The universally-quantified type variables of the constructor
 dataConUnivTyVars :: DataCon -> [TyVar]
@@ -1236,6 +1323,17 @@ dataConSourceArity (MkData { dcSourceArity = arity }) = arity
 dataConRepArity :: DataCon -> Arity
 dataConRepArity (MkData { dcRepArity = arity }) = arity
 
+-- TODO: RY comment
+mkMutTys :: HsMutableInfo -> Type -> Type
+
+mkMutTys HsImmutable t = t
+mkMutTys HsMutable t
+    | isLiftedTypeKind (typeKind t) = mkRefPrimTy  realWorldTy t -- mkAppTy act t
+    | otherwise                     = mkRefUPrimTy realWorldTy t -- mkAppTy act t
+-- TODO: RY  Instead of realWorld this needs to be a type variable, but
+-- I'm not sure how to do that (probably in TcM from the place that
+-- calls this).
+
 -- | Return whether there are any argument types for this 'DataCon's original source type
 -- See Note [DataCon arities]
 isNullarySrcDataCon :: DataCon -> Bool
@@ -1311,6 +1409,21 @@ dataConFullSig (MkData {dcUnivTyVars = univ_tvs, dcExTyCoVars = ex_tvs,
                         dcOrigArgTys = arg_tys, dcOrigResTy = res_ty})
   = (univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty)
 
+dataConFullSigForPat :: DataCon
+                     -> ([TyVar], [TyVar], [EqSpec], ThetaType, [Type], Type)
+dataConFullSigForPat MkData {dcUnivTyVars = univ_tvs, dcExTyCoVars = ex_tvs,
+                        dcEqSpec = eq_spec, dcOtherTheta = theta,
+                        dcOrigArgTys = arg_tys, dcOrigResTy = res_ty,
+                        dcAltArgTys = alt_arg_tys,
+                        dcWrapperAction = wrap_act}
+  = case wrap_act of
+      Just _ ->
+        pprTrace "forPat: "
+          (ppr ( univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty
+               , alt_arg_tys ))
+          (univ_tvs, ex_tvs, eq_spec, theta, alt_arg_tys, res_ty)
+      Nothing -> (univ_tvs, ex_tvs, eq_spec, theta, arg_tys, res_ty)
+
 dataConOrigResTy :: DataCon -> Type
 dataConOrigResTy dc = dcOrigResTy dc
 
@@ -1354,11 +1467,26 @@ dataConInstArgTys :: DataCon    -- ^ A datacon with no existentials or equality 
                   -> [Type]     -- ^ Instantiated at these types
                   -> [Type]
 dataConInstArgTys dc@(MkData {dcUnivTyVars = univ_tvs,
-                              dcExTyCoVars = ex_tvs}) inst_tys
+                              dcExTyCoVars = ex_tvs,
+                              dcAltArgTys = alt_arg_tys}) inst_tys
  = ASSERT2( univ_tvs `equalLength` inst_tys
           , text "dataConInstArgTys" <+> ppr dc $$ ppr univ_tvs $$ ppr inst_tys)
    ASSERT2( null ex_tvs, ppr dc )
-   map (substTyWith univ_tvs inst_tys) (dataConRepArgTys dc)
+   map (substTyWith univ_tvs inst_tys) alt_arg_tys
+
+-- | Like 'dataConInstArgTys' but for case alternative types.
+dataConInstAltTys :: DataCon    -- ^ A datacon with no existentials or equality constraints
+                                -- However, it can have a dcTheta (notably it can be a
+                                -- class dictionary, with superclasses)
+                  -> [Type]     -- ^ Instantiated at these types
+                  -> [Type]
+dataConInstAltTys dc@(MkData {dcUnivTyVars = univ_tvs,
+                              dcExTyCoVars = ex_tvs,
+                              dcAltRepArgTys = alt_rep_arg_tys}) inst_tys
+ = ASSERT2( univ_tvs `equalLength` inst_tys
+          , text "dataConInstAltgTys" <+> ppr dc $$ ppr univ_tvs $$ ppr inst_tys)
+   ASSERT2( null ex_tvs, ppr dc )
+   map (substTyWith univ_tvs inst_tys) alt_rep_arg_tys
 
 -- | Returns just the instantiated /value/ argument types of a 'DataCon',
 -- (excluding dictionary args)
@@ -1397,6 +1525,24 @@ dataConRepArgTys (MkData { dcRep = rep
       NoDataConRep -> ASSERT( null eq_spec ) theta ++ orig_arg_tys
       DCR { dcr_arg_tys = arg_tys } -> arg_tys
 
+dataConRepAltTys :: DataCon -> [Type]
+dataConRepAltTys (MkData { dcRep = rep
+                         , dcEqSpec = eq_spec
+                         , dcOtherTheta = theta
+                         , dcOrigArgTys = orig_arg_tys })
+  = case rep of  -- TODO: RY Get to the bottom of what is going on here :D.
+      NoDataConRep -> pprTrace "dataConRepAltTys NoDataConRep" (ppr (orig_arg_tys, theta))
+                        $ ASSERT( null eq_spec ) theta ++ orig_arg_tys
+      DCR { dcr_arg_tys = arg_tys } -> pprTrace "dataConRepAltTys DCR" (ppr (arg_tys, orig_arg_tys, theta))
+                                        $ theta ++ orig_arg_tys  -- arg_tys
+
+-- TODO: I don't fully understand how this is used, but in
+-- dataConInstPat we need to see mutable field information
+-- hence this version of dataConRepArgTys that should be used
+-- when the arguments are needed for a pattern.
+dataConAltRepArgTys :: DataCon -> [Type]
+dataConAltRepArgTys (MkData { dcAltRepArgTys = alt_rep_arg_tys }) = alt_rep_arg_tys
+
 -- | The string @package:module.name@ identifying a constructor, which is attached
 -- to its info table and used by the GHCi debugger and the heap profiler
 dataConIdentity :: DataCon -> ByteString
@@ -1415,14 +1561,25 @@ isTupleDataCon :: DataCon -> Bool
 isTupleDataCon (MkData {dcRepTyCon = tc}) = isTupleTyCon tc
 
 isUnboxedTupleCon :: DataCon -> Bool
-isUnboxedTupleCon (MkData {dcRepTyCon = tc}) = isUnboxedTupleTyCon tc
+isUnboxedTupleCon (MkData {dcRepTyCon = tc})
+  = isUnboxedTupleTyCon tc
 
 isUnboxedSumCon :: DataCon -> Bool
 isUnboxedSumCon (MkData {dcRepTyCon = tc}) = isUnboxedSumTyCon tc
 
+isRefPrimCon :: DataCon -> Bool
+isRefPrimCon (MkData {dcRepTyCon = tc}) = isRefPrimTyCon tc
+
+isRefUPrimCon :: DataCon -> Bool
+isRefUPrimCon (MkData {dcRepTyCon = tc}) = isRefUPrimTyCon tc
+
 -- | Vanilla 'DataCon's are those that are nice boring Haskell 98 constructors
 isVanillaDataCon :: DataCon -> Bool
 isVanillaDataCon dc = dcVanilla dc
+
+-- | Does this DataCon have mutable fields?
+hasMutableFields :: DataCon -> Bool
+hasMutableFields = any (/= HsImmutable) . dcMutFields
 
 -- | Should this DataCon be allowed in a type even without -XDataKinds?
 -- Currently, only Lifted & Unlifted

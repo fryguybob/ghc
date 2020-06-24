@@ -339,6 +339,19 @@ precomputedStaticConInfo_maybe _ _ _ _ = Nothing
 --      Binding constructor arguments
 ---------------------------------------------------------------
 
+-- Mutable fields need special handling here.  References have been broken into
+-- two Id's at this point, a RefAddr# and a RefIndex#.  We need to make sure
+-- that these have the right representations for a matching constructor.
+-- Specifically, in bindConArgs RefAddr#s need to have a void representation
+-- and RefIndex#s need to have the representation that matches the
+-- representation of the mutable field unless it is a mutable array.
+-- We can then bind the address register
+-- to the object pointer and the index register to the offset without actually
+-- emitting a load.
+--
+-- If the RefAddr# and RefIndex# are from a stored Ref# rather then from a
+-- mutable field, then we should load the values as normal.
+
 bindConArgs :: AltCon -> LocalReg -> [NonVoid Id] -> FCode [LocalReg]
 -- bindConArgs is called from cgAlt of a case
 -- (bindConArgs con args) augments the environment with bindings for the
@@ -348,8 +361,9 @@ bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleCon con))
     do dflags <- getDynFlags
        platform <- getPlatform
-       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdReps args)
+       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdRepsForAlt args)
            tag = tagForCon dflags con
+           args_addrs = filter (isRefAddrAlt . idType . fromNonVoid) args
 
            -- The binding below forces the masking out of the tag bits
            -- when accessing the constructor field.
@@ -357,12 +371,30 @@ bindConArgs (DataAlt con) base args
            bind_arg (arg@(NonVoid b), offset)
              | isDeadBinder b  -- See Note [Dead-binder optimisation] in GHC.StgToCmm.Expr
              = return Nothing
+             | isRefIndexAlt (idType . fromNonVoid $ arg)
+             = do { emitAssign (CmmLocal (idToReg platform arg))
+                               (mkIntExpr platform (offset - tag))
+                  ; Just <$> bindArgToReg arg }
              | otherwise
              = do { emit $ mkTaggedObjectLoad platform (idToReg platform arg)
                                               base offset tag
                   ; Just <$> bindArgToReg arg }
 
-       mapMaybeM bind_arg args_w_offsets
+           -- Instead of storing the untagged pointer in the register we bind the
+           -- arg to the base register and assign ref indexes to (offset - tag).
+           -- Ref's then look just like a delayed tagged object load and in most
+           -- cases will look identical after some code improvement if the
+           -- reference is dereferenced right away.
+           bind_addr :: NonVoid Id -> FCode ()
+           bind_addr arg =
+             -- TODO: RY I don't know if this breaks a lot of assumptions!  If it
+             -- does a viable approach could be to assign a new local register
+             -- to the base register, but this might break assumptions as well
+             -- as the Id here is void.
+             bindArgToOtherReg (fromNonVoid arg) base
+
+       mapM_     bind_addr args_addrs
+       mapMaybeM bind_arg  args_w_offsets
 
 bindConArgs _other_con _base args
   = ASSERT( null args ) return []

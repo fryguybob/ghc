@@ -910,6 +910,9 @@ instance Binary RuntimeRep where
     put_ bh Int32Rep        = putByte bh 16
     put_ bh Word32Rep       = putByte bh 17
 #endif
+#if __GLASGOW_HASKELL__ >= 811
+    put_ bh RefRep          = putByte bh 18
+#endif
 
     get bh = do
         tag <- getByte bh
@@ -933,6 +936,9 @@ instance Binary RuntimeRep where
 #if __GLASGOW_HASKELL__ >= 809
           16 -> pure Int32Rep
           17 -> pure Word32Rep
+#endif
+#if __GLASGOW_HASKELL__ >= 811
+          18 -> pure RefRep
 #endif
           _  -> fail "Binary.putRuntimeRep: invalid tag"
 
