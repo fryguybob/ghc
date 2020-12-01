@@ -471,7 +471,8 @@ mkStgAltType :: Id -> [CoreAlt] -> AltType
 mkStgAltType bndr alts
   | isUnboxedTupleType bndr_ty || isUnboxedSumType bndr_ty
   = MultiValAlt (length prim_reps)  -- always use MultiValAlt for unboxed tuples
-
+  | isRefPrimType bndr_ty || isRefUPrimType bndr_ty -- TODO: RY, I think this is when you have `case x of` where `x` is a `Ref#`.
+  = MultiValAlt 2
   | otherwise
   = case prim_reps of
       [LiftedRep] -> case tyConAppTyCon_maybe (unwrapType bndr_ty) of

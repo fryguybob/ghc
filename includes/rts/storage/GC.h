@@ -243,6 +243,8 @@ void setHighMemDynamic (void);
 
 void dirty_MUT_VAR(StgRegTable *reg, StgMutVar *mv, StgClosure *old);
 
+void dirty_MUT_CON(StgRegTable *reg, StgClosure *p);
+
 /* set to disable CAF garbage collection in GHCi. */
 /* (needed when dynamic libraries are used). */
 extern bool keepCAFs;

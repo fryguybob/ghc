@@ -546,6 +546,10 @@ rnHsTyKi env (HsBangTy _ b ty)
   = do { (ty', fvs) <- rnLHsTyKi env ty
        ; return (HsBangTy noExtField b ty', fvs) }
 
+rnHsTyKi env (HsMutableTy m ty)
+  = do { (ty', fvs) <- rnLHsTyKi env ty
+       ; return (HsMutableTy m ty', fvs) }
+
 rnHsTyKi env ty@(HsRecTy _ flds)
   = do { let ctxt = rtke_ctxt env
        ; fls          <- get_fields ctxt
@@ -1780,6 +1784,7 @@ extract_lty (L _ ty) acc
   = case ty of
       HsTyVar _ _  ltv            -> extract_tv ltv acc
       HsBangTy _ _ ty             -> extract_lty ty acc
+      HsMutableTy _ ty            -> extract_lty ty acc
       HsRecTy _ flds              -> foldr (extract_lty
                                             . cd_fld_type . unLoc) acc
                                            flds

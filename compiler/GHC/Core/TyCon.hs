@@ -52,6 +52,7 @@ module GHC.Core.TyCon(
         isPrimTyCon,
         isTupleTyCon, isUnboxedTupleTyCon, isBoxedTupleTyCon,
         isUnboxedSumTyCon, isPromotedTupleTyCon,
+        isRefPrimTyCon, isRefUPrimTyCon,
         isTypeSynonymTyCon,
         mustBeSaturated,
         isPromotedDataCon, isPromotedDataCon_maybe,
@@ -2191,6 +2192,12 @@ isUnboxedSumTyCon (AlgTyCon { algTcRhs = rhs })
   | SumTyCon {} <- rhs
   = True
 isUnboxedSumTyCon _ = False
+
+isRefPrimTyCon :: TyCon -> Bool
+isRefPrimTyCon tc = tc `hasKey` refPrimTyConKey
+
+isRefUPrimTyCon :: TyCon -> Bool
+isRefUPrimTyCon tc = tc `hasKey` refUPrimTyConKey
 
 -- | Is this the 'TyCon' for a /promoted/ tuple?
 isPromotedTupleTyCon :: TyCon -> Bool

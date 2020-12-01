@@ -1034,6 +1034,7 @@ tc_hs_type _ ty@(HsBangTy _ bang _) _
              HsSrcBang _ SrcNoUnpack _         -> bangError "NOUNPACK"
              HsSrcBang _ NoSrcUnpack SrcLazy   -> bangError "laziness"
              HsSrcBang _ _ _                   -> bangError "strictness" }
+tc_hs_type mode (HsMutableTy _ (L _ ty)) exp_kind = tc_hs_type mode ty exp_kind
 tc_hs_type _ ty@(HsRecTy {})      _
       -- Record types (which only show up temporarily in constructor
       -- signatures) should have been removed by now

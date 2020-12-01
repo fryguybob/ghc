@@ -1423,7 +1423,8 @@ lintCoreAlt case_bndr scrut_ty _scrut_mult alt_ty alt@(DataAlt con, args, rhs)
         -- type variables of the data constructor
         -- We've already check
       lintL (tycon == dataConTyCon con) (mkBadConMsg tycon con)
-    ; let { con_payload_ty = piResultTys (dataConRepType con) tycon_arg_tys
+    ; let { con_payload_ty = piResultTys (dataConAltRepType con) tycon_arg_tys
+                     -- TODO: RY this was dataConRepType, need to update formalizm
           ; ex_tvs_n = length (dataConExTyCoVars con)
           -- See Note [Alt arg multiplicities]
           ; multiplicities = replicate ex_tvs_n Many ++

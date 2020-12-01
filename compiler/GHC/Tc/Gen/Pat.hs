@@ -875,7 +875,7 @@ tcDataConPat penv (L con_span con_name) data_con pat_ty_scaled
   = do  { let tycon = dataConTyCon data_con
                   -- For data families this is the representation tycon
               (univ_tvs, ex_tvs, eq_spec, theta, arg_tys, _)
-                = dataConFullSig data_con
+                = dataConFullSigForPat data_con
               header = L con_span (RealDataCon data_con)
 
           -- Instantiate the constructor type variables [a->ty]

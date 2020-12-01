@@ -693,6 +693,7 @@ data Token
   | ITinstance
   | ITlet
   | ITmodule
+  | ITmutable
   | ITnewtype
   | ITof
   | ITqualified
@@ -972,7 +973,8 @@ reservedWordsFM = listToUFM $
 
          ( "rec",            ITrec,           xbit ArrowsBit .|.
                                               xbit RecursiveDoBit),
-         ( "proc",           ITproc,          xbit ArrowsBit)
+         ( "proc",           ITproc,          xbit ArrowsBit),
+         ( "mutable",        ITmutable,       xbit MutableFieldsBit)
      ]
 
 {-----------------------------------
@@ -2638,6 +2640,7 @@ data ExtBits
   | GadtSyntaxBit
   | ImportQualifiedPostBit
   | LinearTypesBit
+  | MutableFieldsBit
   | NoLexicalNegationBit   -- See Note [Why not LexicalNegationBit]
 
   -- Flags that are updated once parsing starts
@@ -2714,6 +2717,7 @@ mkParserOpts warningFlags extensionFlags
       .|. GadtSyntaxBit               `xoptBit` LangExt.GADTSyntax
       .|. ImportQualifiedPostBit      `xoptBit` LangExt.ImportQualifiedPost
       .|. LinearTypesBit              `xoptBit` LangExt.LinearTypes
+      .|. MutableFieldsBit            `xoptBit` LangExt.MutableFields
       .|. NoLexicalNegationBit     `xoptNotBit` LangExt.LexicalNegation -- See Note [Why not LexicalNegationBit]
     optBits =
           HaddockBit        `setBitIf` isHaddock

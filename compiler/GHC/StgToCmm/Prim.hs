@@ -578,6 +578,30 @@ emitPrimOp dflags primop = case primop of
   ReadByteArrayOp_Word64 -> \args -> opIntoRegs $ \res ->
     doIndexByteArrayOp   Nothing b64  res args
 
+-- Mutable constructor field Ref# Ops (based on ReadByteArrayOp_Word)
+  ReadRefOp -> \args -> opIntoRegs $ \res -> do
+    doIndexOffAddrOpAs Nothing (bWord platform) b8 res args
+  WriteRefOp -> \args@[addr,idx,val] -> opIntoRegs $ \_ -> do
+    platform <- getPlatform
+    let ty = cmmExprType platform val
+
+    tmp <- newTemp ty
+    doIndexOffAddrOpAs Nothing (bWord platform) b8 [tmp] [addr,idx]
+    whenUpdRemSetEnabled $ emitUpdRemSetPush (CmmReg (CmmLocal tmp))
+
+    emitPrimCall [] MO_WriteBarrier []
+    doWriteOffAddrOp Nothing b8 [] args
+    emitCCall
+      [{-no results-}]
+      (CmmLit (CmmLabel mkDirty_MUT_CON_Label))
+      [(CmmReg (CmmGlobal BaseReg), AddrHint),
+        (cmmUntag platform addr, AddrHint)]
+
+  ReadRefOp_int -> \args -> opIntoRegs $ \res -> do
+    doIndexOffAddrOpAs Nothing (bWord platform) b8 res args
+  WriteRefOp_int -> \args -> opIntoRegs $ \_ -> do
+    doWriteOffAddrOp Nothing b8 [] args
+
 -- IndexWord8ArrayAsXXX
 
   IndexByteArrayOp_Word8AsChar -> \args -> opIntoRegs $ \res ->

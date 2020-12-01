@@ -122,6 +122,8 @@ module GHC.Builtin.Types (
         addrRepDataConTy,
         floatRepDataConTy, doubleRepDataConTy,
 
+        refRepDataConTy, refURepDataConTy,
+
         vec2DataConTy, vec4DataConTy, vec8DataConTy, vec16DataConTy, vec32DataConTy,
         vec64DataConTy,
 
@@ -515,7 +517,7 @@ runtimeRepSimpleDataConNames
       , fsLit "WordRep"
       , fsLit "Word8Rep", fsLit "Word16Rep", fsLit "Word32Rep", fsLit "Word64Rep"
       , fsLit "AddrRep"
-      , fsLit "FloatRep", fsLit "DoubleRep"
+      , fsLit "FloatRep", fsLit "DoubleRep", fsLit "RefRep", fsLit "RefURep"
       ]
       runtimeRepSimpleDataConKeys
       runtimeRepSimpleDataCons
@@ -631,8 +633,9 @@ pcDataConWithFixity' declared_infix dc_name wrk_key rri
     -- constructors. It's also likely that GHC will lift tag_map, since
     -- we call pcDataConWithFixity' with static TyCons in the same module.
     -- See Note [Constructor tag allocation] and #14657
-    data_con = mkDataCon dc_name declared_infix prom_info
+    data_con = mkDataCon (tyConName tycon) dc_name declared_infix prom_info
                 (map (const no_bang) arg_tys)
+                (map (const HsImmutable) arg_tys)
                 []      -- No labelled fields
                 tyvars ex_tyvars
                 (mkTyVarBinders SpecifiedSpec user_tyvars)
@@ -1484,6 +1487,7 @@ runtimeRepSimpleDataCons@(liftedRepDataCon : _)
     , Word8Rep, Word16Rep, Word32Rep, Word64Rep
     , AddrRep
     , FloatRep, DoubleRep
+    , UnliftedRep, UnliftedRep
     ]
     runtimeRepSimpleDataConNames
   where
@@ -1497,14 +1501,16 @@ liftedRepDataConTy, unliftedRepDataConTy,
   wordRepDataConTy,
   word8RepDataConTy, word16RepDataConTy, word32RepDataConTy, word64RepDataConTy,
   addrRepDataConTy,
-  floatRepDataConTy, doubleRepDataConTy :: Type
+  floatRepDataConTy, doubleRepDataConTy,
+  refRepDataConTy, refURepDataConTy  :: Type
 [liftedRepDataConTy, unliftedRepDataConTy,
    intRepDataConTy,
    int8RepDataConTy, int16RepDataConTy, int32RepDataConTy, int64RepDataConTy,
    wordRepDataConTy,
    word8RepDataConTy, word16RepDataConTy, word32RepDataConTy, word64RepDataConTy,
    addrRepDataConTy,
-   floatRepDataConTy, doubleRepDataConTy
+   floatRepDataConTy, doubleRepDataConTy,
+   refRepDataConTy, refURepDataConTy
    ]
   = map (mkTyConTy . promoteDataCon) runtimeRepSimpleDataCons
 

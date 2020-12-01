@@ -47,6 +47,8 @@ module GHC.Runtime.Heap.Layout (
 import GHC.Prelude
 
 import GHC.Types.Basic( ConTagZ )
+import GHC.Cmm.Expr ( CmmLit )
+import GHC.Cmm.Ppr.Expr()
 import GHC.Driver.Session
 import GHC.Platform
 import GHC.Platform.Profile
@@ -192,6 +194,7 @@ data ClosureTypeInfo
   | ThunkSelector SelectorOffset
   | BlackHole
   | IndStatic
+  | MutConstr     ConTagZ ConstrDescription CmmLit Bool
 
 type ConstrDescription = ByteString -- result of dataConIdentity
 type FunArity          = Int
@@ -250,8 +253,9 @@ isStackRep (RTSRep _ rep) = isStackRep rep
 isStackRep _              = False
 
 isConRep :: SMRep -> Bool
-isConRep (HeapRep _ _ _ Constr{}) = True
-isConRep _                        = False
+isConRep (HeapRep _ _ _ Constr{})    = True
+isConRep (HeapRep _ _ _ MutConstr{}) = True
+isConRep _                           = False
 
 isThunkRep :: SMRep -> Bool
 isThunkRep (HeapRep _ _ _ Thunk)           = True
@@ -425,6 +429,9 @@ rtsClosureType rep
            -- See Note [Static NoCaf constructors]
       HeapRep _     _ _ Constr{} -> CONSTR
 
+      HeapRep False _ _ (MutConstr _ _ _ True)  -> MUT_CONSTR_CLEAN
+      HeapRep False _ _ (MutConstr _ _ _ False) -> MUT_CONSTR_DIRTY
+
       HeapRep False 1 0 Fun{} -> FUN_1_0
       HeapRep False 0 1 Fun{} -> FUN_0_1
       HeapRep False 2 0 Fun{} -> FUN_2_0
@@ -544,3 +551,10 @@ pprTypeInfo (ThunkSelector offset)
 pprTypeInfo Thunk     = text "Thunk"
 pprTypeInfo BlackHole = text "BlackHole"
 pprTypeInfo IndStatic = text "IndStatic"
+
+pprTypeInfo (MutConstr tag descr other clean)
+  = text "MutCon" <+>
+    braces (sep [ text "tag:" <+> ppr tag
+                , text "descr:" <> text (show descr)
+                , text "other:" <> ppr other
+                , text "clean:" <> text (show clean)])

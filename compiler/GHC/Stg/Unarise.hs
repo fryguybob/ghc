@@ -173,6 +173,48 @@ To eliminate this case expression we need to map x1 to 1# in UnariseEnv:
 
 so that `f x1 x2` becomes `f 1# x`.
 
+Note [References to mutable fields]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+References to mutable constructor fields unarise like unboxed tuples, but
+with different representations depending on the use.  For instance,
+as a function argument a `Ref#` is a pointer and an index, but a `Ref#`
+in a case alt binds an index while the case scrutinee is the pointer.
+
+Suppose that a variable x : Ref# s t.
+
+  * At the binding site for x, make a fresh vars  xa:Ptr#, xi:Int#
+
+  * Extend the UnariseEnv   x :-> MultiVal [xa,xi]
+
+  * Replace the binding with a curried binding for xa,xi
+
+       Lambda:   \x.e                ==>   \xa xi. e
+       Case alt:
+         case v of y
+           MkT a b x c d -> e  ==>   let xi = offset of field - tag
+                                         xa = y
+                                     in  MkT a b _ c d -> e
+    
+    The index, in the pattern match needs the same representation as the field
+    to ensure we get the right layout for objects.
+
+  * Replace argument occurrences with a sequence of args via a lookup in
+    UnariseEnv
+
+       f a b x c d   ==>   f a b xa xi c d
+
+  * Replace tail-call occurrences with an unboxed tuple via a lookup in
+    UnariseEnv
+
+       x  ==>  (# x1, x2 #)
+
+    So, for example
+
+       f x = x    ==>   f xa xi = (# xa, xi #)
+
+By the end of this pass, we only have unboxed tuples in return positions.
+Ref#s are completely eliminated.
+
 Note [Unarisation and arity]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Because of unarisation, the arity that will be recorded in the generated info
@@ -218,7 +260,7 @@ import GHC.Utils.Panic
 import GHC.Types.RepType
 import GHC.Stg.Syntax
 import GHC.Core.Type
-import GHC.Builtin.Types.Prim (intPrimTy)
+import GHC.Builtin.Types.Prim (intPrimTy, refAddrAltTy, refAddrTy, mkRefIndexAltTy, mkRefIndexTy)
 import GHC.Builtin.Types
 import GHC.Types.Unique.Supply
 import GHC.Utils.Misc
@@ -235,12 +277,12 @@ import qualified Data.IntMap as IM
 --   x :-> MultiVal [a,b,c] in rho
 --
 -- iff  x's typePrimRep is not a singleton, or equivalently
---      x's type is an unboxed tuple, sum or void.
+--      x's type is an unboxed tuple, sum, ref or void.
 --
 --    x :-> UnaryVal x'
 --
 -- iff x's RepType is UnaryRep or equivalently
---     x's type is not unboxed tuple, sum or void.
+--     x's type is not unboxed tuple, sum, ref or void.
 --
 -- So
 --     x :-> MultiVal [a] in rho
@@ -379,6 +421,9 @@ unariseMulti_maybe rho dc args ty_args
   , let args1 = ASSERT(isSingleton args) (unariseConArgs rho args)
   = Just (mkUbxSum dc ty_args args1)
 
+  | isRefPrimCon dc || isRefUPrimCon dc
+  = Just (unariseConArgs rho args)
+
   | otherwise
   = Nothing
 
@@ -458,6 +503,10 @@ unariseAlts rho _ _ alts
   = mapM (\alt -> unariseAlt rho alt) alts
 
 unariseAlt :: UnariseEnv -> StgAlt -> UniqSM StgAlt
+unariseAlt rho (con@(DataAlt dc), xs, e)
+  | hasMutableFields dc
+  = do (rho', xs') <- unariseConArgBinders' rho xs (dataConMutableFields dc)
+       (con, xs',) <$> unariseExpr rho' e
 unariseAlt rho (con, xs, e)
   = do (rho', xs') <- unariseConArgBinders rho xs
        (con, xs',) <$> unariseExpr rho' e
@@ -660,8 +709,8 @@ So in short, when we have a void id,
 
 unariseArgBinder
     :: Bool -- data con arg?
-    -> UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
-unariseArgBinder is_con_arg rho x =
+    -> UnariseEnv -> (Id, HsMutableInfo) -> UniqSM (UnariseEnv, [Id])
+unariseArgBinder is_con_arg rho (x, mut) =
   case typePrimRep (idType x) of
     []
       | is_con_arg
@@ -680,6 +729,14 @@ unariseArgBinder is_con_arg rho x =
       | isUnboxedSumType (idType x) || isUnboxedTupleType (idType x)
       -> do x' <- mkId (mkFastString "us") (primRepToType rep)
             return (extendRho rho x (MultiVal [StgVarArg x']), [x'])
+      |     is_con_arg && mut == HsMutable
+      -> do x' <- mkId (mkFastString "ra") refAddrAltTy
+            y' <- mkId (mkFastString "ri") (mkRefIndexAltTy (primRepToType rep))
+            return (extendRho rho x (MultiVal [StgVarArg x', StgVarArg y']), [x', y'])
+      | not is_con_arg && (isRefPrimType (idType x) || isRefUPrimType (idType x))
+      -> do x' <- mkId (mkFastString "ra") refAddrTy
+            y' <- mkId (mkFastString "ri") (mkRefIndexTy    (primRepToType rep))
+            return (extendRho rho x (MultiVal [StgVarArg x', StgVarArg y']), [x', y'])  
       | otherwise
       -> return (rho, [x])
 
@@ -707,7 +764,7 @@ unariseFunArgBinders rho xs = second concat <$> mapAccumLM unariseFunArgBinder r
 
 -- Result list of binders is never empty
 unariseFunArgBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
-unariseFunArgBinder = unariseArgBinder False
+unariseFunArgBinder rho x = unariseArgBinder False rho (x, HsImmutable)
 
 --------------------------------------------------------------------------------
 
@@ -730,13 +787,18 @@ unariseConArgs :: UnariseEnv -> [InStgArg] -> [OutStgArg]
 unariseConArgs = concatMap . unariseConArg
 
 unariseConArgBinders :: UnariseEnv -> [Id] -> UniqSM (UnariseEnv, [Id])
-unariseConArgBinders rho xs = second concat <$> mapAccumLM unariseConArgBinder rho xs
+unariseConArgBinders rho xs = unariseConArgBinders' rho xs (map (const HsImmutable) xs)
+
+unariseConArgBinders' :: UnariseEnv -> [Id] -> [HsMutableInfo] -> UniqSM (UnariseEnv, [Id])
+unariseConArgBinders' rho xs muts = second concat <$> mapAccumLM unariseConArgBinder' rho (zip xs muts)
 
 -- Different from `unariseFunArgBinder`: result list of binders may be empty.
 -- See DataCon applications case in Note [Post-unarisation invariants].
 unariseConArgBinder :: UnariseEnv -> Id -> UniqSM (UnariseEnv, [Id])
-unariseConArgBinder = unariseArgBinder True
+unariseConArgBinder rho x = unariseArgBinder True rho (x, HsImmutable)
 
+unariseConArgBinder' :: UnariseEnv -> (Id, HsMutableInfo) -> UniqSM (UnariseEnv, [Id])
+unariseConArgBinder' = unariseArgBinder True
 --------------------------------------------------------------------------------
 
 mkIds :: FastString -> [UnaryType] -> UniqSM [Id]

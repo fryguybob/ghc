@@ -86,7 +86,7 @@ import GHC.Data.List.SetOps
 import GHC.Types.Var (VarBndr(Bndr))
 import qualified GHC.LanguageExtensions as LangExt
 
-import Data.Maybe       ( maybeToList )
+import Data.Maybe       ( isJust, maybeToList )
 
 {-
 ************************************************************************
@@ -698,9 +698,12 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
 
   | otherwise
   = do { wrap_args <- mapM newLocal wrap_arg_tys
-       ; wrap_body <- mk_rep_app (wrap_args `zip` dropList eq_spec unboxers)
-                                 initial_wrap_app
-
+       ; wrap_body' <- wrapFamInstBody tycon res_ty_args
+                       <$> mk_rep_app (wrap_args `zip` dropList eq_spec unboxers)
+                                  initial_wrap_app
+       ; wrap_body <- if is_mutable
+                        then in_context wrap_body'
+                        else return     wrap_body'
        ; let wrap_id = mkGlobalId (DataConWrapId data_con) wrap_name wrap_ty wrap_info
              wrap_info = noCafIdInfo
                          `setArityInfo`         wrap_arity
@@ -725,8 +728,10 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
              mk_dmd str | isBanged str = evalDmd
                         | otherwise    = topDmd
 
-             wrap_prag = dataConWrapperInlinePragma
-                         `setInlinePragmaActivation` activateDuringFinal
+             wrap_prag
+              | is_mutable = neverInlinePragma
+              | otherwise  = dataConWrapperInlinePragma
+                                `setInlinePragmaActivation` activateDuringFinal
                          -- See Note [Activation for data constructor wrappers]
 
              -- The wrapper will usually be inlined (see wrap_unf), so its
@@ -771,6 +776,19 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
              -- The wrap_args are the arguments *other than* the eq_spec
              -- Because we are going to apply the eq_spec args manually in the
              -- wrapper
+    wrap_act = dataConWrapperAction data_con
+    is_mutable = isJust wrap_act
+
+    in_context :: CoreExpr -> UniqSM CoreExpr
+    in_context e = do
+        tv <- newLocal (linear stateRW)
+        return $ mkConApp dc [Type res, mkLams [tv] (mkCoreUbxTup [stateRW, res] [Var tv, e])]
+      where
+        stateRW = mkTyConApp statePrimTyCon [realWorldTy]
+        (dc, res) =
+            case dataConWrapperDataCon data_con of
+              Just p -> p
+              _      -> pprPanic ("No constructor for wrapper action.") (ppr wrap_act)
 
     new_tycon = isNewTyCon tycon
     arg_ibangs
@@ -797,7 +815,8 @@ mkDataConRep dflags fam_envs wrap_name mb_bangs data_con
                      -- of some newtypes written with GADT syntax. See below.
          && (any isBanged (ev_ibangs ++ arg_ibangs)
                      -- Some forcing/unboxing (includes eq_spec)
-             || (not $ null eq_spec))) -- GADT
+             || (not $ null eq_spec)) -- GADT
+             || is_mutable) -- Has wrapper context type
       || isFamInstTyCon tycon -- Cast result
       || dataConUserTyVarsArePermuted data_con
                      -- If the data type was written with GADT syntax and
@@ -1108,7 +1127,7 @@ dataConArgUnpack (Scaled arg_mult arg_ty)
       -- NB: check for an *algebraic* data type
       -- A recursive newtype might mean that
       -- 'arg_ty' is a newtype
-  , let rep_tys = map (scaleScaled arg_mult) $ dataConInstArgTys con tc_args
+  , let rep_tys = map (scaleScaled arg_mult) $ dataConInstAltTys con tc_args
   = ASSERT( null (dataConExTyCoVars con) )
       -- Note [Unpacking GADTs and existentials]
     ( rep_tys `zip` dataConRepStrictness con

@@ -1035,7 +1035,8 @@ tcIfaceDataCons tycon_name tycon tc_tybinders if_cons
                          ifConCtxt = ctxt, ifConEqSpec = spec,
                          ifConArgTys = args, ifConFields = lbl_names,
                          ifConStricts = if_stricts,
-                         ifConSrcStricts = if_src_stricts})
+                         ifConSrcStricts = if_src_stricts,
+                         ifConMutFields = if_muts})
      = -- Universally-quantified tyvars are shared with
        -- parent TyCon, and are already in scope
        bindIfaceBndrs ex_bndrs    $ \ ex_tvs -> do
@@ -1084,8 +1085,9 @@ tcIfaceDataCons tycon_name tycon tc_tybinders if_cons
         ; prom_rep_name <- newTyConRepName dc_name
 
         ; con <- buildDataCon (pprPanic "tcIfaceDataCons: FamInstEnvs" (ppr dc_name))
-                       dc_name is_infix prom_rep_name
+                       tycon_name dc_name is_infix prom_rep_name
                        (map src_strict if_src_stricts)
+                       (map src_mut if_muts)
                        (Just stricts)
                        -- Pass the HsImplBangs (i.e. final
                        -- decisions) to buildDataCon; it'll use
@@ -1109,6 +1111,10 @@ tcIfaceDataCons tycon_name tycon tc_tybinders if_cons
 
     src_strict :: IfaceSrcBang -> HsSrcBang
     src_strict (IfSrcBang unpk bang) = HsSrcBang NoSourceText unpk bang
+
+    src_mut :: IfaceMutable -> HsMutableInfo
+    src_mut IfImmutable = HsImmutable
+    src_mut IfMutable   = HsMutable
 
 tcIfaceEqSpec :: IfaceEqSpec -> IfL [EqSpec]
 tcIfaceEqSpec spec

@@ -814,6 +814,35 @@ scavenge_block (bdescr *bd)
         break;
       }
 
+    // A constructor with mutable fields.
+    // We must manage the dirty clean state.
+    case MUT_CONSTR_CLEAN:
+      {
+        StgPtr end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        p += info->layout.payload.nptrs;
+        break;
+      }
+    case MUT_CONSTR_DIRTY:
+      {
+        StgPtr end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        p += info->layout.payload.nptrs;
+        break;
+      }
+
     default:
         barf("scavenge: unimplemented/strange closure type %d @ %p",
              info->type, p);
@@ -1206,6 +1235,31 @@ scavenge_mark_stack(void)
             break;
           }
 
+        case MUT_CONSTR_CLEAN:
+          {
+            StgPtr end;
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+            for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (gct->failed_to_evac) { // change to dirty
+               ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+            }
+            break;
+          }
+        case MUT_CONSTR_DIRTY:
+          {
+            StgPtr end;
+            end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+            for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+                evacuate((StgClosure **)p);
+            }
+            if (!gct->failed_to_evac) { // change to clean
+               ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+            }
+            break;
+          }
+
         default:
             barf("scavenge_mark_stack: unimplemented/strange closure type %d @ %p",
                  info->type, p);
@@ -1525,6 +1579,31 @@ scavenge_one(StgPtr p)
         break;
       }
 
+    case MUT_CONSTR_CLEAN:
+      {
+        StgPtr q = p, end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (gct->failed_to_evac) { // change to dirty
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        break;
+      }
+    case MUT_CONSTR_DIRTY:
+      {
+        StgPtr q = p, end;
+        end = (P_)((StgClosure *)p)->payload + info->layout.payload.ptrs;
+        for (p = (P_)((StgClosure *)p)->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+        if (!gct->failed_to_evac) { // change to clean
+           ((StgClosure *)q)->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(info));
+        }
+        break;
+      }
+
     case IND:
         // IND can happen, for example, when the interpreter allocates
         // a gigantic AP closure (more than one block), which ends up
@@ -1627,6 +1706,10 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
                 else
                     stats.n_OTHERS++;
                 break;
+            case MUT_CONSTR_CLEAN:
+                barf("MUT_CONSTR_CLEAN on mutable list");
+            case MUT_CONSTR_DIRTY:
+                stats.n_CONSTR++; break;
             default:
                 stats.n_OTHERS++; break;
             }

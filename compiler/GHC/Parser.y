@@ -594,6 +594,7 @@ are the most common patterns, rewritten as regular expressions for clarity:
  'stock'        { L _ ITstock }    -- for DerivingStrategies extension
  'anyclass'     { L _ ITanyclass } -- for DerivingStrategies extension
  'via'          { L _ ITvia }      -- for DerivingStrategies extension
+ 'mutable'      { L _ ITmutable }  -- for MutableFields extension
 
  'unit'         { L _ ITunit }
  'signature'    { L _ ITsignature }
@@ -2059,6 +2060,11 @@ is connected to the first type too.
 type :: { LHsType GhcPs }
         -- See Note [%shift: type -> btype]
         : btype %shift                 { $1 }
+        | 'mutable'
+          btype '->' ctype             {% ams $2 [mu AnnRarrow $3] -- See Note [GADT decl discards annotations]
+                                       >> ams (sLL $2 $> $ HsFunTy noExtField (HsUnrestrictedArrow (toUnicode $3))
+                                                                 (L (getLoc $2) (HsMutableTy HsMutable $2)) $4)
+                                              [mu AnnRarrow $3] }
         | btype '->' ctype             {% ams $1 [mu AnnRarrow $2] -- See Note [GADT decl discards annotations]
                                        >> ams (sLL $1 $> $ HsFunTy noExtField (HsUnrestrictedArrow (toUnicode $2)) $1 $3)
                                               [mu AnnRarrow $2] }
@@ -3634,6 +3640,7 @@ varid :: { Located RdrName }
         | 'forall'         { sL1 $1 $! mkUnqual varName (fsLit "forall") }
         | 'family'         { sL1 $1 $! mkUnqual varName (fsLit "family") }
         | 'role'           { sL1 $1 $! mkUnqual varName (fsLit "role") }
+        | 'mutable'        { sL1 $1 $! mkUnqual varName (fsLit "mutable") }
         -- If this changes relative to tyvarid, update 'checkRuleTyVarBndrNames'
         -- in GHC.Parser.PostProcess
         -- See Note [Parsing explicit foralls in Rules]

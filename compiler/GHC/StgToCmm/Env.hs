@@ -169,7 +169,8 @@ getNonVoidArgAmodes :: [StgArg] -> FCode [CmmExpr]
 --     so the result list may be shorter than the argument list
 getNonVoidArgAmodes [] = return []
 getNonVoidArgAmodes (arg:args)
-  | isVoidRep (argPrimRep arg) = getNonVoidArgAmodes args
+  | isVoidRep (argPrimRep arg)
+  && not (isRefAddrAlt (stgArgType arg)) = getNonVoidArgAmodes args
   | otherwise = do { amode  <- getArgAmode (NonVoid arg)
                    ; amodes <- getNonVoidArgAmodes args
                    ; return ( amode : amodes ) }

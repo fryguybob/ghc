@@ -1959,6 +1959,30 @@ multMulTyConKey = mkPreludeTyConUnique 194
 
 #include "primop-vector-uniques.hs-incl"
 
+------------------ Mutable Fields -------------------
+--      USES TyConUniques 400-405
+-----------------------------------------------------
+
+-- Ref#
+refPrimTyConKey :: Unique
+refPrimTyConKey = mkPreludeTyConUnique 400
+
+refAddrTyConKey :: Unique
+refAddrTyConKey = mkPreludeTyConUnique 401
+
+refIndexTyConKey :: Unique
+refIndexTyConKey = mkPreludeTyConUnique 402
+
+refAddrAltTyConKey :: Unique
+refAddrAltTyConKey = mkPreludeTyConUnique 403
+
+refIndexAltTyConKey :: Unique
+refIndexAltTyConKey = mkPreludeTyConUnique 404
+
+-- RefU#
+refUPrimTyConKey :: Unique
+refUPrimTyConKey = mkPreludeTyConUnique 405
+
 {-
 ************************************************************************
 *                                                                      *
@@ -2082,7 +2106,7 @@ sumRepDataConKey                        = mkPreludeDataConUnique 73
 runtimeRepSimpleDataConKeys, unliftedSimpleRepDataConKeys, unliftedRepDataConKeys :: [Unique]
 liftedRepDataConKey :: Unique
 runtimeRepSimpleDataConKeys@(liftedRepDataConKey : unliftedSimpleRepDataConKeys)
-  = map mkPreludeDataConUnique [74..88]
+  = map mkPreludeDataConUnique [74..90]
 
 unliftedRepDataConKeys = vecRepDataConKey :
                          tupleRepDataConKey :
@@ -2092,39 +2116,39 @@ unliftedRepDataConKeys = vecRepDataConKey :
 -- See Note [Wiring in RuntimeRep] in GHC.Builtin.Types
 -- VecCount
 vecCountDataConKeys :: [Unique]
-vecCountDataConKeys = map mkPreludeDataConUnique [89..94]
+vecCountDataConKeys = map mkPreludeDataConUnique [91..96]
 
 -- See Note [Wiring in RuntimeRep] in GHC.Builtin.Types
 -- VecElem
 vecElemDataConKeys :: [Unique]
-vecElemDataConKeys = map mkPreludeDataConUnique [95..104]
+vecElemDataConKeys = map mkPreludeDataConUnique [97..106]
 
 -- Typeable things
 kindRepTyConAppDataConKey, kindRepVarDataConKey, kindRepAppDataConKey,
     kindRepFunDataConKey, kindRepTYPEDataConKey,
     kindRepTypeLitSDataConKey, kindRepTypeLitDDataConKey
     :: Unique
-kindRepTyConAppDataConKey = mkPreludeDataConUnique 105
-kindRepVarDataConKey      = mkPreludeDataConUnique 106
-kindRepAppDataConKey      = mkPreludeDataConUnique 107
-kindRepFunDataConKey      = mkPreludeDataConUnique 108
-kindRepTYPEDataConKey     = mkPreludeDataConUnique 109
-kindRepTypeLitSDataConKey = mkPreludeDataConUnique 110
-kindRepTypeLitDDataConKey = mkPreludeDataConUnique 111
+kindRepTyConAppDataConKey = mkPreludeDataConUnique 107
+kindRepVarDataConKey      = mkPreludeDataConUnique 108
+kindRepAppDataConKey      = mkPreludeDataConUnique 109
+kindRepFunDataConKey      = mkPreludeDataConUnique 110
+kindRepTYPEDataConKey     = mkPreludeDataConUnique 111
+kindRepTypeLitSDataConKey = mkPreludeDataConUnique 112
+kindRepTypeLitDDataConKey = mkPreludeDataConUnique 113
 
 typeLitSymbolDataConKey, typeLitNatDataConKey :: Unique
-typeLitSymbolDataConKey   = mkPreludeDataConUnique 112
-typeLitNatDataConKey      = mkPreludeDataConUnique 113
+typeLitSymbolDataConKey   = mkPreludeDataConUnique 114
+typeLitNatDataConKey      = mkPreludeDataConUnique 115
 
 -- Unsafe equality
 unsafeReflDataConKey :: Unique
-unsafeReflDataConKey      = mkPreludeDataConUnique 114
+unsafeReflDataConKey      = mkPreludeDataConUnique 116
 
 -- Multiplicity
 
 oneDataConKey, manyDataConKey :: Unique
-oneDataConKey = mkPreludeDataConUnique 115
-manyDataConKey = mkPreludeDataConUnique 116
+oneDataConKey = mkPreludeDataConUnique 117
+manyDataConKey = mkPreludeDataConUnique 118
 
 -- ghc-bignum
 integerISDataConKey, integerINDataConKey, integerIPDataConKey,

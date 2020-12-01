@@ -621,7 +621,7 @@ GarbageCollect (uint32_t collect_gen,
         copied +=  mut_list_size;
 
         debugTrace(DEBUG_gc,
-                   "mut_list_size: %lu (%d vars, %d arrays, %d MVARs, %d TVARs, %d TVAR_WATCH_QUEUEs, %d TREC_CHUNKs, %d TREC_HEADERs, %d others)",
+                   "mut_list_size: %lu (%d vars, %d arrays, %d MVARs, %d TVARs, %d TVAR_WATCH_QUEUEs, %d TREC_CHUNKs, %d TREC_HEADERs, %d MUTABLE_CONSTRs, %d others)",
                    (unsigned long)(mut_list_size * sizeof(W_)),
                    mutlist_scav_stats.n_MUTVAR,
                    mutlist_scav_stats.n_MUTARR,
@@ -630,6 +630,7 @@ GarbageCollect (uint32_t collect_gen,
                    mutlist_scav_stats.n_TVAR_WATCH_QUEUE,
                    mutlist_scav_stats.n_TREC_CHUNK,
                    mutlist_scav_stats.n_TREC_HEADER,
+                   mutlist_scav_stats.n_CONSTR,
                    mutlist_scav_stats.n_OTHERS);
     }
 

@@ -31,7 +31,8 @@ liftedRepDataConTy, unliftedRepDataConTy,
   wordRepDataConTy,
   word8RepDataConTy, word16RepDataConTy, word32RepDataConTy, word64RepDataConTy,
   addrRepDataConTy,
-  floatRepDataConTy, doubleRepDataConTy :: Type
+  floatRepDataConTy, doubleRepDataConTy,
+  refRepDataConTy, refURepDataConTy :: Type
 
 vec2DataConTy, vec4DataConTy, vec8DataConTy, vec16DataConTy, vec32DataConTy,
   vec64DataConTy :: Type

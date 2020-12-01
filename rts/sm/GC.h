@@ -60,6 +60,7 @@ typedef struct {
     StgWord n_TVAR_WATCH_QUEUE;
     StgWord n_TREC_HEADER;
     StgWord n_OTHERS;
+    StgWord n_CONSTR;
 } MutListScavStats;
 
 extern MutListScavStats mutlist_scav_stats;

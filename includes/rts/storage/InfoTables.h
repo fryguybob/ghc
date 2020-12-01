@@ -328,6 +328,29 @@ typedef struct StgConInfoTable_ {
 #endif
 } StgConInfoTable;
 
+/* -----------------------------------------------------------------------------
+   Mutable constructor info tables
+   -------------------------------------------------------------------------- */
+
+typedef struct StgMutConInfoTable_ {
+#if !defined(TABLES_NEXT_TO_CODE)
+    StgInfoTable i;
+#endif
+
+#if defined(TABLES_NEXT_TO_CODE)
+    OFFSET_FIELD(con_desc); // the name of the data constructor
+                            // as: Package:Module.Name
+    OFFSET_FIELD(other);
+#else
+    char *con_desc;
+    StgInfoTable *other;
+#endif
+
+#if defined(TABLES_NEXT_TO_CODE)
+    StgInfoTable i;
+#endif
+} StgMutConInfoTable;
+
 
 /* -----------------------------------------------------------------------------
    Accessor macros for fields that might be offsets (C version)
@@ -358,6 +381,28 @@ typedef struct StgConInfoTable_ {
             ((const char *)((StgWord)((info)+1) + ((info)->con_desc)))
 #else
 #define GET_CON_DESC(info) ((const char *)(info)->con_desc)
+#endif
+
+/*
+ * GET_MUT_CON_DESC(info)
+ * info must be a StgMutConInfoTable*.
+ */
+#ifdef TABLES_NEXT_TO_CODE
+#define GET_MUT_CON_DESC(info) \
+            ((const char *)((StgWord)((info)+1) + ((info)->con_desc)))
+#else
+#define GET_MUT_CON_DESC(info) ((const char *)(info)->con_desc)
+#endif
+
+/*
+ * GET_MUT_CON_OTHER(info)
+ * info must be a StgMutConInfoTable*.
+ */
+#ifdef TABLES_NEXT_TO_CODE
+#define GET_MUT_CON_OTHER(info) \
+            ((StgInfoTable *) (((StgWord)((info)+1) + (info)->other)))
+#else
+#define GET_MUT_CON_OTHER(info) ((info)->other)
 #endif
 
 /*

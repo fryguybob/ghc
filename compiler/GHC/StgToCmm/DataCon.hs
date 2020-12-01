@@ -363,6 +363,19 @@ precomputedStaticConInfo_maybe _ _ _ _ = Nothing
 --      Binding constructor arguments
 ---------------------------------------------------------------
 
+-- Mutable fields need special handling here.  References have been broken into
+-- two Id's at this point, a RefAddr# and a RefIndex#.  We need to make sure
+-- that these have the right representations for a matching constructor.
+-- Specifically, in bindConArgs RefAddr#s need to have a void representation
+-- and RefIndex#s need to have the representation that matches the
+-- representation of the mutable field unless it is a mutable array.
+-- We can then bind the address register
+-- to the object pointer and the index register to the offset without actually
+-- emitting a load.
+--
+-- If the RefAddr# and RefIndex# are from a stored Ref# rather then from a
+-- mutable field, then we should load the values as normal.
+
 bindConArgs :: AltCon -> LocalReg -> [NonVoid Id] -> FCode [LocalReg]
 -- bindConArgs is called from cgAlt of a case
 -- (bindConArgs con args) augments the environment with bindings for the
@@ -372,7 +385,7 @@ bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleDataCon con))
     do profile <- getProfile
        platform <- getPlatform
-       let (_, _, args_w_offsets) = mkVirtConstrOffsets profile (addIdReps args)
+       let (_, _, args_w_offsets) = mkVirtConstrOffsets profile (addIdRepsForAlt args)
            tag = tagForCon platform con
 
            -- The binding below forces the masking out of the tag bits
@@ -381,6 +394,14 @@ bindConArgs (DataAlt con) base args
            bind_arg (arg@(NonVoid b), offset)
              | isDeadBinder b  -- See Note [Dead-binder optimisation] in GHC.StgToCmm.Expr
              = return Nothing
+             | isRefAddrAlt (idType . fromNonVoid $ arg)
+             = do { emitAssign (CmmLocal (idToReg platform arg))
+                        (CmmReg (CmmLocal base))
+                  ; Just <$> bindArgToReg arg }
+             | isRefIndexAlt (idType . fromNonVoid $ arg)
+             = do { emitAssign (CmmLocal (idToReg platform arg))
+                               (mkIntExpr platform (offset - tag))
+                  ; Just <$> bindArgToReg arg }
              | otherwise
              = do { emit $ mkTaggedObjectLoad platform (idToReg platform arg)
                                               base offset tag

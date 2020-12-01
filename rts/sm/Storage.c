@@ -1317,6 +1317,27 @@ dirty_MUT_VAR(StgRegTable *reg, StgMutVar *mvar, StgClosure *old)
 }
 
 /*
+   This is the write barrier for constructors with mutable fields.  A
+   MUT_CONSTR_CLEAN object is not on the mutable list; a MUT_CONSTR_DIRTY
+   is.  When written to, a MUT_VAR_CLEAN turns into a MUT_CONSTR_DIRTY
+   and is put on the mutable list.
+*/
+void
+dirty_MUT_CON(StgRegTable *reg, StgClosure *p)
+{
+    Capability *cap = regTableToCapability(reg);
+    // No barrier required here as no other heap object fields are read. See
+    // note [Heap memory barriers] in SMP.h.
+    // TODO: RY get the memory barriers right here.
+    StgInfoTable *t = INFO_PTR_TO_STRUCT(p->header.info);
+    if (t->type == MUT_CONSTR_CLEAN) {
+        p->header.info = GET_MUT_CON_OTHER(itbl_to_mut_con_itbl(t));
+        recordClosureMutated(cap,p);
+        // Updating the remember set happens before this is called.
+    }
+}
+
+/*
  * This is the write barrier for TVARs.
  * old is the pointer that we overwrote, which is required by the concurrent
  * garbage collector. Note that we, while StgTVars contain multiple pointers,

@@ -63,10 +63,12 @@ EXTERN_INLINE StgRetInfoTable *RET_INFO_PTR_TO_STRUCT(const StgInfoTable *info) 
 INLINE_HEADER StgFunInfoTable *FUN_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgFunInfoTable *)info - 1;}
 INLINE_HEADER StgThunkInfoTable *THUNK_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgThunkInfoTable *)info - 1;}
 INLINE_HEADER StgConInfoTable *CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgConInfoTable *)info - 1;}
+INLINE_HEADER StgMutConInfoTable *MUT_CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgMutConInfoTable *)info - 1;}
 INLINE_HEADER StgFunInfoTable *itbl_to_fun_itbl(const StgInfoTable *i) {return (StgFunInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgRetInfoTable *itbl_to_ret_itbl(const StgInfoTable *i) {return (StgRetInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgThunkInfoTable *itbl_to_thunk_itbl(const StgInfoTable *i) {return (StgThunkInfoTable *)(i + 1) - 1;}
 INLINE_HEADER StgConInfoTable *itbl_to_con_itbl(const StgInfoTable *i) {return (StgConInfoTable *)(i + 1) - 1;}
+INLINE_HEADER StgMutConInfoTable *itbl_to_mut_con_itbl(const StgInfoTable *i) {return (StgMutConInfoTable *)(i + 1) - 1;}
 #else
 EXTERN_INLINE StgInfoTable *INFO_PTR_TO_STRUCT(const StgInfoTable *info);
 EXTERN_INLINE StgInfoTable *INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgInfoTable *)info;}
@@ -75,10 +77,12 @@ EXTERN_INLINE StgRetInfoTable *RET_INFO_PTR_TO_STRUCT(const StgInfoTable *info) 
 INLINE_HEADER StgFunInfoTable *FUN_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgFunInfoTable *)info;}
 INLINE_HEADER StgThunkInfoTable *THUNK_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgThunkInfoTable *)info;}
 INLINE_HEADER StgConInfoTable *CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgConInfoTable *)info;}
+INLINE_HEADER StgMutConInfoTable *MUT_CON_INFO_PTR_TO_STRUCT(const StgInfoTable *info) {return (StgConInfoTable *)info;}
 INLINE_HEADER StgFunInfoTable *itbl_to_fun_itbl(const StgInfoTable *i) {return (StgFunInfoTable *)i;}
 INLINE_HEADER StgRetInfoTable *itbl_to_ret_itbl(const StgInfoTable *i) {return (StgRetInfoTable *)i;}
 INLINE_HEADER StgThunkInfoTable *itbl_to_thunk_itbl(const StgInfoTable *i) {return (StgThunkInfoTable *)i;}
 INLINE_HEADER StgConInfoTable *itbl_to_con_itbl(const StgInfoTable *i) {return (StgConInfoTable *)i;}
+INLINE_HEADER StgMutConInfoTable *itbl_to_mut_con_itbl(const StgInfoTable *i) {return (StgMutConInfoTable *)i;}
 #endif
 
 EXTERN_INLINE const StgInfoTable *get_itbl(const StgClosure *c);
@@ -106,6 +110,11 @@ INLINE_HEADER const StgThunkInfoTable *get_thunk_itbl(const StgClosure *c)
 INLINE_HEADER const StgConInfoTable *get_con_itbl(const StgClosure *c)
 {
     return CON_INFO_PTR_TO_STRUCT(RELAXED_LOAD(&c->header.info));
+}
+
+INLINE_HEADER const StgMutConInfoTable *get_mut_con_itbl(const StgClosure *c)
+{
+    return MUT_CON_INFO_PTR_TO_STRUCT((c)->header.info);
 }
 
 INLINE_HEADER StgHalfWord GET_TAG(const StgClosure *con)

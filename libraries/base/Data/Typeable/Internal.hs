@@ -671,6 +671,7 @@ runtimeRepTypeRep r =
                      `kApp` buildList (map runtimeRepTypeRep rs)
       SumRep rs   -> kindedTypeRep @_ @'SumRep
                      `kApp` buildList (map runtimeRepTypeRep rs)
+      RefRep      -> rep @'RefRep
       IntRep      -> rep @'IntRep
       Int8Rep     -> rep @'Int8Rep
       Int16Rep    -> rep @'Int16Rep

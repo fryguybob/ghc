@@ -440,6 +440,7 @@ data RuntimeRep = VecRep VecCount VecElem   -- ^ a SIMD vector type
                 | AddrRep         -- ^ A pointer, but /not/ to a Haskell value
                 | FloatRep        -- ^ a 32-bit floating point number
                 | DoubleRep       -- ^ a 64-bit floating point number
+                | RefRep          -- ^ Reference to a mutable constructor field
 
 -- RuntimeRep is intimately tied to TyCon.RuntimeRep (in GHC proper). See
 -- Note [RuntimeRep and PrimRep] in RepType.

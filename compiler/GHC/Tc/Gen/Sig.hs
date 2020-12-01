@@ -278,6 +278,7 @@ no_anon_wc_ty lty = go lty
       HsKindSig _ ty kind            -> go ty && go kind
       HsDocTy _ ty _                 -> go ty
       HsBangTy _ _ ty                -> go ty
+      HsMutableTy _ ty               -> go ty
       HsRecTy _ flds                 -> gos $ map (cd_fld_type . unLoc) flds
       HsExplicitListTy _ _ tys       -> gos tys
       HsExplicitTupleTy _ tys        -> gos tys

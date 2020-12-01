@@ -2151,6 +2151,7 @@ argToPat in_scope val_env arg arg_occ
   -- NB: this *precedes* the Var case, so that we catch nullary constrs
 argToPat env in_scope val_env arg arg_occ
   | Just (ConVal (DataAlt dc) args) <- isValue val_env arg
+  , not (hasMutableFields dc)
   , Just arg_occs <- mb_scrut dc
   = do  { let (ty_args, rest_args) = splitAtList (dataConUnivTyVars dc) args
         ; (_, args') <- argsToPats env in_scope val_env rest_args arg_occs

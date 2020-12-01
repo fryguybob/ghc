@@ -53,7 +53,8 @@ import GHC.Tc.Utils.TcType
 import GHC.Tc.Instance.Family
 import GHC.Tc.Types.Origin
 
-import GHC.Builtin.Types (oneDataConTy,  unitTy, makeRecoveryTyCon )
+import GHC.Builtin.Types( oneDataConTy,  unitTy, makeRecoveryTyCon
+                        , typeToTypeKind )
 
 import GHC.Rename.Env( lookupConstructorFields )
 
@@ -3237,7 +3238,7 @@ tcConDecl rep_tycon tag_map tmpl_bndrs res_kind res_tmpl new_or_data
                  ; let exp_kind = getArgExpKind new_or_data res_kind
                  ; btys <- tcConH98Args exp_kind hs_args
                  ; field_lbls <- lookupConstructorFields name
-                 ; let (arg_tys, stricts) = unzip btys
+                 ; let (arg_tys, stricts, _) = unzip3 btys
                  ; return (ctxt, arg_tys, field_lbls, stricts)
                  }
 
@@ -3286,8 +3287,9 @@ tcConDecl rep_tycon tag_map tmpl_bndrs res_kind res_tmpl new_or_data
        ; is_infix <- tcConIsInfixH98 name hs_args
        ; rep_nm   <- newTyConRepName name
        ; fam_envs <- tcGetFamInstEnvs
-       ; dc <- buildDataCon fam_envs name is_infix rep_nm
-                            stricts Nothing field_lbls
+       ; dc <- buildDataCon fam_envs (tyConName rep_tycon) name is_infix rep_nm
+                            stricts (map (const HsImmutable) stricts)
+                            Nothing field_lbls
                             univ_tvs ex_tvs user_tvbs
                             [{- no eq_preds -}] ctxt arg_tys
                             res_tmpl rep_tycon tag_map
@@ -3310,7 +3312,7 @@ tcConDecl rep_tycon tag_map tmpl_bndrs _res_kind res_tmpl new_or_data
     do { traceTc "tcConDecl 1 gadt" (ppr names)
        ; let (L _ name : _) = names
 
-       ; (tclvl, wanted, (outer_bndrs, (ctxt, arg_tys, res_ty, field_lbls, stricts)))
+       ; (tclvl, wanted, (outer_bndrs, (ctxt, arg_tys, res_ty, field_lbls, stricts, muts)))
            <- pushLevelAndSolveEqualitiesX "tcConDecl:GADT" $
               tcOuterTKBndrs skol_info outer_hs_bndrs       $
               do { ctxt <- tcHsMbContext cxt
@@ -3321,9 +3323,9 @@ tcConDecl rep_tycon tag_map tmpl_bndrs _res_kind res_tmpl new_or_data
                  ; let exp_kind = getArgExpKind new_or_data res_kind
 
                  ; btys <- tcConGADTArgs exp_kind hs_args
-                 ; let (arg_tys, stricts) = unzip btys
+                 ; let (arg_tys, stricts, muts) = unzip3 btys
                  ; field_lbls <- lookupConstructorFields name
-                 ; return (ctxt, arg_tys, res_ty, field_lbls, stricts)
+                 ; return (ctxt, arg_tys, res_ty, field_lbls, stricts, muts)
                  }
 
        ; outer_tv_bndrs <- scopedSortOuter outer_bndrs
@@ -3343,8 +3345,10 @@ tcConDecl rep_tycon tag_map tmpl_bndrs _res_kind res_tmpl new_or_data
        ; ctxt          <- zonkTcTypesToTypesX ze ctxt
        ; res_ty        <- zonkTcTypeToTypeX   ze res_ty
 
+       ; matcher <- mkContextTcMatchTy
+
        ; let (univ_tvs, ex_tvs, tvbndrs', eq_preds, arg_subst)
-               = rejigConRes tmpl_bndrs res_tmpl tvbndrs res_ty
+               = rejigConRes tmpl_bndrs res_tmpl tvbndrs res_ty matcher
              -- See Note [Checking GADT return types]
 
              ctxt'      = substTys arg_subst ctxt
@@ -3359,9 +3363,8 @@ tcConDecl rep_tycon tag_map tmpl_bndrs _res_kind res_tmpl new_or_data
              { is_infix <- tcConIsInfixGADT name hs_args
              ; rep_nm   <- newTyConRepName name
 
-             ; buildDataCon fam_envs name is_infix
-                            rep_nm
-                            stricts Nothing field_lbls
+             ; buildDataCon fam_envs (tyConName rep_tycon) name is_infix rep_nm
+                            stricts muts Nothing field_lbls 
                             univ_tvs ex_tvs tvbndrs' eq_preds
                             ctxt' arg_tys' res_ty' rep_tycon tag_map
                   -- NB:  we put data_tc, the type constructor gotten from the
@@ -3422,7 +3425,7 @@ tcConH98Args :: ContextKind  -- expected kind of arguments
                              -- always OpenKind for datatypes, but unlifted newtypes
                              -- might have a specific kind
              -> HsConDeclH98Details GhcRn
-             -> TcM [(Scaled TcType, HsSrcBang)]
+             -> TcM [(Scaled TcType, HsSrcBang, HsMutableInfo)]
 tcConH98Args exp_kind (PrefixCon btys)
   = mapM (tcConArg exp_kind) btys
 tcConH98Args exp_kind (InfixCon bty1 bty2)
@@ -3436,7 +3439,7 @@ tcConGADTArgs :: ContextKind  -- expected kind of arguments
                               -- always OpenKind for datatypes, but unlifted newtypes
                               -- might have a specific kind
               -> HsConDeclGADTDetails GhcRn
-              -> TcM [(Scaled TcType, HsSrcBang)]
+              -> TcM [(Scaled TcType, HsSrcBang, HsMutableInfo)]
 tcConGADTArgs exp_kind (PrefixConGADT btys)
   = mapM (tcConArg exp_kind) btys
 tcConGADTArgs exp_kind (RecConGADT fields)
@@ -3444,17 +3447,17 @@ tcConGADTArgs exp_kind (RecConGADT fields)
 
 tcConArg :: ContextKind  -- expected kind for args; always OpenKind for datatypes,
                          -- but might be an unlifted type with UnliftedNewtypes
-         -> HsScaled GhcRn (LHsType GhcRn) -> TcM (Scaled TcType, HsSrcBang)
+         -> HsScaled GhcRn (LHsType GhcRn) -> TcM (Scaled TcType, HsSrcBang, HsMutableInfo)
 tcConArg exp_kind (HsScaled w bty)
   = do  { traceTc "tcConArg 1" (ppr bty)
         ; arg_ty <- tcCheckLHsType (getBangType bty) exp_kind
         ; w' <- tcDataConMult w
         ; traceTc "tcConArg 2" (ppr bty)
-        ; return (Scaled w' arg_ty, getBangStrictness bty) }
+        ; return (Scaled w' arg_ty, getBangStrictness bty, getMutable bty) }
 
 tcRecConDeclFields :: ContextKind
                    -> Located [LConDeclField GhcRn]
-                   -> TcM [(Scaled TcType, HsSrcBang)]
+                   -> TcM [(Scaled TcType, HsSrcBang, HsMutableInfo)]
 tcRecConDeclFields exp_kind fields
   = mapM (tcConArg exp_kind) btys
   where
@@ -3537,6 +3540,7 @@ rejigConRes :: [KnotTied TyConBinder] -> KnotTied Type    -- Template for result
                                   --      gives template ([a,b,c], T [a] b c)
             -> [InvisTVBinder]    -- The constructor's type variables (both inferred and user-written)
             -> KnotTied Type      -- res_ty
+            -> (Type -> Type -> Maybe TCvSubst)
             -> ([TyVar],          -- Universal
                 [TyVar],          -- Existential (distinct OccNames from univs)
                 [InvisTVBinder],  -- The constructor's rejigged, user-written
@@ -3546,7 +3550,7 @@ rejigConRes :: [KnotTied TyConBinder] -> KnotTied Type    -- Template for result
         -- We don't check that the TyCon given in the ResTy is
         -- the same as the parent tycon, because checkValidDataCon will do it
 -- NB: All arguments may potentially be knot-tied
-rejigConRes tmpl_bndrs res_tmpl dc_tvbndrs res_ty
+rejigConRes tmpl_bndrs res_tmpl dc_tvbndrs res_ty matcher
         -- E.g.  data T [a] b c where
         --         MkT :: forall x y z. T [(x,y)] z z
         -- The {a,b,c} are the tmpl_tvs, and the {x,y,z} are the dc_tvs
@@ -3563,7 +3567,7 @@ rejigConRes tmpl_bndrs res_tmpl dc_tvbndrs res_ty
         -- So we return ( [a,b,z], [x,y]
         --              , [], [x,y,z]
         --              , [a~(x,y),b~z], <arg-subst> )
-  | Just subst <- tcMatchTy res_tmpl res_ty
+  | Just subst <- matcher res_tmpl res_ty
   = let (univ_tvs, raw_eqs, kind_subst) = mkGADTVars tmpl_tvs dc_tvs subst
         raw_ex_tvs = dc_tvs `minusList` univ_tvs
         (arg_subst, substed_ex_tvs) = substTyVarBndrs kind_subst raw_ex_tvs
@@ -4092,14 +4096,16 @@ checkValidDataCon dflags existential_ok tc con
           let tc_tvs      = tyConTyVars tc
               res_ty_tmpl = mkFamilyTyConApp tc (mkTyVarTys tc_tvs)
               orig_res_ty = dataConOrigResTy con
+              hasMutableFields = any (/= HsImmutable) (dataConMutableFields con)
         ; traceTc "checkValidDataCon" (vcat
               [ ppr con, ppr tc, ppr tc_tvs
               , ppr res_ty_tmpl <+> dcolon <+> ppr (tcTypeKind res_ty_tmpl)
               , ppr orig_res_ty <+> dcolon <+> ppr (tcTypeKind orig_res_ty)])
 
-
-        ; checkTc (isJust (tcMatchTyKi res_ty_tmpl orig_res_ty))
-                  (badDataConTyCon con res_ty_tmpl)
+            -- Check for datacon defining mutable fields in some context.
+        ; (b, allowMutable) <- matchTyWithContext res_ty_tmpl orig_res_ty
+ 
+        ; checkTc b (badDataConTyCon con res_ty_tmpl)
             -- Note that checkTc aborts if it finds an error. This is
             -- critical to avoid panicking when we call dataConDisplayType
             -- on an un-rejiggable datacon!
@@ -4109,6 +4115,9 @@ checkValidDataCon dflags existential_ok tc con
             --    type family Star where Star = Type
             --    newtype T :: Type where MkT :: Int -> (T :: Star)
 
+            -- Check that mutable fields have the required context.
+        ; checkTc (allowMutable || not hasMutableFields)
+            (text "Mutable fields require a context.")
         ; traceTc "checkValidDataCon 2" (ppr data_con_display_type)
 
           -- Check that the result type is a *monotype*
@@ -4216,6 +4225,26 @@ checkValidDataCon dflags existential_ok tc con
 
     show_linear_types     = xopt LangExt.LinearTypes dflags
     data_con_display_type = dataConDisplayType show_linear_types con
+
+    -- match result type with original type or original type in some context
+    matchTyWithContext res orig
+      | isJust (tcMatchTy res orig) = return (True, False)
+      | otherwise                   = do
+          m <- newFlexiTyVarTy typeToTypeKind
+          let ret = isJust (tcMatchTy (mkAppTy m res) orig)
+          if ret
+            then return (ret, True)
+            else do
+              checkTc False $ ppr ((mkAppTy m res), orig)
+              return (False, True)
+
+mkContextTcMatchTy :: TcM (Type -> Type -> Maybe TCvSubst)
+mkContextTcMatchTy = do
+     m <- newFlexiTyVarTy typeToTypeKind
+     return $ \res orig ->
+        case tcMatchTy res orig of
+            Just m  -> return m
+            Nothing -> tcMatchTy (mkAppTy m res) orig
 
 -------------------------------
 checkNewDataCon :: DataCon -> TcM ()

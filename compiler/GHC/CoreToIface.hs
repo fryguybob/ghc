@@ -30,6 +30,7 @@ module GHC.CoreToIface
     , toIfaceExpr
     , toIfaceBang
     , toIfaceSrcBang
+    , toIfaceMutable
     , toIfaceLetBndr
     , toIfaceIdDetails
     , toIfaceIdInfo
@@ -423,6 +424,10 @@ toIfaceBang _   HsStrict             = IfStrict
 
 toIfaceSrcBang :: HsSrcBang -> IfaceSrcBang
 toIfaceSrcBang (HsSrcBang _ unpk bang) = IfSrcBang unpk bang
+
+toIfaceMutable :: HsMutableInfo -> IfaceMutable
+toIfaceMutable HsImmutable    = IfImmutable
+toIfaceMutable HsMutable      = IfMutable
 
 toIfaceLetBndr :: Id -> IfaceLetBndr
 toIfaceLetBndr id  = IfLetBndr (occNameFS (getOccName id))

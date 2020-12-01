@@ -83,4 +83,6 @@
 #define SMALL_MUT_ARR_PTRS_FROZEN_DIRTY 61
 #define SMALL_MUT_ARR_PTRS_FROZEN_CLEAN 62
 #define COMPACT_NFDATA                63
-#define N_CLOSURE_TYPES               64
+#define MUT_CONSTR_CLEAN              64
+#define MUT_CONSTR_DIRTY              65
+#define N_CLOSURE_TYPES               66

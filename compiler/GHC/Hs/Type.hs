@@ -44,6 +44,9 @@ module GHC.Hs.Type (
         SrcStrictness(..), SrcUnpackedness(..),
         getBangType, getBangStrictness,
 
+        HsMutableInfo(..),
+        getMutable,
+
         ConDeclField(..), LConDeclField, pprConDeclFields,
 
         HsConDetails(..),
@@ -97,7 +100,8 @@ import GHC.Types.Name( Name, NamedThing(getName) )
 import GHC.Types.Name.Reader ( RdrName )
 import GHC.Types.Var ( VarBndr )
 import GHC.Core.DataCon( HsSrcBang(..), HsImplBang(..),
-                         SrcStrictness(..), SrcUnpackedness(..) )
+                         SrcStrictness(..), SrcUnpackedness(..),
+                         HsMutableInfo(..) )
 import GHC.Core.TyCo.Rep ( Type(..) )
 import GHC.Builtin.Types( manyDataConName, oneDataConName, mkTupleStr )
 import GHC.Core.Type
@@ -141,6 +145,10 @@ getBangStrictness :: LHsType (GhcPass p) -> HsSrcBang
 getBangStrictness                 (L _ (HsBangTy _ s _))     = s
 getBangStrictness (L _ (HsDocTy _ (L _ (HsBangTy _ s _)) _)) = s
 getBangStrictness _ = (HsSrcBang NoSourceText NoSrcUnpack NoSrcStrict)
+
+getMutable :: LHsType (GhcPass p) -> HsMutableInfo
+getMutable (L _ (HsMutableTy i _)) = i
+getMutable _ = HsImmutable
 
 {-
 ************************************************************************
@@ -1031,6 +1039,10 @@ data HsType pass
       --         'GHC.Parser.Annotation.AnnBang' @\'!\'@
 
       -- For details on above see note [Api annotations] in GHC.Parser.Annotation
+
+  | HsMutableTy HsMutableInfo  -- A mutable field type
+                (LHsType pass)
+    -- TODO: RY Read about 'Api annotations'
 
   | HsRecTy     (XRecTy pass)
                 [LConDeclField pass]    -- Only in data type declarations
@@ -2135,6 +2147,7 @@ ppr_mono_ty (HsQualTy { hst_ctxt = ctxt, hst_body = ty })
   = sep [pprLHsContextAlways ctxt, ppr_mono_lty ty]
 
 ppr_mono_ty (HsBangTy _ b ty)   = ppr b <> ppr_mono_lty ty
+ppr_mono_ty (HsMutableTy m ty)  = ppr m <+> ppr_mono_lty ty
 ppr_mono_ty (HsRecTy _ flds)      = pprConDeclFields flds
 ppr_mono_ty (HsTyVar _ prom (L _ name))
   | isPromoted prom = quote (pprPrefixOcc name)
@@ -2250,6 +2263,7 @@ hsTypeNeedsParens p = go_hs_ty
     go_hs_ty (HsOpTy{})               = p >= opPrec
     go_hs_ty (HsParTy{})              = False
     go_hs_ty (HsDocTy _ (L _ t) _)    = go_hs_ty t
+    go_hs_ty (HsMutableTy _ (L _ t))  = go_hs_ty t
     go_hs_ty (XHsType (NHsCoreTy ty)) = go_core_ty ty
 
     go_core_ty (TyVarTy{})    = False
@@ -2302,6 +2316,7 @@ lhsTypeHasLeadingPromotionQuote ty
     go (HsAppKindTy _ t _)   = goL t
     go (HsParTy{})           = False
     go (HsDocTy _ t _)       = goL t
+    go (HsMutableTy{})       = False
     go (XHsType{})           = False
 
 -- | @'parenthesizeHsType' p ty@ checks if @'hsTypeNeedsParens' p ty@ is

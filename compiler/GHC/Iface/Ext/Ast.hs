@@ -1712,6 +1712,9 @@ instance ToHie (Located (HsType GhcRn)) where
       HsBangTy _ _ ty ->
         [ toHie ty
         ]
+      HsMutableTy _ ty ->
+        [ toHie ty
+        ]
       HsRecTy _ fields ->
         [ toHie fields
         ]

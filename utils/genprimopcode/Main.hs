@@ -911,6 +911,10 @@ ppType (TyApp (TyCon "IOPort#") [x,y])   = "mkIOPortPrimTy " ++ ppType x
                                            ++ " " ++ ppType y
 ppType (TyApp (TyCon "TVar#") [x,y])     = "mkTVarPrimTy " ++ ppType x
                                            ++ " " ++ ppType y
+ppType (TyApp (TyCon "Ref#") [x,y])      = "mkRefPrimTy " ++ ppType x
+                                           ++ " " ++ ppType y
+ppType (TyApp (TyCon "RefU#") [x,y])     = "mkRefUPrimTy " ++ ppType x
+                                           ++ " " ++ ppType y
 ppType (TyApp (VecTyCon _ pptc) [])      = pptc
 
 ppType (TyUTup ts) = "(mkTupleTy Unboxed "

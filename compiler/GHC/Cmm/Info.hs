@@ -258,6 +258,12 @@ mkInfoTableContents dflags
                     []          -> mkIntCLit platform 0
                     (lit:_rest) -> ASSERT( null _rest ) lit
 
+    mk_pieces (MutConstr con_tag con_descr other _) _no_srt
+      = do { (descr_lit, decl) <- newStringLit con_descr
+           ; return ( Just (CmmInt (fromIntegral con_tag) (halfWordWidth platform)), Nothing
+                    , [other, descr_lit]
+                    , [decl]) }
+
     mk_pieces other _ = pprPanic "mk_pieces" (ppr other)
 
 mkInfoTableContents _ _ _ = panic "mkInfoTableContents"   -- NonInfoTable dealt with earlier

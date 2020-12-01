@@ -99,10 +99,12 @@ mkNewTyConRhs tycon_name tycon con
 
 ------------------------------------------------------
 buildDataCon :: FamInstEnvs
+            -> Name                     -- Type constructor name
             -> Name
             -> Bool                     -- Declared infix
             -> TyConRepName
             -> [HsSrcBang]
+            -> [HsMutableInfo]
             -> Maybe [HsImplBang]
                 -- See Note [Bangs on imported data constructors] in GHC.Types.Id.Make
            -> [FieldLabel]             -- Field labels
@@ -122,9 +124,9 @@ buildDataCon :: FamInstEnvs
 --   a) makes the worker Id
 --   b) makes the wrapper Id if necessary, including
 --      allocating its unique (hence monadic)
-buildDataCon fam_envs src_name declared_infix prom_info src_bangs impl_bangs
-             field_lbls univ_tvs ex_tvs user_tvbs eq_spec ctxt arg_tys res_ty
-             rep_tycon tag_map
+buildDataCon fam_envs tycon_name src_name declared_infix prom_info src_bangs
+             mut_fields impl_bangs field_lbls univ_tvs ex_tvs user_tvbs eq_spec
+             ctxt arg_tys res_ty rep_tycon tag_map
   = do  { wrap_name <- newImplicitBinder src_name mkDataConWrapperOcc
         ; work_name <- newImplicitBinder src_name mkDataConWorkerOcc
         -- This last one takes the name of the data constructor in the source
@@ -137,8 +139,8 @@ buildDataCon fam_envs src_name declared_infix prom_info src_bangs impl_bangs
         ; let stupid_ctxt = mkDataConStupidTheta rep_tycon (map scaledThing arg_tys) univ_tvs
               tag = lookupNameEnv_NF tag_map src_name
               -- See Note [Constructor tag allocation], fixes #14657
-              data_con = mkDataCon src_name declared_infix prom_info
-                                   src_bangs field_lbls
+              data_con = mkDataCon tycon_name src_name declared_infix prom_info
+                                   src_bangs mut_fields field_lbls
                                    univ_tvs ex_tvs user_tvbs eq_spec ctxt
                                    arg_tys res_ty NoRRI rep_tycon tag
                                    stupid_ctxt dc_wrk dc_rep
@@ -305,10 +307,12 @@ buildClass tycon_name binders roles fds
 
         ; rep_nm   <- newTyConRepName datacon_name
         ; dict_con <- buildDataCon (panic "buildClass: FamInstEnvs")
+                                   tycon_name
                                    datacon_name
                                    False        -- Not declared infix
                                    rep_nm
                                    (map (const no_bang) args)
+                                   (map (const HsImmutable) args)
                                    (Just (map (const HsLazy) args))
                                    [{- No fields -}]
                                    univ_tvs

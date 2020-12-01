@@ -19,6 +19,7 @@ module GHC.Iface.Syntax (
         IfaceClassBody(..),
         IfaceBang(..),
         IfaceSrcBang(..), SrcUnpackedness(..), SrcStrictness(..),
+        IfaceMutable(..),
         IfaceAxBranch(..),
         IfaceTyConParent(..),
         IfaceCompleteMatch(..),
@@ -270,7 +271,9 @@ data IfaceConDecl
           -- Empty (meaning all lazy),
           -- or 1-1 corresp with arg tys
           -- See Note [Bangs on imported data constructors] in GHC.Types.Id.Make
-        ifConSrcStricts :: [IfaceSrcBang] } -- empty meaning no src stricts
+        ifConSrcStricts :: [IfaceSrcBang], -- empty meaning no src stricts
+        ifConMutFields  :: [IfaceMutable],
+        ifConWrapperActionTy :: Maybe IfaceType }
 
 type IfaceEqSpec = [(IfLclName,IfaceType)]
 
@@ -282,6 +285,11 @@ data IfaceBang
 -- | This corresponds to HsSrcBang
 data IfaceSrcBang
   = IfSrcBang SrcUnpackedness SrcStrictness
+
+-- | This corresponds to HsMutableInfo
+data IfaceMutable
+  = IfImmutable | IfMutable
+  deriving (Eq)
 
 data IfaceClsInst
   = IfaceClsInst { ifInstCls  :: IfExtName,                -- See comments with
@@ -1145,7 +1153,8 @@ pprIfaceConDecl ss gadt_style tycon tc_binders parent
         (IfCon { ifConName = name, ifConInfix = is_infix,
                  ifConUserTvBinders = user_tvbs,
                  ifConEqSpec = eq_spec, ifConCtxt = ctxt, ifConArgTys = arg_tys,
-                 ifConStricts = stricts, ifConFields = fields })
+                 ifConStricts = stricts, ifConFields = fields,
+                 ifConMutFields = muts, ifConWrapperActionTy = wrap_act })
   | gadt_style = pp_prefix_con <+> dcolon <+> ppr_gadt_ty
   | otherwise  = ppr_ex_quant pp_h98_con
   where
@@ -1159,8 +1168,8 @@ pprIfaceConDecl ss gadt_style tycon tc_binders parent
       | otherwise = pp_prefix_con <+> sep pp_args
 
     how_much = ss_how_much ss
-    tys_w_strs :: [(IfaceBang, IfaceType)]
-    tys_w_strs = zip stricts (map snd arg_tys)
+    tys_w_strs :: [(IfaceMutable, IfaceBang, IfaceType)]
+    tys_w_strs = zip3 muts stricts (map snd arg_tys)
     pp_prefix_con = pprPrefixIfDeclBndr how_much (occName name)
 
     -- If we're pretty-printing a H98-style declaration with existential
@@ -1194,16 +1203,19 @@ pprIfaceConDecl ss gadt_style tycon tc_binders parent
     ppr_bang (IfUnpackCo co) = text "! {-# UNPACK #-}" <>
                                pprParendIfaceCoercion co
 
-    pprFieldArgTy, pprArgTy :: (IfaceBang, IfaceType) -> SDoc
+    ppr_mut IfImmutable = whenPprDebug $ char '_'
+    ppr_mut IfMutable   = text "mutable"
+
+    pprFieldArgTy, pprArgTy :: (IfaceMutable, IfaceBang, IfaceType) -> SDoc
     -- If using record syntax, the only reason one would need to parenthesize
     -- a compound field type is if it's preceded by a bang pattern.
-    pprFieldArgTy (bang, ty) = ppr_arg_ty (bang_prec bang) bang ty
+    pprFieldArgTy (mut, bang, ty) = ppr_mut mut <+> ppr_arg_ty (bang_prec bang) bang ty
     -- If not using record syntax, a compound field type might need to be
     -- parenthesized if one of the following holds:
     --
     -- 1. We're using Haskell98 syntax.
     -- 2. The field type is preceded with a bang pattern.
-    pprArgTy (bang, ty) = ppr_arg_ty (max gadt_prec (bang_prec bang)) bang ty
+    pprArgTy (mut, bang, ty) = ppr_mut mut <+> ppr_arg_ty (max gadt_prec (bang_prec bang)) bang ty
 
     ppr_arg_ty :: PprPrec -> IfaceBang -> IfaceType -> SDoc
     ppr_arg_ty prec bang ty = ppr_bang bang <> pprPrecIfaceType prec ty
@@ -1247,7 +1259,7 @@ pprIfaceConDecl ss gadt_style tycon tc_binders parent
     pp_field_args = braces $ sep $ punctuate comma $ ppr_trim $
                     zipWith maybe_show_label fields tys_w_strs
 
-    maybe_show_label :: FieldLabel -> (IfaceBang, IfaceType) -> Maybe SDoc
+    maybe_show_label :: FieldLabel -> (IfaceMutable, IfaceBang, IfaceType) -> Maybe SDoc
     maybe_show_label lbl bty
       | showSub ss sel = Just (pprPrefixIfDeclBndr how_much occ
                                 <+> dcolon <+> pprFieldArgTy bty)
@@ -1277,10 +1289,16 @@ pprIfaceConDecl ss gadt_style tycon tc_binders parent
     --    This process will omit any invisible arguments, such as coercion
     --    variables, if necessary. (See Note
     --    [VarBndrs, TyCoVarBinders, TyConBinders, and visibility] in GHC.Core.TyCo.Rep.)
-    ppr_tc_app gadt_subst =
-      pprPrefixIfDeclBndr how_much (occName tycon)
-      <+> pprParendIfaceAppArgs
-            (substIfaceAppArgs gadt_subst (mk_tc_app_args tc_binders))
+    ppr_tc_app gadt_subst
+      | Just act_ty <- wrap_act
+      , any (/= IfImmutable) muts
+      = ppr act_ty <+> parens t
+      | otherwise
+      = t
+      where
+      t = pprPrefixIfDeclBndr how_much (occName tycon)
+          <+> pprParendIfaceAppArgs
+                (substIfaceAppArgs gadt_subst (mk_tc_app_args tc_binders))
 
     mk_tc_app_args :: [IfaceTyConBinder] -> IfaceAppArgs
     mk_tc_app_args [] = IA_Nil
@@ -2103,7 +2121,7 @@ instance Binary IfaceConDecls where
             _ -> error "Binary(IfaceConDecls).get: Invalid IfaceConDecls"
 
 instance Binary IfaceConDecl where
-    put_ bh (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11) = do
+    put_ bh (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13) = do
         putIfaceTopBndr bh a1
         put_ bh a2
         put_ bh a3
@@ -2116,6 +2134,8 @@ instance Binary IfaceConDecl where
         mapM_ (put_ bh) a9
         put_ bh a10
         put_ bh a11
+        put_ bh a12
+        put_ bh a13
     get bh = do
         a1 <- getIfaceTopBndr bh
         a2 <- get bh
@@ -2129,7 +2149,9 @@ instance Binary IfaceConDecl where
         a9 <- replicateM n_fields (get bh)
         a10 <- get bh
         a11 <- get bh
-        return (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11)
+        a12 <- get bh
+        a13 <- get bh
+        return (IfCon a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13)
 
 instance Binary IfaceBang where
     put_ bh IfNoBang        = putByte bh 0
@@ -2154,6 +2176,16 @@ instance Binary IfaceSrcBang where
       do a1 <- get bh
          a2 <- get bh
          return (IfSrcBang a1 a2)
+
+instance Binary IfaceMutable where
+    put_ bh IfImmutable    = putByte bh 0
+    put_ bh IfMutable      = putByte bh 1
+
+    get bh = do
+            h <- getByte bh
+            case h of
+              0 -> return IfImmutable
+              _ -> return IfMutable
 
 instance Binary IfaceClsInst where
     put_ bh (IfaceClsInst cls tys dfun flag orph) = do
@@ -2551,14 +2583,18 @@ instance NFData IfaceConDecls where
     IfNewTyCon f1 -> rnf f1
 
 instance NFData IfaceConDecl where
-  rnf (IfCon f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11) =
+  rnf (IfCon f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13) =
     rnf f1 `seq` rnf f2 `seq` rnf f3 `seq` rnf f4 `seq` f5 `seq` rnf f6 `seq`
-    rnf f7 `seq` rnf f8 `seq` f9 `seq` rnf f10 `seq` rnf f11
+    rnf f7 `seq` rnf f8 `seq` f9 `seq` rnf f10 `seq` rnf f11 `seq`
+    rnf f12 `seq` rnf f13
 
 instance NFData IfaceSrcBang where
   rnf (IfSrcBang f1 f2) = f1 `seq` f2 `seq` ()
 
 instance NFData IfaceBang where
+  rnf x = x `seq` ()
+
+instance NFData IfaceMutable where
   rnf x = x `seq` ()
 
 instance NFData IfaceIdDetails where

@@ -385,6 +385,26 @@ printClosure( const StgClosure *obj )
           break;
         }
 
+    case MUT_CONSTR_CLEAN:
+    case MUT_CONSTR_DIRTY:
+        {
+            StgWord i, j;
+            const StgMutConInfoTable *con_info = get_mut_con_itbl (obj);
+
+            debugBelch("%s(", GET_MUT_CON_DESC(con_info));
+            for (i = 0; i < info->layout.payload.ptrs; ++i) {
+                if (i != 0) debugBelch(", ");
+                printPtr((StgPtr)obj->payload[i]);
+            }
+            for (j = 0; j < info->layout.payload.nptrs; ++j) {
+                if (i != 0 || j != 0) debugBelch(", ");
+                debugBelch("%p#", obj->payload[i+j]);
+            }
+            debugBelch(")\n");
+            break;
+        } 
+
+
     case WEAK:
             debugBelch("WEAK(");
             debugBelch("key=%p value=%p finalizer=%p",
@@ -1033,10 +1053,12 @@ const char *closure_type_names[] = {
  [SMALL_MUT_ARR_PTRS_DIRTY] = "SMALL_MUT_ARR_PTRS_DIRTY",
  [SMALL_MUT_ARR_PTRS_FROZEN_DIRTY] = "SMALL_MUT_ARR_PTRS_FROZEN_DIRTY",
  [SMALL_MUT_ARR_PTRS_FROZEN_CLEAN] = "SMALL_MUT_ARR_PTRS_FROZEN_CLEAN",
- [COMPACT_NFDATA]        = "COMPACT_NFDATA"
+ [COMPACT_NFDATA]        = "COMPACT_NFDATA",
+ [MUT_CONSTR_CLEAN]      = "MUT_CONSTR_CLEAN",
+ [MUT_CONSTR_DIRTY]      = "MUT_CONSTR_DIRTY"
 };
 
-#if N_CLOSURE_TYPES != 64
+#if N_CLOSURE_TYPES != 66
 #error Closure types changed: update Printer.c!
 #endif
 

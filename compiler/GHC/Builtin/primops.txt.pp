@@ -1838,6 +1838,35 @@ primop  CopyMutableArrayArrayOp "copyMutableArrayArray#" GenPrimOp
   can_fail         = True
 
 ------------------------------------------------------------------------
+section "Mutable Fields"
+------------------------------------------------------------------------
+
+primop  ReadRefOp "readRef#" GenPrimOp
+   Ref# s a -> State# s -> (# State# s, a #)
+   {Dereference a mutable field.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefOp "writeRef#" GenPrimOp
+   Ref# s a -> a -> State# s -> State# s
+   {Write to a mutable field at a given reference.}
+   with has_side_effects = True
+        can_fail         = True
+        code_size        = { primOpCodeSizeForeignCall } -- for the write barrier
+
+primop  ReadRefOp_int "readRefInt#" GenPrimOp
+   RefU# s Int# -> State# s -> (# State# s, Int# #)
+   {Read a mutable field unlifted value.}
+   with has_side_effects = True
+        can_fail = True
+
+primop  WriteRefOp_int "writeRefInt#" GenPrimOp
+   RefU# s Int# -> Int# -> State# s -> State# s
+   {Write to a mutable field's unlifted value.}
+   with has_side_effects = True
+        can_fail         = True
+
+------------------------------------------------------------------------
 section "Addr#"
 ------------------------------------------------------------------------
 
